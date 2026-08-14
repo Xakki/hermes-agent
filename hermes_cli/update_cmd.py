@@ -1580,8 +1580,152 @@ def _sync_fork_with_upstream(git_cmd: list[str], cwd: Path) -> bool:
     except Exception:
         return False
 
-def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
+def _should_merge_upstream() -> bool:
+    """Read ``updates.merge_upstream`` from config (default False).
+
+    A config read failure must never flip the historical behaviour, so any
+    exception falls back to False (= skip the sync, as before).
+    """
+    try:
+        from hermes_cli.config import load_config
+
+        updates_cfg = (load_config() or {}).get("updates", {})
+        if isinstance(updates_cfg, dict):
+            return bool(updates_cfg.get("merge_upstream", False))
+    except Exception as exc:
+        logging.getLogger(__name__).debug(
+            "Could not read updates.merge_upstream: %s", exc
+        )
+    return False
+
+
+def _merge_upstream_into_fork(git_cmd: list[str], cwd: Path) -> bool:
+    """Merge ``upstream/main`` into the current branch, then push to origin.
+
+    Returns True only when the merge actually brought new commits onto the
+    local branch — the caller uses that to decide whether the venv needs a
+    dependency sync. A failed PUSH still returns True: the code is merged
+    locally, so its dependency changes must still be installed.
+
+    Never raises and never exits the process — on any failure the update
+    continues; the caller's contract is "best effort, report clearly".
+    """
+    # We merge into whatever HEAD is, but push the `main` ref — so a HEAD that
+    # isn't main would land the merge on one branch and push another. The
+    # caller only reaches here with branch == "main", but the checkout that
+    # gets us there is conditional and can fail; verify rather than assume.
+    head = subprocess.run(
+        git_cmd + ["rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=cwd,
+        capture_output=True,
+        text=True, encoding="utf-8", errors="replace",
+    )
+    current = head.stdout.strip() if head.returncode == 0 else ""
+    if current != "main":
+        print(
+            f"  ✗ HEAD is on '{current or 'unknown'}', not 'main' — skipping upstream merge."
+        )
+        return False
+
+    # A merge into a dirty tree either refuses or silently entangles local
+    # edits with the merge commit. Only TRACKED changes matter here: untracked
+    # files just collide on write and git errors out cleanly.
+    status = subprocess.run(
+        git_cmd + ["status", "--porcelain", "--untracked-files=no"],
+        cwd=cwd,
+        capture_output=True,
+        text=True, encoding="utf-8", errors="replace",
+    )
+    if status.returncode != 0 or status.stdout.strip():
+        print("  ✗ Working tree has uncommitted changes — skipping upstream merge.")
+        print("    Commit or stash them, then run: git merge upstream/main")
+        return False
+
+    # Matches the caller's style: a negative count means the compare failed,
+    # so bail rather than merge on an unknown state.
+    incoming = _count_commits_between(git_cmd, cwd, "HEAD", "upstream/main")
+    if incoming < 0:
+        print("  ✗ Could not compare with upstream. Skipping upstream merge.")
+        return False
+    if incoming == 0:
+        print("  ✓ Fork already contains all upstream commits")
+        return False
+
+    print("→ Merging upstream/main into your fork...")
+    merge = subprocess.run(
+        git_cmd + ["merge", "--no-edit", "upstream/main"],
+        cwd=cwd,
+        capture_output=True,
+        text=True, encoding="utf-8", errors="replace",
+    )
+
+    if merge.returncode != 0:
+        # Collect the conflicted paths BEFORE aborting — after the abort the
+        # unmerged index is gone and this list comes back empty.
+        conflicts = subprocess.run(
+            git_cmd + ["diff", "--name-only", "--diff-filter=U"],
+            cwd=cwd,
+            capture_output=True,
+            text=True, encoding="utf-8", errors="replace",
+        )
+        files = [f for f in conflicts.stdout.splitlines() if f.strip()]
+        subprocess.run(
+            git_cmd + ["merge", "--abort"],
+            cwd=cwd,
+            capture_output=True,
+            text=True, encoding="utf-8", errors="replace",
+        )
+        print()
+        if files:
+            print(f"  ✗ Merge conflict in {len(files)} file(s) — merge aborted:")
+            for path in files[:20]:
+                print(f"      {path}")
+            if len(files) > 20:
+                print(f"      ... and {len(files) - 20} more")
+        else:
+            # Non-zero without conflicts: bad ref, refused due to local
+            # changes, etc. Show git's own reason instead of inventing one.
+            reason = (merge.stderr or merge.stdout).strip().splitlines()
+            print("  ✗ Merge failed — merge aborted.")
+            if reason:
+                print(f"    {reason[0]}")
+        print("    Resolve manually with: git merge upstream/main")
+        print("    Continuing with the update.")
+        return False
+
+    if incoming > 0:
+        print(f"  ✓ Merged {incoming} upstream commit(s) into your fork")
+    else:
+        print("  ✓ Merged upstream/main into your fork")
+
+    print("→ Pushing merge to origin...")
+    push = subprocess.run(
+        git_cmd + ["push", "origin", "main"],
+        cwd=cwd,
+        capture_output=True,
+        text=True, encoding="utf-8", errors="replace",
+    )
+    if push.returncode == 0:
+        print("  ✓ Pushed to origin/main")
+    else:
+        # The local merge is valid regardless — never fail the update on this.
+        reason = (push.stderr or push.stdout).strip().splitlines()
+        print("  ⚠ Could not push the merge to origin (the local merge is intact).")
+        if reason:
+            print(f"    {reason[0]}")
+        print("    Push it later with: git push origin main")
+
+    # Merged locally either way — deps must sync even if the push failed.
+    return True
+
+
+def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> bool:
     """Check if fork is behind upstream and sync if safe.
+
+    Returns True when new upstream commits actually landed on the local
+    branch, so the caller knows the venv needs a dependency sync. Every
+    "nothing changed on disk" path returns False. Callers that ignore the
+    return value keep their previous behaviour.
 
     This implements the fork upstream sync logic:
     - If upstream remote doesn't exist, ask user if they want to add it
@@ -1594,7 +1738,7 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
     if not has_upstream:
         # Check if user previously declined
         if _should_skip_upstream_prompt():
-            return
+            return False
 
         # Ask user if they want to add upstream
         print()
@@ -1618,13 +1762,13 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
                 has_upstream = True
             else:
                 print("  ✗ Failed to add upstream remote. Skipping upstream sync.")
-                return
+                return False
         else:
             print(
                 "  Skipped. Run 'git remote add upstream https://github.com/NousResearch/hermes-agent.git' to add later."
             )
             _mark_skip_upstream_prompt()
-            return
+            return False
 
     # Fetch upstream main only. This sync compares upstream/main with
     # origin/main, so there's no reason to pull every upstream ref — and a bare
@@ -1640,7 +1784,7 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
         )
     except subprocess.CalledProcessError:
         print("  ✗ Failed to fetch upstream. Skipping upstream sync.")
-        return
+        return False
 
     # Compare origin/main with upstream/main
     origin_ahead = _count_commits_between(git_cmd, cwd, "upstream/main", "origin/main")
@@ -1650,21 +1794,26 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
 
     if origin_ahead < 0 or upstream_ahead < 0:
         print("  ✗ Could not compare branches. Skipping upstream sync.")
-        return
+        return False
 
-    # If origin/main has commits not on upstream, don't trample
+    # If origin/main has commits not on upstream, don't trample it — unless
+    # the user opted into merging via ``updates.merge_upstream``.
     if origin_ahead > 0:
         print()
         print(f"ℹ Your fork has {origin_ahead} commit(s) not on upstream.")
-        print("  Skipping upstream sync to preserve your changes.")
-        print("  If you want to merge upstream changes, run:")
-        print("    git pull upstream main")
-        return
+
+        if not _should_merge_upstream():
+            print("  Skipping upstream sync to preserve your changes.")
+            print("  If you want to merge upstream changes, run:")
+            print("    git pull upstream main")
+            return False
+
+        return _merge_upstream_into_fork(git_cmd, cwd)
 
     # If upstream is not ahead, fork is up to date
     if upstream_ahead == 0:
         print("  ✓ Fork is up to date with upstream")
-        return
+        return False
 
     # origin/main is strictly behind upstream/main (can fast-forward)
     print()
@@ -1681,7 +1830,7 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
         print(
             "  ✗ Failed to pull from upstream. You may need to resolve conflicts manually."
         )
-        return
+        return False
 
     print("  ✓ Updated from upstream")
 
@@ -1694,6 +1843,10 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path) -> None:
             "  ℹ Got updates from upstream but couldn't push to fork (no write access?)"
         )
         print("    Your local repo is updated, but your fork on GitHub may be behind.")
+
+    # The ff-pull above put new upstream commits on disk, so the venv needs a
+    # dependency sync just like the merge path does.
+    return True
 
 def _invalidate_update_cache():
     """Delete the update-check cache for ALL profiles so no banner
@@ -4144,8 +4297,16 @@ def _cmd_update_impl(args, gateway_mode: bool):
             _invalidate_update_cache()
 
             # Even if origin is up to date, the fork may be behind upstream
+            upstream_merged = False
             if is_fork and branch == "main":
-                _m()._sync_with_upstream_if_needed(git_cmd, _m().PROJECT_ROOT)
+                # `is True`, not bool(): only an explicit True from the sync
+                # means commits actually landed. Anything else — a legacy
+                # caller returning None, a test double — must not trigger a
+                # dependency reinstall.
+                upstream_merged = (
+                    _m()._sync_with_upstream_if_needed(git_cmd, _m().PROJECT_ROOT)
+                    is True
+                )
 
             # Restore stash and switch back to original branch if we moved
             if auto_stash_ref is not None:
@@ -4227,6 +4388,32 @@ def _cmd_update_impl(args, gateway_mode: bool):
                 else:
                     print(f"⚠ Venv still unhealthy after repair: {detail_after}")
                     print("  Close all Hermes windows/gateways and re-run: hermes update")
+            elif upstream_merged:
+                # New upstream commits just landed on disk via the fork sync.
+                # origin had nothing new, so the pull path's dependency
+                # install never ran — sync deps here or the install is left
+                # with new code on an old venv. Mirrors the repair branch
+                # above; the pull path's Termux/Android and lazy-refresh
+                # phases are deliberately not duplicated here.
+                print("→ Updating Python dependencies...")
+                _write_update_incomplete_marker()
+                from hermes_cli.managed_uv import ensure_uv, update_managed_uv
+
+                update_managed_uv()
+                sync_uv = ensure_uv()
+                if sync_uv:
+                    sync_env = {**os.environ, "VIRTUAL_ENV": str(_m().PROJECT_ROOT / "venv")}
+                    _m()._install_python_dependencies_with_optional_fallback(
+                        [sync_uv, "pip"], env=sync_env, group="all"
+                    )
+                else:
+                    _m()._install_python_dependencies_with_optional_fallback(
+                        [sys.executable, "-m", "pip"], group="all"
+                    )
+                _m()._clear_update_incomplete_marker()
+                _print_update_completion(
+                    "✓ Fork synced with upstream — dependencies updated!"
+                )
             else:
                 _print_update_completion("✓ Already up to date!")
             if runtime_repaired is not None and not _m()._is_windows():

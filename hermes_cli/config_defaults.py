@@ -2943,6 +2943,18 @@ DEFAULT_CONFIG = {
         # upstream installer is not appropriate for the machine, for example
         # on non-admin accounts where `/Applications` is not writable.
         "refresh_cua_driver": True,
+        # What `hermes update` does when this checkout is a FORK whose branch
+        # already carries commits that are not on upstream.
+        #   false (default) — historical behaviour: print "Skipping upstream
+        #     sync to preserve your changes" and leave the tree alone. The
+        #     fork never picks up upstream commits automatically.
+        #   true — merge ``upstream/<branch>`` into the local branch, keeping
+        #     the fork's own commits, then push the merge to origin. On a
+        #     merge conflict the merge is aborted and the conflicting files
+        #     are printed for manual resolution; the update continues either
+        #     way. A dirty working tree (tracked changes) skips the merge.
+        # Only consulted on forks — an official-remote checkout is unaffected.
+        "merge_upstream": False,
     },
 
     # Language Server Protocol — semantic diagnostics from real

@@ -235,3 +235,101 @@ class TestUnicodeDecodeErrorInUpdatePrompts:
             _sync_with_upstream_if_needed(["git"], tmp_path)  # must not raise
 
         mock_add.assert_not_called()
+
+
+class TestForkUpstreamMerge:
+    """updates.merge_upstream — merge upstream into a fork that carries
+    its own commits, instead of skipping the sync."""
+
+    def _run_fork_sync(self, tmp_path, merge_upstream, merge_rc=0, push_rc=0,
+                       dirty=""):
+        """Drive _sync_with_upstream_if_needed on a fork that is 2 commits
+        ahead of upstream, with updates.merge_upstream set to `merge_upstream`.
+
+        Returns the list of git argv lists that were executed.
+        """
+        from hermes_cli.update_cmd import _sync_with_upstream_if_needed
+
+        calls = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(list(cmd))
+            joined = " ".join(str(c) for c in cmd)
+            rc, out = 0, ""
+            if "rev-parse" in joined:
+                out = "main"
+            elif "status" in joined:
+                out = dirty
+            elif "merge --no-edit" in joined or "merge upstream/main" in joined:
+                rc = merge_rc
+            elif "--diff-filter=U" in joined:
+                out = "hermes_cli/main.py\n" if merge_rc != 0 else ""
+            elif "push" in joined:
+                rc = push_rc
+            return subprocess.CompletedProcess(cmd, rc, stdout=out, stderr="boom")
+
+        with patch(
+            "hermes_cli.update_cmd._has_upstream_remote", return_value=True
+        ), patch(
+            "hermes_cli.update_cmd._count_commits_between",
+            side_effect=lambda g, c, a, b: 2 if b in ("origin/main", "upstream/main") else 0,
+        ), patch(
+            "hermes_cli.config.load_config",
+            return_value={"updates": {"merge_upstream": merge_upstream}},
+        ), patch("subprocess.run", side_effect=fake_run):
+            result = _sync_with_upstream_if_needed(["git"], tmp_path)
+
+        return calls, result
+
+    def test_fork_ahead_skips_merge_by_default(self, tmp_path, capsys):
+        """merge_upstream defaults to False — historical behaviour preserved."""
+        calls, result = self._run_fork_sync(tmp_path, merge_upstream=False)
+
+        out = capsys.readouterr().out
+        assert "Skipping upstream sync to preserve your changes" in out
+        assert not any("merge" in " ".join(c) for c in calls)
+        assert not any("push" in " ".join(c) for c in calls)
+        assert result is False  # no deps to sync
+
+    def test_fork_ahead_merges_when_opted_in(self, tmp_path, capsys):
+        """merge_upstream: true merges upstream/main and pushes to origin."""
+        calls, result = self._run_fork_sync(tmp_path, merge_upstream=True)
+
+        out = capsys.readouterr().out
+        assert "Skipping upstream sync" not in out
+        assert any(c[-3:] == ["merge", "--no-edit", "upstream/main"] for c in calls)
+        assert any(c[-3:] == ["push", "origin", "main"] for c in calls)
+        assert "Pushed to origin/main" in out
+        assert result is True  # caller must sync dependencies
+
+    def test_fork_merge_conflict_aborts_and_continues(self, tmp_path, capsys):
+        """A conflicting merge is aborted, named, and does NOT push or raise."""
+        calls, result = self._run_fork_sync(tmp_path, merge_upstream=True, merge_rc=1)
+
+        out = capsys.readouterr().out
+        assert any(c[-2:] == ["merge", "--abort"] for c in calls)
+        assert "hermes_cli/main.py" in out
+        assert "git merge upstream/main" in out
+        assert not any("push" in " ".join(c) for c in calls)
+        assert result is False  # nothing landed on disk
+
+    def test_fork_merge_dirty_tree_skips_merge(self, tmp_path, capsys):
+        """Uncommitted tracked changes skip the merge instead of entangling it."""
+        calls, result = self._run_fork_sync(
+            tmp_path, merge_upstream=True, dirty=" M hermes_cli/main.py\n"
+        )
+
+        out = capsys.readouterr().out
+        assert "uncommitted changes" in out
+        assert not any("--no-edit" in " ".join(c) for c in calls)
+        assert result is False
+
+    def test_fork_merge_push_failure_is_a_warning_only(self, tmp_path, capsys):
+        """A failed push warns but never fails the update — merge stays valid."""
+        _calls, result = self._run_fork_sync(tmp_path, merge_upstream=True, push_rc=1)
+
+        out = capsys.readouterr().out
+        assert "Could not push the merge to origin" in out
+        assert "git push origin main" in out
+        # Merged locally despite the push failure -> deps still need syncing.
+        assert result is True
