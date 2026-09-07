@@ -149,16 +149,39 @@ _db = None
 _db_error: str | None = None
 
 
-def _active_project_root(params: dict, db) -> str | None:
-    """Resolve the project authority for a session read, or deny it."""
-    explicit = str(params.get("project_root") or "").strip()
-    if explicit:
-        return explicit
-    current_id = str(params.get("current_session_id") or "").strip()
-    if not current_id:
+def _canonical_project_root(cwd: str | None) -> str | None:
+    if not cwd:
         return None
-    current = db.get_session(current_id)
-    return str((current or {}).get("project_root") or "").strip() or None
+    try:
+        candidate = os.path.realpath(os.path.abspath(os.path.expanduser(str(cwd))))
+        return _git_common_repo_root_for_cwd(candidate) or candidate
+    except Exception:
+        return None
+
+
+def _session_project_root(session: dict | None) -> str | None:
+    session = session or {}
+    # The durable project root is authoritative.  Deriving it from cwd is only
+    # a bootstrap fallback for a new in-memory session before its DB row exists.
+    return _canonical_project_root(
+        session.get("project_root") or session.get("cwd")
+    )
+
+
+def _active_project_root(params: dict, db) -> str | None:
+    """Resolve server-owned project authority; client roots are only bootstrap hints."""
+    current_id = str(params.get("current_session_id") or "").strip()
+    if current_id:
+        current = (
+            db.get_session(current_id)
+            if db is not None and hasattr(db, "get_session")
+            else None
+        )
+        if current is None:
+            current = _sessions.get(current_id)
+        return _canonical_project_root((current or {}).get("project_root"))
+    explicit = str(params.get("project_root") or "").strip()
+    return _canonical_project_root(explicit) if explicit else None
 
 
 _stdout_lock = threading.Lock()

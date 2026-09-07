@@ -953,10 +953,14 @@ def _(rid, params: dict) -> dict:
     # Keep the natural creation/insertion order from ``_sessions``.  The
     # frontend marks the focused session with ``current``; it should not jump to
     # the top just because the user switched to it.
+    active_root = _active_project_root(params, _get_db())
+    if not active_root:
+        return _err(rid, 4008, "project context required")
     rows = [
         _session_live_item(sid, session, current)
         for sid, session in snapshot
         if not session.get("_finalized")
+        and _session_project_root(session) == active_root
     ]
     return _ok(rid, {"sessions": rows})
 
@@ -973,6 +977,9 @@ def _(rid, params: dict) -> dict:
     if err:
         return err
     assert session is not None
+    active_root = _active_project_root(params, _get_db())
+    if not active_root or _session_project_root(session) != active_root:
+        return _err(rid, 4008, "session is outside the active project")
 
     return _ok(
         rid,
@@ -2461,6 +2468,9 @@ def _(rid, params: dict) -> dict:
     session, err = _sess_nowait(params, rid)
     if err:
         return err
+    active_root = _active_project_root(params, _get_db())
+    if not active_root or _session_project_root(session) != active_root:
+        return _err(rid, 4008, "session is outside the active project")
     history = list(session.get("history", []))
     if session.get("session_key"):
         with _session_db(session) as db:
@@ -2819,6 +2829,7 @@ def _(rid, params: dict) -> dict:
                 model_config={"_branched_from": old_key},
                 parent_session_id=old_key,
                 cwd=_session_cwd(session),
+                project_root=(db.get_session(old_key) or {}).get("project_root"),
                 # The branch stays on its parent's profile. Explicit stamp (not
                 # just the parent-backfill) so it holds even when the parent row
                 # predates the profile_name column.

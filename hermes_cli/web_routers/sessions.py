@@ -48,7 +48,25 @@ _prune_sessions = late("_prune_sessions")
 _read_session_import_body = late("_read_session_import_body")
 _session_latest_descendant = late("_session_latest_descendant")
 _strip_session_list_rows = late("_strip_session_list_rows")
+_fs_default_cwd = late("_fs_default_cwd")
 
+
+def _active_project_root(profile: Optional[str] = None) -> str:
+    """Use the backend's configured workspace, never a request-supplied path."""
+    from tui_gateway.git_probe import common_repo_root
+    cwd = _fs_default_cwd()
+    import os
+    candidate = os.path.realpath(os.path.abspath(os.path.expanduser(str(cwd))))
+    return common_repo_root(candidate) or candidate
+
+
+def _owned_session(db, session_id: str, project_root: str):
+    sid = db.resolve_session_id(session_id)
+    row = db.get_session(sid) if sid else None
+    if not row or not row.get("project_root"):
+        return sid, None
+    from tui_gateway.server import _canonical_project_root
+    return sid, row if _canonical_project_root(row["project_root"]) == project_root else None
 
 @list_router.get("/api/sessions")
 def get_sessions(
@@ -101,6 +119,7 @@ def get_sessions(
         # open the listing connection read-only.
         _maybe_auto_archive_for_profile(profile)
         db = _open_session_db_for_profile(profile, read_only=True)
+        project_root = _active_project_root(profile)
         try:
             min_message_count = max(0, min_messages)
             archived_only = archived == "only"
@@ -128,6 +147,7 @@ def get_sessions(
                 # with the API-level _strip_session_list_rows below).
                 compact_rows=not full,
                 include_pinned=True,
+                project_root=project_root,
             )
             total = db.session_count(
                 source=source or None,
@@ -138,6 +158,7 @@ def get_sessions(
                 include_archived=include_archived,
                 archived_only=archived_only,
                 exclude_children=True,
+                project_root=project_root,
             )
             now = time.time()
             # Same ownership contract as get_session_detail: rows are stamped
@@ -275,6 +296,12 @@ async def search_sessions(
 
             def add_lineage_result(raw_sid: str, payload: dict) -> None:
                 if not raw_sid:
+                    return
+                ownership = db.get_session(raw_sid)
+                if not ownership or not ownership.get("project_root"):
+                    return
+                from tui_gateway.server import _canonical_project_root
+                if _canonical_project_root(ownership["project_root"]) != _active_project_root(profile):
                     return
                 root = compression_root(raw_sid)
                 if root in seen or len(seen) >= safe_limit:
@@ -437,7 +464,21 @@ async def bulk_delete_sessions_endpoint(body: BulkDeleteSessions):
     def _delete() -> int:
         db = _open_session_db_for_profile(body.profile, read_only=False)
         try:
-            return db.delete_sessions(body.ids)
+            project_root = _active_project_root(body.profile)
+            if not project_root:
+                return 0
+            owned_ids = []
+            from tui_gateway.server import _canonical_project_root
+            for requested_id in body.ids:
+                sid = db.resolve_session_id(requested_id)
+                row = db.get_session(sid) if sid else None
+                if (
+                    row
+                    and row.get("project_root")
+                    and _canonical_project_root(row["project_root"]) == project_root
+                ):
+                    owned_ids.append(sid)
+            return db.delete_sessions(owned_ids)
         finally:
             db.close()
 
@@ -558,7 +599,10 @@ async def get_session_detail(session_id: str, profile: Optional[str] = None):
     try:
         sid = db.resolve_session_id(session_id)
         session = db.get_session(sid) if sid else None
-        if not session:
+        if not session or not session.get("project_root"):
+            raise HTTPException(status_code=404, detail="Session not found")
+        from tui_gateway.server import _canonical_project_root
+        if _canonical_project_root(session["project_root"]) != _active_project_root(profile):
             raise HTTPException(status_code=404, detail="Session not found")
         # Always stamp the owning profile — the serving profile is known even
         # when the request carries no ``?profile=`` (it's this process's own
@@ -583,7 +627,13 @@ async def get_session_latest_descendant(
     def _lookup():
         db = _open_session_db_for_profile(profile, read_only=True)
         try:
-            return _session_latest_descendant(session_id, db)
+            root = _active_project_root(profile)
+            _, owner = _owned_session(db, session_id, root)
+            if owner is None:
+                return None, []
+            latest, path = _session_latest_descendant(session_id, db)
+            _, latest_owner = _owned_session(db, latest, root) if latest else (None, None)
+            return (latest, path) if latest_owner is not None else (None, [])
         finally:
             db.close()
 
@@ -617,6 +667,12 @@ async def get_session_messages(
         try:
             sid = db.resolve_session_id(session_id)
             if not sid:
+                return None
+            owner = db.get_session(sid)
+            if not owner or not owner.get("project_root"):
+                return None
+            from tui_gateway.server import _canonical_project_root
+            if _canonical_project_root(owner["project_root"]) != _active_project_root(profile):
                 return None
             sid = db.resolve_resume_session_id(sid)
             # Always page this endpoint. An omitted limit used to load an
@@ -669,9 +725,11 @@ async def delete_session_endpoint(session_id: str, profile: Optional[str] = None
             # leaves transient empty rows (reaped by empty-session hygiene) that
             # race the sidebar snapshot, which is exactly when this fired. Mirrors
             # the bulk-delete endpoint, which already treats ghost ids as success.
-            sid = db.resolve_session_id(session_id)
+            sid, owner = _owned_session(db, session_id, _active_project_root(profile))
             if not sid:
                 return {"ok": True, "already_absent": True}
+            if owner is None:
+                raise HTTPException(status_code=404, detail="Session not found")
             db.delete_session(sid)
             return {"ok": True}
         finally:
@@ -691,8 +749,8 @@ async def rename_session_endpoint(session_id: str, body: SessionRename):
     """
     db = _open_session_db_for_profile(body.profile, read_only=False)
     try:
-        sid = db.resolve_session_id(session_id)
-        if not sid:
+        sid, owner = _owned_session(db, session_id, _active_project_root(body.profile))
+        if not sid or owner is None:
             raise HTTPException(status_code=404, detail="Session not found")
         if body.title is None and body.archived is None and body.pinned is None:
             raise HTTPException(
@@ -725,8 +783,10 @@ async def export_session_endpoint(session_id: str, profile: Optional[str] = None
     def _prepare_export():
         db = _open_session_db_for_profile(profile, read_only=True)
         try:
-            sid = db.resolve_session_id(session_id)
-            return (sid, db.get_session(sid)) if sid else None
+            sid, session = _owned_session(db, session_id, _active_project_root(profile))
+            if not sid or session is None:
+                return None
+            return sid, session
         finally:
             db.close()
 

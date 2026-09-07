@@ -36,6 +36,19 @@ def test_parent_session_inherits_project_root(tmp_path, monkeypatch):
         db.close()
 
 
+def test_existing_session_project_root_cannot_be_overridden(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    from hermes_state import SessionDB
+
+    db = SessionDB(db_path=Path(tmp_path) / "state.db")
+    try:
+        db.create_session("existing", source="cli", project_root="/work/a")
+        db.create_session("existing", source="cli", cwd="/work/b", project_root="/work/b")
+        assert db.get_session("existing")["project_root"] == "/work/a"
+    finally:
+        db.close()
+
+
 def test_legacy_import_without_project_root_stays_unowned(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     from hermes_state import SessionDB

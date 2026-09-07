@@ -12861,6 +12861,39 @@ def test_prompt_submit_preserves_empty_response_without_error(monkeypatch):
 # ── active live TUI sessions ─────────────────────────────────────────
 
 
+def test_session_active_list_enforces_durable_project_root(monkeypatch):
+    class _DB:
+        def get_session(self, session_id):
+            return {"project_root": "/repo/main"} if session_id == "current" else None
+
+    previous_sessions = dict(server._sessions)
+    server._sessions.clear()
+    monkeypatch.setattr(server, "_get_db", lambda: _DB())
+    monkeypatch.setattr(
+        server,
+        "_git_common_repo_root_for_cwd",
+        lambda path: "/repo/main" if str(path).startswith("/repo/main") else "",
+    )
+    server._sessions["sid-a"] = _session(
+        agent=types.SimpleNamespace(model="model-a"),
+        project_root="/repo/main/subdir",
+    )
+    server._sessions["sid-b"] = _session(
+        agent=types.SimpleNamespace(model="model-b"),
+        project_root="/repo/other",
+    )
+    try:
+        response = server.handle_request({
+            "id": "scope",
+            "method": "session.active_list",
+            "params": {"current_session_id": "current", "project_root": "/repo/other"},
+        })
+        assert [row["id"] for row in response["result"]["sessions"]] == ["sid-a"]
+    finally:
+        server._sessions.clear()
+        server._sessions.update(previous_sessions)
+
+
 def test_session_active_list_reports_live_sessions(monkeypatch):
     class _DB:
         def get_session_title(self, key):

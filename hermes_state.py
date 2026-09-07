@@ -9750,6 +9750,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         archived_only: bool = False,
         exclude_children: bool = False,
         exclude_sources: List[str] = None,
+        project_root: str = None,
     ) -> int:
         """Count sessions, optionally filtered by source.
 
@@ -9783,6 +9784,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             placeholders = ",".join("?" for _ in exclude_sources)
             where_clauses.append(f"s.source NOT IN ({placeholders})")
             params.extend(exclude_sources)
+        if project_root:
+            clause, clause_params = _project_root_clause(project_root)
+            where_clauses.append(clause)
+            params.extend(clause_params)
         if cwd_prefix:
             clause, clause_params = _cwd_prefix_clause(cwd_prefix)
             where_clauses.append(clause)
