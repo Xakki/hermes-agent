@@ -175,6 +175,8 @@ def _(rid, params: dict) -> dict:
             # that goes stale whenever a new platform is added or a user names
             # their own source.
             deny = frozenset({"kanban", "tool"})
+            current = db.get_session(str(params.get("current_session_id") or ""))
+            project_root = (current or {}).get("project_root")
 
             limit = int(params.get("limit", 200) or 200)
             # Over-fetch modestly so per-source filtering doesn't leave us
@@ -188,6 +190,7 @@ def _(rid, params: dict) -> dict:
                     limit=fetch_limit,
                     order_by_last_active=True,
                     compact_rows=True,
+                    project_root=project_root,
                 )
                 if (s.get("source") or "").strip().lower() not in deny
             ][:limit]
@@ -234,12 +237,15 @@ def _(rid, params: dict) -> dict:
             return _ok(rid, {"session_id": None})
         try:
             deny = frozenset({"kanban", "tool"})
+            current = db.get_session(str(params.get("current_session_id") or ""))
+            project_root = (current or {}).get("project_root")
             # Over-fetch by a generous bounded amount so heavy sub-agent
             # users (lots of recent ``tool`` rows) don't get a false
             # "no eligible session" answer.  ``session.list`` uses a
             # similar over-fetch strategy.
             rows = db.list_sessions_rich(
-                source=None, limit=200, order_by_last_active=True, compact_rows=True
+                source=None, limit=200, order_by_last_active=True, compact_rows=True,
+                project_root=project_root,
             )
             for row in rows:
                 src = (row.get("source") or "").strip().lower()
@@ -338,8 +344,14 @@ def _(rid, params: dict) -> dict:
             return _db_unavailable_error(rid, code=5000)
 
         found = db.get_session(target)
+        current_session = db.get_session(str(params.get("current_session_id") or ""))
+        active_project_root = (current_session or {}).get("project_root")
+        if found and active_project_root and found.get("project_root") != active_project_root:
+            found = None
         if not found:
             found = db.get_session_by_title(target)
+            if found and active_project_root and found.get("project_root") != active_project_root:
+                found = None
             if found:
                 target = found["id"]
             elif is_truthy_value(params.get("lazy", False)) and _child_run_active(target):

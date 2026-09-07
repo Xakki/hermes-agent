@@ -297,6 +297,17 @@ def _workspace_key_clause(key: str) -> Tuple[str, List[str]]:
     )
 
 
+def _project_root_clause(project_root: str) -> Tuple[str, List[str]]:
+    """Match only sessions explicitly owned by one project root.
+
+    Legacy rows have NULL ``project_root`` and are intentionally excluded when
+    a project scope is requested; falling back to cwd here would leak history
+    from an unowned legacy row into an arbitrary project.
+    """
+    root = (project_root or "").strip().rstrip("/\\") or (project_root or "").strip()
+    return "s.project_root = ?", [root]
+
+
 def _collect_delegate_child_ids(conn, parent_ids: List[str]) -> List[str]:
     """Delegate-subagent ids to cascade-delete with *parent_ids*.
 
@@ -4058,6 +4069,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         cwd: str = None,
         profile_name: str = None,
         git_repo_root: str = None,
+        project_root: str = None,
         origin_json: str = None,
         display_name: str = None,
     ) -> None:
@@ -4102,10 +4114,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                 """INSERT INTO sessions (
                    id, source, user_id, session_key, chat_id, chat_type, thread_id,
                    model, model_config, system_prompt, system_prompt_hash,
-                   parent_session_id, cwd, profile_name, git_repo_root,
+                   parent_session_id, cwd, profile_name, git_repo_root, project_root,
                    origin_json, display_name, started_at
                 )
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
                        model = COALESCE(sessions.model, excluded.model),
                        model_config = CASE
@@ -4145,6 +4157,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                        cwd = COALESCE(sessions.cwd, excluded.cwd),
                        profile_name = COALESCE(sessions.profile_name, excluded.profile_name),
                        git_repo_root = COALESCE(sessions.git_repo_root, excluded.git_repo_root),
+                       project_root = COALESCE(sessions.project_root, excluded.project_root),
                        origin_json = COALESCE(sessions.origin_json, excluded.origin_json),
                        display_name = COALESCE(sessions.display_name, excluded.display_name)""",
                 (
@@ -4162,6 +4175,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                     cwd,
                     profile_name,
                     git_repo_root,
+                    project_root or git_repo_root or cwd,
                     origin_json,
                     display_name,
                     time.time(),
@@ -4177,6 +4191,9 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                                    WHERE p.id = sessions.parent_session_id)),
                            git_repo_root = COALESCE(sessions.git_repo_root,
                                            (SELECT p.git_repo_root FROM sessions p
+                                             WHERE p.id = sessions.parent_session_id)),
+                           project_root = COALESCE(sessions.project_root,
+                                           (SELECT p.project_root FROM sessions p
                                              WHERE p.id = sessions.parent_session_id)),
                            git_branch = COALESCE(sessions.git_branch,
                                         (SELECT p.git_branch FROM sessions p
@@ -7579,6 +7596,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         compact_rows: bool = False,
         include_pinned: bool = False,
         session_key: str = None,
+        project_root: str = None,
     ) -> List[Dict[str, Any]]:
         """List sessions with preview (first user message) and last active timestamp.
 
@@ -7666,6 +7684,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         if session_key:
             where_clauses.append("s.session_key = ?")
             params.append(session_key)
+        if project_root:
+            clause, clause_params = _project_root_clause(project_root)
+            where_clauses.append(clause)
+            params.extend(clause_params)
         if exclude_sources:
             placeholders = ",".join("?" for _ in exclude_sources)
             where_clauses.append(f"s.source NOT IN ({placeholders})")
@@ -9670,6 +9692,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         limit: int = 20,
         offset: int = 0,
         workspace_key: str = None,
+        project_root: str = None,
     ) -> List[Dict[str, Any]]:
         """List sessions, optionally filtered by source.
 
@@ -9698,6 +9721,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             ws_clause, ws_params = _workspace_key_clause(workspace_key)
             where_clauses.append(ws_clause)
             params.extend(ws_params)
+        if project_root:
+            clause, clause_params = _project_root_clause(project_root)
+            where_clauses.append(clause)
+            params.extend(clause_params)
         where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
         params.extend([limit, offset])
         with self._lock:

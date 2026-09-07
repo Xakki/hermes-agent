@@ -413,6 +413,7 @@ class SessionPortabilityMixin:
             "cwd",
             "git_branch",
             "git_repo_root",
+            "project_root",
             "billing_provider",
             "billing_base_url",
             "billing_mode",
@@ -579,7 +580,7 @@ class SessionPortabilityMixin:
                            parent_session_id, started_at, ended_at, end_reason,
                            message_count, tool_call_count, input_tokens, output_tokens,
                            cache_read_tokens, cache_write_tokens, reasoning_tokens,
-                           cwd, git_branch, git_repo_root,
+                           cwd, git_branch, git_repo_root, project_root,
                            billing_provider, billing_base_url, billing_mode,
                            estimated_cost_usd, actual_cost_usd, cost_status, cost_source,
                            pricing_version, title, api_call_count, archived
@@ -590,7 +591,7 @@ class SessionPortabilityMixin:
                            :end_reason, 0, 0, :input_tokens, :output_tokens,
                            :cache_read_tokens, :cache_write_tokens,
                            :reasoning_tokens, :cwd, :git_branch, :git_repo_root,
-                           :billing_provider, :billing_base_url, :billing_mode,
+                           :project_root, :billing_provider, :billing_base_url, :billing_mode,
                            :estimated_cost_usd, :actual_cost_usd, :cost_status,
                            :cost_source, :pricing_version, :title,
                            :api_call_count, :archived
@@ -619,6 +620,7 @@ class SessionPortabilityMixin:
                         "cwd": raw.get("cwd"),
                         "git_branch": raw.get("git_branch"),
                         "git_repo_root": raw.get("git_repo_root"),
+                        "project_root": raw.get("project_root") or raw.get("git_repo_root") or raw.get("cwd"),
                         "billing_provider": raw.get("billing_provider"),
                         "billing_base_url": raw.get("billing_base_url"),
                         "billing_mode": raw.get("billing_mode"),

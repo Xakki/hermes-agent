@@ -808,6 +808,14 @@ class SessionSchemaMixin:
         # WHERE clause references a column that doesn't exist yet).
         try:
             cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sessions_project_root "
+                "ON sessions(project_root)"
+            )
+        except sqlite3.OperationalError as exc:
+            logger.debug("idx_sessions_project_root create skipped: %s", exc)
+
+        try:
+            cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_messages_platform_msg_id "
                 "ON messages(session_id, platform_message_id) "
                 "WHERE platform_message_id IS NOT NULL"

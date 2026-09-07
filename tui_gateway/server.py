@@ -2891,13 +2891,20 @@ def _ensure_session_db_row(session: dict) -> None:
     if parent_session_id:
         model_config["_branched_from"] = parent_session_id
     try:
+        persisted_cwd = _persisted_session_cwd(session)
+        persisted_project_root = _git_common_repo_root_for_cwd(persisted_cwd) or persisted_cwd
+    except Exception:
+        persisted_cwd = _persisted_session_cwd(session)
+        persisted_project_root = persisted_cwd
+    try:
         db.create_session(
             key,
             source=_session_source(session),
             model=row_model,
             model_config=model_config or None,
             parent_session_id=parent_session_id,
-            cwd=_persisted_session_cwd(session),
+            cwd=persisted_cwd,
+            project_root=persisted_project_root,
             # Self-describing rows: aggregators that merge multiple profile DBs
             # into one list can't rely on which file a row came from alone. NULL
             # means the launch/default profile (matches run_agent's convention).
