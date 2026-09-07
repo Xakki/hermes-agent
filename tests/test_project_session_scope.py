@@ -34,3 +34,22 @@ def test_parent_session_inherits_project_root(tmp_path, monkeypatch):
         assert db.get_session("child")["project_root"] == "/work/a"
     finally:
         db.close()
+
+
+def test_legacy_import_without_project_root_stays_unowned(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    from hermes_state import SessionDB
+
+    db = SessionDB(db_path=Path(tmp_path) / "state.db")
+    try:
+        result = db.import_sessions([{
+            "id": "legacy-import",
+            "source": "cli",
+            "cwd": "/work/a",
+            "git_repo_root": "/work/a",
+            "messages": [],
+        }])
+        assert result["imported"] == 1
+        assert db.get_session("legacy-import")["project_root"] is None
+    finally:
+        db.close()

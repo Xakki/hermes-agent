@@ -27,9 +27,12 @@ class _StubDB:
         self.calls.append(kwargs)
         return list(self.rows)
 
+    def get_session(self, session_id):
+        return {"id": session_id, "project_root": "/work/a"} if session_id else None
+
 
 def _call(limit: int | None = None):
-    params: dict = {}
+    params: dict = {"current_session_id": "active-a"}
     if limit is not None:
         params["limit"] = limit
     return server.handle_request({
@@ -67,5 +70,46 @@ def test_session_list_surfaces_all_user_facing_sources(monkeypatch):
 
     # Only internal sub-agent runs stay hidden.
     assert "tool-1" not in ids
+
+
+def test_session_list_requires_project_context(monkeypatch):
+    db = _StubDB([])
+    monkeypatch.setattr(server, "_get_db", lambda: db)
+
+    response = server.handle_request({"id": "1", "method": "session.list", "params": {}})
+
+    assert response["error"]["code"] == 4008
+
+
+def test_session_list_passes_active_project_to_database(monkeypatch):
+    db = _StubDB([])
+    monkeypatch.setattr(server, "_get_db", lambda: db)
+
+    _call(limit=1)
+
+    assert db.calls[-1]["project_root"] == "/work/a"
+
+
+class _CrossProjectDB(_StubDB):
+    def get_session(self, session_id):
+        if session_id == "active-a":
+            return {"id": session_id, "project_root": "/work/a"}
+        return {"id": session_id, "project_root": "/work/b"}
+
+    def get_session_by_title(self, _target):
+        return None
+
+
+def test_session_resume_rejects_cross_project_target(monkeypatch):
+    db = _CrossProjectDB([])
+    monkeypatch.setattr(server, "_get_db", lambda: db)
+
+    response = server.handle_request({
+        "id": "1",
+        "method": "session.resume",
+        "params": {"current_session_id": "active-a", "session_id": "target-b"},
+    })
+
+    assert response["error"]["code"] == 4007
 
 

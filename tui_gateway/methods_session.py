@@ -175,8 +175,9 @@ def _(rid, params: dict) -> dict:
             # that goes stale whenever a new platform is added or a user names
             # their own source.
             deny = frozenset({"kanban", "tool"})
-            current = db.get_session(str(params.get("current_session_id") or ""))
-            project_root = (current or {}).get("project_root")
+            project_root = _active_project_root(params, db)
+            if not project_root:
+                return _err(rid, 4008, "project context required")
 
             limit = int(params.get("limit", 200) or 200)
             # Over-fetch modestly so per-source filtering doesn't leave us
@@ -237,8 +238,9 @@ def _(rid, params: dict) -> dict:
             return _ok(rid, {"session_id": None})
         try:
             deny = frozenset({"kanban", "tool"})
-            current = db.get_session(str(params.get("current_session_id") or ""))
-            project_root = (current or {}).get("project_root")
+            project_root = _active_project_root(params, db)
+            if not project_root:
+                return _ok(rid, {"session_id": None})
             # Over-fetch by a generous bounded amount so heavy sub-agent
             # users (lots of recent ``tool`` rows) don't get a false
             # "no eligible session" answer.  ``session.list`` uses a
@@ -344,13 +346,14 @@ def _(rid, params: dict) -> dict:
             return _db_unavailable_error(rid, code=5000)
 
         found = db.get_session(target)
-        current_session = db.get_session(str(params.get("current_session_id") or ""))
-        active_project_root = (current_session or {}).get("project_root")
-        if found and active_project_root and found.get("project_root") != active_project_root:
+        active_project_root = _active_project_root(params, db)
+        if not active_project_root:
+            return _err(rid, 4008, "project context required")
+        if found and found.get("project_root") != active_project_root:
             found = None
         if not found:
             found = db.get_session_by_title(target)
-            if found and active_project_root and found.get("project_root") != active_project_root:
+            if found and found.get("project_root") != active_project_root:
                 found = None
             if found:
                 target = found["id"]

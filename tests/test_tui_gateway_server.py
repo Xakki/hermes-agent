@@ -2552,7 +2552,7 @@ def test_session_resume_uses_parent_lineage_for_display(monkeypatch, omit_messag
 
     class FakeDB:
         def get_session(self, target):
-            return {"id": target}
+            return {"id": target, "project_root": "/work/a"}
 
         def reopen_session(self, target):
             captured["reopened"] = target
@@ -2598,7 +2598,7 @@ def test_session_resume_uses_parent_lineage_for_display(monkeypatch, omit_messag
     # _neuter_agent_prewarm_timer fixture; this test only asserts the
     # returned display history.
 
-    params = {"session_id": target}
+    params = {"session_id": target, "project_root": "/work/a"}
     if omit_messages:
         params["omit_messages"] = True
     resp = server.handle_request(
@@ -2813,7 +2813,7 @@ def test_lazy_child_watch_resume_serves_candidate_inclusive_display(monkeypatch,
     from hermes_state import SessionDB
 
     db = SessionDB(db_path=tmp_path / "state.db")
-    db.create_session("child1", source="tui")
+    db.create_session("child1", source="tui", project_root=str(tmp_path))
     db.append_message("child1", role="user", content="child prompt")
     db.append_message(
         "child1", role="assistant", content="child substantive answer",
@@ -2841,7 +2841,7 @@ def test_lazy_child_watch_resume_serves_candidate_inclusive_display(monkeypatch,
         {
             "id": "1",
             "method": "session.resume",
-            "params": {"session_id": "child1", "lazy": True},
+            "params": {"session_id": "child1", "lazy": True, "project_root": str(tmp_path)},
         }
     )
 
@@ -2865,13 +2865,15 @@ def test_session_resume_follows_compression_tip(monkeypatch, tmp_path):
 
     db = SessionDB(db_path=tmp_path / "state.db")
     base = int(time.time()) - 10_000
-    db.create_session("parent_root", source="tui")
+    db.create_session("parent_root", source="tui", project_root=str(tmp_path))
     db.append_message(
         "parent_root", role="user", content="pre-compression turn",
         timestamp=base + 10,
     )
     db.end_session("parent_root", "compression")
-    db.create_session("cont_tip", source="tui", parent_session_id="parent_root")
+    db.create_session(
+        "cont_tip", source="tui", parent_session_id="parent_root", project_root=str(tmp_path)
+    )
     db.append_message(
         "cont_tip", role="assistant", content="post-compression reply",
         timestamp=base + 110,
@@ -2911,7 +2913,7 @@ def test_session_resume_follows_compression_tip(monkeypatch, tmp_path):
         # resolved tip (captured["agent_session_id"]); the compression-tip
         # resolution itself runs before the build and is mode-agnostic.
         resp = server.handle_request(
-            {"id": "1", "method": "session.resume", "params": {"session_id": "parent_root", "eager_build": True}}
+            {"id": "1", "method": "session.resume", "params": {"session_id": "parent_root", "eager_build": True, "project_root": str(tmp_path)}}
         )
     finally:
         db.close()
@@ -2931,6 +2933,7 @@ def test_session_resume_passes_stored_runtime_to_agent(monkeypatch):
         def get_session(self, target):
             return {
                 "id": target,
+                "project_root": "/work/a",
                 "model": "gpt-5.4",
                 "billing_provider": "openai-codex",
                 "model_config": '{"reasoning_config":{"enabled":true,"effort":"high"},"service_tier":"priority","base_url":"https://custom.example/v1","api_mode":"chat_completions"}',
@@ -2971,7 +2974,7 @@ def test_session_resume_passes_stored_runtime_to_agent(monkeypatch):
     # overrides reach _make_agent, info comes from _session_info). The deferred
     # default restores the same overrides via _start_agent_build off-thread.
     resp = server.handle_request(
-        {"id": "1", "method": "session.resume", "params": {"session_id": "stored-session", "eager_build": True}}
+        {"id": "1", "method": "session.resume", "params": {"session_id": "stored-session", "eager_build": True, "project_root": "/work/a"}}
     )
 
     assert resp["result"]["info"] == {"model": "gpt-5.4", "provider": "openai-codex"}
@@ -3000,7 +3003,7 @@ def test_session_resume_profile_uses_profile_db_cwd(monkeypatch, tmp_path):
 
     class ProfileDB:
         def get_session(self, _target):
-            return {"id": target, "cwd": str(profile_cwd)}
+            return {"id": target, "cwd": str(profile_cwd), "project_root": "/work/a"}
 
         def get_session_by_title(self, _target):
             return None
@@ -3025,7 +3028,7 @@ def test_session_resume_profile_uses_profile_db_cwd(monkeypatch, tmp_path):
 
     class LaunchDB:
         def get_session(self, _target):
-            return {"id": target, "cwd": str(launch_cwd)}
+            return {"id": target, "cwd": str(launch_cwd), "project_root": "/work/a"}
 
         def update_session_cwd(self, *_args):
             captured["launch_update"] = True
@@ -3073,7 +3076,7 @@ def test_session_resume_profile_uses_profile_db_cwd(monkeypatch, tmp_path):
             {
                 "id": "1",
                 "method": "session.resume",
-                "params": {"session_id": target, "profile": "worker", "eager_build": True},
+                "params": {"session_id": target, "profile": "worker", "eager_build": True, "project_root": "/work/a"},
             }
         )
 
@@ -5706,7 +5709,7 @@ def test_ensure_session_db_row_persists_explicit_cwd(monkeypatch, tmp_path):
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, profile_name=None):
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, project_root=None, profile_name=None):
             created.append(
                 {"key": key, "source": source, "model": model, "model_config": model_config, "cwd": cwd}
             )
@@ -5727,7 +5730,7 @@ def test_ensure_session_db_row_persists_session_source(monkeypatch):
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, profile_name=None):
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, project_root=None, profile_name=None):
             created.append(
                 {"key": key, "source": source, "model": model, "model_config": model_config, "cwd": cwd}
             )
@@ -5752,7 +5755,7 @@ def test_ensure_session_db_row_records_a_terminal_workspace(monkeypatch, tmp_pat
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, profile_name=None):
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, project_root=None, profile_name=None):
             created.append(
                 {"key": key, "source": source, "model": model, "model_config": model_config, "cwd": cwd}
             )
@@ -5775,7 +5778,7 @@ def test_ensure_session_db_row_defaults_desktop_to_no_workspace(monkeypatch, tmp
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, profile_name=None):
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, project_root=None, profile_name=None):
             created.append(
                 {"key": key, "source": source, "model": model, "model_config": model_config, "cwd": cwd}
             )
@@ -5802,7 +5805,7 @@ def test_ensure_session_db_row_persists_session_model_override(monkeypatch):
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, profile_name=None):
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, project_root=None, profile_name=None):
             created.append(
                 {"key": key, "model": model, "model_config": model_config, "cwd": cwd}
             )
@@ -5834,7 +5837,7 @@ def test_ensure_session_db_row_no_override_uses_global(monkeypatch):
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, profile_name=None):
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, project_root=None, profile_name=None):
             created.append({"model": model, "model_config": model_config})
 
     monkeypatch.setattr(server, "_get_db", lambda: _FakeDB())
@@ -11831,7 +11834,7 @@ def test_session_list_honors_params_profile_opens_profile_db(monkeypatch, tmp_pa
         {
             "id": "1",
             "method": "session.list",
-            "params": {"profile": "mlperf", "limit": 5},
+            "params": {"profile": "mlperf", "limit": 5, "project_root": "/work/a"},
         }
     )
     assert "result" in resp, resp
@@ -11872,7 +11875,7 @@ def test_session_most_recent_honors_params_profile(monkeypatch, tmp_path):
         {
             "id": "1",
             "method": "session.most_recent",
-            "params": {"profile": "mlperf"},
+            "params": {"profile": "mlperf", "project_root": "/work/a"},
         }
     )
     assert resp["result"]["session_id"] == "ml-tip"
@@ -13164,7 +13167,7 @@ def test_session_most_recent_returns_first_non_denied(monkeypatch):
     """Drops `tool` rows like session.list does, returns the first hit."""
 
     class _DB:
-        def list_sessions_rich(self, *, source=None, limit=200, order_by_last_active=False, compact_rows=False):
+        def list_sessions_rich(self, *, source=None, limit=200, order_by_last_active=False, compact_rows=False, project_root=None):
             return [
                 {"id": "tool-1", "source": "tool", "title": "noise", "started_at": 100},
                 {"id": "tui-1", "source": "tui", "title": "real", "started_at": 99},
@@ -13173,7 +13176,7 @@ def test_session_most_recent_returns_first_non_denied(monkeypatch):
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
 
     resp = server.handle_request(
-        {"id": "1", "method": "session.most_recent", "params": {}}
+        {"id": "1", "method": "session.most_recent", "params": {"project_root": "/work/a"}}
     )
 
     assert resp["result"]["session_id"] == "tui-1"
@@ -13183,7 +13186,7 @@ def test_session_most_recent_returns_first_non_denied(monkeypatch):
 
 def test_session_most_recent_returns_null_when_only_tool_rows(monkeypatch):
     class _DB:
-        def list_sessions_rich(self, *, source=None, limit=200, order_by_last_active=False, compact_rows=False):
+        def list_sessions_rich(self, *, source=None, limit=200, order_by_last_active=False, compact_rows=False, project_root=None):
             return [{"id": "tool-1", "source": "tool", "started_at": 1}]
 
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
@@ -13201,7 +13204,7 @@ def test_session_most_recent_folds_db_exception_into_null_result(monkeypatch):
     'no answer' (Copilot review on #17130)."""
 
     class _BrokenDB:
-        def list_sessions_rich(self, *, source=None, limit=200, order_by_last_active=False, compact_rows=False):
+        def list_sessions_rich(self, *, source=None, limit=200, order_by_last_active=False, compact_rows=False, project_root=None):
             raise RuntimeError("db locked")
 
     monkeypatch.setattr(server, "_get_db", lambda: _BrokenDB())

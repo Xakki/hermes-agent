@@ -147,6 +147,20 @@ _pending_prompt_payloads: dict[str, tuple[str, dict]] = {}
 _answers: dict[str, str] = {}
 _db = None
 _db_error: str | None = None
+
+
+def _active_project_root(params: dict, db) -> str | None:
+    """Resolve the project authority for a session read, or deny it."""
+    explicit = str(params.get("project_root") or "").strip()
+    if explicit:
+        return explicit
+    current_id = str(params.get("current_session_id") or "").strip()
+    if not current_id:
+        return None
+    current = db.get_session(current_id)
+    return str((current or {}).get("project_root") or "").strip() or None
+
+
 _stdout_lock = threading.Lock()
 _cfg_lock = threading.Lock()
 _sessions_lock = threading.RLock()  # reentrant: _close_session_by_id may run under callers that already hold it

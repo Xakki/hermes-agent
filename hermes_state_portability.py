@@ -620,7 +620,7 @@ class SessionPortabilityMixin:
                         "cwd": raw.get("cwd"),
                         "git_branch": raw.get("git_branch"),
                         "git_repo_root": raw.get("git_repo_root"),
-                        "project_root": raw.get("project_root") or raw.get("git_repo_root") or raw.get("cwd"),
+                        "project_root": raw.get("project_root"),
                         "billing_provider": raw.get("billing_provider"),
                         "billing_base_url": raw.get("billing_base_url"),
                         "billing_mode": raw.get("billing_mode"),
