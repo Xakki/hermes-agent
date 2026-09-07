@@ -164,27 +164,27 @@ def _session_project_root(session: dict | None) -> str | None:
     # The durable project root is authoritative.  Deriving it from cwd is only
     # a bootstrap fallback for a new in-memory session before its DB row exists.
     return _canonical_project_root(
-        session.get("project_root") or session.get("cwd")
+        session.get("project_root") or session.get("cwd") or os.getcwd()
     )
 
 
 def _active_project_root(params: dict, db) -> str | None:
-    """Resolve project authority without trusting a caller-selected path.
+    """Resolve project authority from the server-owned request context.
 
-    A current session row is server-owned state.  Before one exists, the only
-    safe bootstrap authority is this gateway process's launch directory; an RPC
-    ``project_root`` is never an authority source.
+    ``current_session_id`` is only a lookup hint.  A durable row alone is not
+    proof that the caller owns it: the id must resolve to the exact live
+    session bound to this request's transport.  The runtime record is the
+    equivalent authority while a turn is executing.  An unbound or spoofed id
+    fails closed; ``project_root`` is never an authority source.
     """
+    runtime_session = _current_runtime_session_record.get()
+    if runtime_session is not None:
+        return _session_project_root(runtime_session)
+
     current_id = str(params.get("current_session_id") or "").strip()
     if current_id:
-        current = (
-            db.get_session(current_id)
-            if db is not None and hasattr(db, "get_session")
-            else None
-        )
-        if current is None:
-            current = _sessions.get(current_id)
-        return _canonical_project_root((current or {}).get("project_root"))
+        _transport, current = _current_session_steer_authority(current_id)
+        return _session_project_root(current) if current is not None else None
     return _canonical_project_root(os.getcwd())
 
 
@@ -12235,7 +12235,8 @@ def _project_tree_row(r: dict) -> dict:
 
 
 def _project_tree_inputs(
-    db, session_limit: int, *, include_discovered: bool
+    db, session_limit: int, *, include_discovered: bool,
+    active_project_root: str | None = None,
 ) -> tuple[list[dict], list[dict], list[dict], str | None]:
     """Gather (sessions, projects, discovered_repos, active_id) for build_tree.
 
@@ -12258,6 +12259,11 @@ def _project_tree_inputs(
         compact_rows=True,
     )
     sessions = [_project_tree_row(r) for r in rows]
+    if active_project_root:
+        sessions = [
+            session for session in sessions
+            if _canonical_project_root(session.get("project_root")) == active_project_root
+        ]
     # Parallel-warm the git cache so build_tree's resolver reads it instead of
     # cold-probing each cwd in sequence (matters on the drill-in path, which
     # skips the discovery warm-up below).
@@ -12275,6 +12281,14 @@ def _project_tree_inputs(
                 preserve_unversioned=_repo_discovery_policy_is_default(policy),
             )
         projects = [p.to_dict() for p in pdb.list_projects(conn)]
+        if active_project_root:
+            projects = [
+                project for project in projects
+                if any(
+                    _canonical_project_root(folder.get("path")) == active_project_root
+                    for folder in project.get("folders") or []
+                )
+            ]
         active_id = pdb.get_active_id(conn)
         # backfill stays off the hot tree path — grouping uses the live resolver.
         discovered = (
@@ -12313,14 +12327,16 @@ def _dir_exists_cached(path: str) -> bool:
 
 
 def _build_project_tree(
-    db, *, preview_limit: int, hydrate: bool, session_limit: int, include_discovered: bool
+    db, *, preview_limit: int, hydrate: bool, session_limit: int,
+    include_discovered: bool, active_project_root: str | None = None,
 ) -> tuple[dict, str | None]:
     """Gather inputs and run the one authoritative builder. Returns (tree, active_id)."""
     from tui_gateway import project_tree
 
     _DIR_EXISTS_CACHE.clear()
     sessions, projects, discovered, active_id = _project_tree_inputs(
-        db, session_limit, include_discovered=include_discovered
+        db, session_limit, include_discovered=include_discovered,
+        active_project_root=active_project_root,
     )
     # build_tree resolves every declared project folder and every discovered
     # repo root too, and those paths are not session cwds — without this they

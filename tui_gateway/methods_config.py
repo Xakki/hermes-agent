@@ -117,12 +117,16 @@ def _(rid, params: dict) -> dict:
         if db is None:
             return _ok(rid, {"projects": [], "active_id": None, "scoped_session_ids": []})
 
+        active_project_root = _active_project_root(params, db)
+        if not active_project_root:
+            return _err(rid, 4008, "project context required")
         tree, active_id = _build_project_tree(
             db,
             preview_limit=int(params.get("preview_limit") or 3),
             hydrate=False,
             session_limit=int(params.get("session_limit") or 2000),
             include_discovered=True,
+            active_project_root=active_project_root,
         )
         return _ok(
             rid,
@@ -146,11 +150,18 @@ def _(rid, params: dict) -> dict:
         if db is None:
             return _ok(rid, {"project": None})
 
-        # Drill-in only needs the entered project (which has sessions), so skip
-        # the zero-session discovery tier entirely.
+        active_project_root = _active_project_root(params, db)
+        if not active_project_root:
+            return _err(rid, 4008, "project context required")
+        # Build only the authoritative project scope.  Never use the caller's
+        # project_id to widen the session set.
         tree, _active = _build_project_tree(
-            db, preview_limit=0, hydrate=True, session_limit=int(params.get("session_limit") or 5000),
+            db,
+            preview_limit=0,
+            hydrate=True,
+            session_limit=int(params.get("session_limit") or 5000),
             include_discovered=False,
+            active_project_root=active_project_root,
         )
         proj = next((p for p in tree["projects"] if p["id"] == project_id), None)
         return _ok(rid, {"project": proj})

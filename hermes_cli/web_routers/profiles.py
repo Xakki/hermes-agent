@@ -15,6 +15,7 @@ late-binding seam in :mod:`hermes_cli.web_deps` so tests that
 import asyncio  # noqa: F401 — used by handlers
 import json
 import logging
+import os
 import re
 import subprocess  # noqa: F401
 import sys  # noqa: F401
@@ -79,6 +80,22 @@ _write_profile_mcp_servers = late("_write_profile_mcp_servers")
 _write_profile_model = late("_write_profile_model")
 
 
+def _trusted_active_project_root() -> str:
+    """Return the server-owned project scope for aggregate HTTP reads."""
+    from tui_gateway.server import _canonical_project_root
+
+    root = _canonical_project_root(os.getcwd())
+    if not root:
+        raise HTTPException(status_code=403, detail="project context required")
+    return root
+
+
+def _row_in_project(row: dict, project_root: str) -> bool:
+    from tui_gateway.server import _canonical_project_root
+
+    return _canonical_project_root(row.get("project_root")) == project_root
+
+
 @sessions_router.get("/api/profiles/sessions")
 def get_profiles_sessions(
     # ``le=500`` caps the per-request page size (idea from #39200) — this
@@ -114,6 +131,7 @@ def get_profiles_sessions(
         raise HTTPException(status_code=400, detail="archived must be one of: exclude, only, include")
     if order not in ("created", "recent"):
         raise HTTPException(status_code=400, detail="order must be one of: created, recent")
+    active_project_root = _trusted_active_project_root()
 
     from hermes_cli import profiles as profiles_mod
 
@@ -168,20 +186,22 @@ def get_profiles_sessions(
             errors.append({"profile": name, "error": str(exc)})
             continue
         try:
-            rows = db.list_sessions_rich(
-                source=source_filter,
-                sources=source_list or None,
-                exclude_sources=exclude_list or None,
-                limit=per_profile,
-                offset=0,
-                min_message_count=min_message_count,
-                include_archived=include_archived,
-                archived_only=archived_only,
-                order_by_last_active=order == "recent",
-                # Same SQL-level blob skip as /api/sessions (see above).
-                compact_rows=not full,
-                include_pinned=True,
-            )
+            rows = [
+                row for row in db.list_sessions_rich(
+                    source=source_filter,
+                    sources=source_list or None,
+                    exclude_sources=exclude_list or None,
+                    limit=per_profile,
+                    offset=0,
+                    min_message_count=min_message_count,
+                    include_archived=include_archived,
+                    archived_only=archived_only,
+                    order_by_last_active=order == "recent",
+                    compact_rows=not full,
+                    include_pinned=True,
+                )
+                if _row_in_project(row, active_project_root)
+            ]
             profile_total = db.session_count(
                 source=source_filter,
                 sources=source_list or None,
@@ -190,6 +210,7 @@ def get_profiles_sessions(
                 include_archived=include_archived,
                 archived_only=archived_only,
                 exclude_children=True,
+                project_root=active_project_root,
             )
             total += profile_total
             profile_totals[name] = profile_total
@@ -261,6 +282,7 @@ def get_profiles_sessions_sidebar(
     desktop's per-slice calls.
     """
     from hermes_cli import profiles as profiles_mod
+    active_project_root = _trusted_active_project_root()
 
     try:
         infos = profiles_mod.list_profiles()
@@ -302,20 +324,21 @@ def get_profiles_sessions_sidebar(
         return rows
 
     def _slice(db, *, source=None, exclude=None, cap):
-        return db.list_sessions_rich(
-            source=source,
-            exclude_sources=exclude or None,
-            limit=cap,
-            offset=0,
-            min_message_count=1,
-            include_archived=False,
-            archived_only=False,
-            order_by_last_active=True,
-            compact_rows=True,
-            # A pinned conversation must reach the sidebar even when it has
-            # aged past the window — otherwise its Pinned row renders empty.
-            include_pinned=True,
-        )
+        return [
+            row for row in db.list_sessions_rich(
+                source=source,
+                exclude_sources=exclude or None,
+                limit=cap,
+                offset=0,
+                min_message_count=1,
+                include_archived=False,
+                archived_only=False,
+                order_by_last_active=True,
+                compact_rows=True,
+                include_pinned=True,
+            )
+            if _row_in_project(row, active_project_root)
+        ]
 
     for name, home in targets:
         if recents_scope != "all" and name != recents_scope:
@@ -479,6 +502,8 @@ def get_profiles_projects_tree(preview_limit: int = 3, session_limit: int = 2000
     from hermes_constants import reset_hermes_home_override, set_hermes_home_override
     from tui_gateway import server as gateway_server
 
+    active_project_root = _trusted_active_project_root()
+
     try:
         targets: List[Tuple[str, Path]] = [
             (info.name, info.path) for info in profiles_mod.list_profiles()
@@ -512,6 +537,7 @@ def get_profiles_projects_tree(preview_limit: int = 3, session_limit: int = 2000
                 hydrate=False,
                 session_limit=session_limit,
                 include_discovered=False,
+                active_project_root=active_project_root,
             )
             _merge_profile_tree(merged, tree["projects"], name, preview_limit)
             scoped_session_ids.extend(tree["scoped_session_ids"])
@@ -570,6 +596,7 @@ def post_profiles_sessions_pull_requests(body: SessionPrScanBody):
     from hermes_cli import profiles as profiles_mod
 
     wanted = list(dict.fromkeys(s for s in (body.ids or []) if s))[:2000]
+    active_project_root = _trusted_active_project_root()
     if not wanted:
         return {"pull_requests": {}, "scanned": []}
 
@@ -592,7 +619,12 @@ def post_profiles_sessions_pull_requests(body: SessionPrScanBody):
             _warn_profile_read_error(name, exc)
             continue
         try:
-            for pr in db.find_pr_url_messages(wanted):
+            scoped_wanted = [
+                session_id for session_id in wanted
+                if (row := db.get_session(session_id))
+                and _row_in_project(row, active_project_root)
+            ]
+            for pr in db.find_pr_url_messages(scoped_wanted):
                 parsed = _pr_url_from_tool_output(pr["content"])
                 if parsed:
                     number, url = parsed

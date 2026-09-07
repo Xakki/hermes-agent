@@ -10,6 +10,28 @@ def test_tui_bootstrap_ignores_caller_project_root(monkeypatch):
     assert server._active_project_root({"project_root": "/attacker"}, None) == "/trusted"
 
 
+def test_tui_current_session_id_requires_transport_bound_session(monkeypatch):
+    from tui_gateway import server
+    from tui_gateway.transport import bind_transport, reset_transport
+
+    class _DB:
+        def get_session(self, session_id):
+            return {"project_root": "/attacker"} if session_id == "spoofed" else None
+
+    transport = object()
+    previous = dict(server._sessions)
+    server._sessions.clear()
+    server._sessions["real"] = {"project_root": "/trusted", "transport": transport}
+    token = bind_transport(transport)
+    try:
+        assert server._active_project_root({"current_session_id": "spoofed"}, _DB()) is None
+        assert server._active_project_root({"current_session_id": "real"}, _DB()) == "/trusted"
+    finally:
+        reset_transport(token)
+        server._sessions.clear()
+        server._sessions.update(previous)
+
+
 def test_session_empty_aggregates_are_project_scoped(tmp_path):
     from hermes_state import SessionDB
 
