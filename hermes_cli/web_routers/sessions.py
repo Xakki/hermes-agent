@@ -503,7 +503,12 @@ async def import_sessions_endpoint(request: Request):
         raise HTTPException(status_code=400, detail="Invalid session import payload") from exc
 
     try:
-        result = await asyncio.to_thread(_import_sessions_for_profile, body.profile, body.sessions)
+        project_root = _active_project_root(body.profile)
+        if not project_root:
+            raise ValueError("project context required")
+        result = await asyncio.to_thread(
+            _import_sessions_for_profile, body.profile, body.sessions, project_root
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -523,7 +528,10 @@ async def count_empty_sessions_endpoint(profile: Optional[str] = None):
     def _count() -> int:
         db = _open_session_db_for_profile(profile, read_only=True)
         try:
-            return db.count_empty_sessions()
+            project_root = _active_project_root(profile)
+            if not project_root:
+                raise ValueError("project context required")
+            return db.count_empty_sessions(project_root=project_root)
         finally:
             db.close()
 
@@ -553,7 +561,10 @@ async def delete_empty_sessions_endpoint(profile: Optional[str] = None):
     def _delete() -> int:
         db = _open_session_db_for_profile(profile, read_only=False)
         try:
-            return db.delete_empty_sessions()
+            project_root = _active_project_root(profile)
+            if not project_root:
+                raise ValueError("project context required")
+            return db.delete_empty_sessions(project_root=project_root)
         finally:
             db.close()
 
@@ -570,15 +581,19 @@ async def get_session_stats(profile: Optional[str] = None):
     """
     db = _open_session_db_for_profile(profile, read_only=True)
     try:
-        total = db.session_count(include_archived=True)
-        active_store = db.session_count(include_archived=False)
-        archived = db.session_count(archived_only=True)
-        messages = db.message_count()
+        project_root = _active_project_root(profile)
+        if not project_root:
+            raise HTTPException(status_code=400, detail="project context required")
+        total = db.session_count(include_archived=True, project_root=project_root)
+        active_store = db.session_count(include_archived=False, project_root=project_root)
+        archived = db.session_count(archived_only=True, project_root=project_root)
+        messages = db.message_count(project_root=project_root)
         by_source: Dict[str, int] = {}
         try:
             by_source = db.session_count_by_source(
                 include_archived=True,
                 exclude_children=True,
+                project_root=project_root,
             )
         except Exception:
             pass

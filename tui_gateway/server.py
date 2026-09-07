@@ -169,7 +169,12 @@ def _session_project_root(session: dict | None) -> str | None:
 
 
 def _active_project_root(params: dict, db) -> str | None:
-    """Resolve server-owned project authority; client roots are only bootstrap hints."""
+    """Resolve project authority without trusting a caller-selected path.
+
+    A current session row is server-owned state.  Before one exists, the only
+    safe bootstrap authority is this gateway process's launch directory; an RPC
+    ``project_root`` is never an authority source.
+    """
     current_id = str(params.get("current_session_id") or "").strip()
     if current_id:
         current = (
@@ -180,8 +185,7 @@ def _active_project_root(params: dict, db) -> str | None:
         if current is None:
             current = _sessions.get(current_id)
         return _canonical_project_root((current or {}).get("project_root"))
-    explicit = str(params.get("project_root") or "").strip()
-    return _canonical_project_root(explicit) if explicit else None
+    return _canonical_project_root(os.getcwd())
 
 
 _stdout_lock = threading.Lock()
@@ -2420,9 +2424,21 @@ def _start_agent_build(sid: str, session: dict) -> None:
     build_thread.start()
 
 
+def _session_scope_error(params, session, rid):
+    """Reject unowned or cross-project live-session access."""
+    with _profile_db(params) as db:
+        active_root = _active_project_root(params, db)
+    if not active_root or _session_project_root(session) != active_root:
+        return _err(rid, 4008, "session is outside the active project")
+    return None
+
+
 def _sess_nowait(params, rid):
     s = _sessions.get(params.get("session_id") or "")
-    return (s, None) if s else (None, _err(rid, 4001, "session not found"))
+    if not s:
+        return None, _err(rid, 4001, "session not found")
+    scope_error = _session_scope_error(params, s, rid)
+    return (None, scope_error) if scope_error else (s, None)
 
 
 def _sess(params, rid):

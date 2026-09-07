@@ -1034,6 +1034,12 @@ def _(rid, params: dict) -> dict:
             sessions_dir = Path(profile_home) / "sessions"
         else:
             sessions_dir = get_hermes_home() / "sessions"
+        active_root = _active_project_root(params, db)
+        stored = db.get_session(target)
+        if not active_root or not stored or not stored.get("project_root"):
+            return _err(rid, 4008, "session is outside the active project")
+        if _canonical_project_root(stored["project_root"]) != active_root:
+            return _err(rid, 4008, "session is outside the active project")
         try:
             deleted = db.delete_session(target, sessions_dir=sessions_dir)
         except Exception as e:
@@ -1213,6 +1219,10 @@ def _(rid, params: dict) -> dict:
 
     # Optional: inherit the live session's model (no error if absent).
     session = _sessions.get(params.get("session_id") or "")
+    if session:
+        scope_error = _session_scope_error(params, session, rid)
+        if scope_error:
+            return scope_error
     main_runtime = _main_runtime_from_agent(session.get("agent")) if session else None
 
     try:

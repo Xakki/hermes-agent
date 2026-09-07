@@ -373,7 +373,9 @@ class SessionPortabilityMixin:
             item["session_id"] = session_id
         return item
 
-    def import_sessions(self, sessions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def import_sessions(
+        self, sessions: List[Dict[str, Any]], project_root: str = None
+    ) -> Dict[str, Any]:
         """Import sessions exported by :meth:`export_session` or ``export_all``.
 
         Existing session IDs are skipped. Imported child sessions keep their
@@ -502,6 +504,11 @@ class SessionPortabilityMixin:
                     clean_session[field] = self._import_text_or_none(
                         clean_session.get(field), field
                     )
+                # Web imports must never preserve caller-selected ownership.
+                # A scoped import binds every accepted row to its trusted target;
+                # unscoped library imports retain their historical behavior.
+                if project_root:
+                    clean_session["project_root"] = project_root
 
                 clean_messages: List[Dict[str, Any]] = []
                 for message_index, message in enumerate(messages):

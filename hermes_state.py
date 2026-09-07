@@ -9828,6 +9828,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         include_archived: bool = False,
         archived_only: bool = False,
         exclude_children: bool = False,
+        project_root: str = None,
     ) -> Dict[str, int]:
         """Return a ``{source: count}`` dict via a single ``GROUP BY`` query.
 
@@ -9848,6 +9849,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         if exclude_children:
             where_clauses.append(_LISTABLE_CHILD_SQL)
             where_clauses.append(f"{_delegate_from_json('s.model_config')} IS NULL")
+        if project_root:
+            clause, clause_params = _project_root_clause(project_root)
+            where_clauses.append(clause)
+            params.extend(clause_params)
         if archived_only:
             where_clauses.append("s.archived = 1")
         elif not include_archived:
@@ -9867,10 +9872,21 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             ).fetchall()
         return {str(row["source"]): int(row["count"] or 0) for row in rows}
 
-    def message_count(self, session_id: str = None) -> int:
-        """Count messages, optionally for a specific session."""
+    def message_count(self, session_id: str = None, project_root: str = None) -> int:
+        """Count messages, optionally for a specific owned project."""
         with self._lock:
-            if session_id:
+            if project_root:
+                clause, params = _project_root_clause(project_root)
+                session_filter = clause.replace("s.", "")
+                query = (
+                    "SELECT COUNT(*) FROM messages m JOIN sessions s ON s.id = m.session_id "
+                    f"WHERE {session_filter}"
+                )
+                if session_id:
+                    query += " AND m.session_id = ?"
+                    params.append(session_id)
+                cursor = self._conn.execute(query, params)
+            elif session_id:
                 cursor = self._conn.execute(
                     "SELECT COUNT(*) FROM messages WHERE session_id = ?", (session_id,)
                 )
@@ -10210,7 +10226,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             self._remove_session_files(sessions_dir, sid)
         return count
 
-    def count_empty_sessions(self) -> int:
+    def count_empty_sessions(self, project_root: str = None) -> int:
         """Return the count of empty, non-active, non-archived sessions.
 
         "Empty" = ``message_count = 0`` AND the session has ended
@@ -10232,12 +10248,15 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                 "WHERE message_count = 0 "
                 "AND ended_at IS NOT NULL "
                 "AND archived = 0"
+                + (" AND project_root = ?" if project_root else ""),
+                (project_root,) if project_root else (),
             )
             return cursor.fetchone()[0]
 
     def delete_empty_sessions(
         self,
         sessions_dir: Optional[Path] = None,
+        project_root: str = None,
     ) -> int:
         """Delete every empty, ended, non-archived session.
 
@@ -10272,6 +10291,8 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                 "WHERE message_count = 0 "
                 "AND ended_at IS NOT NULL "
                 "AND archived = 0"
+                + (" AND project_root = ?" if project_root else ""),
+                (project_root,) if project_root else (),
             )
             session_ids = {row["id"] for row in cursor.fetchall()}
 

@@ -11355,10 +11355,14 @@ async def _read_session_import_body(request: Request) -> bytes:
     return bytes(body)
 
 
-def _import_sessions_for_profile(profile: Optional[str], sessions: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _import_sessions_for_profile(
+    profile: Optional[str], sessions: List[Dict[str, Any]], project_root: str
+) -> Dict[str, Any]:
+    if not project_root:
+        raise ValueError("project context required")
     db = _open_session_db_for_profile(profile, read_only=False)
     try:
-        return db.import_sessions(sessions)
+        return db.import_sessions(sessions, project_root=project_root)
     finally:
         db.close()
 
