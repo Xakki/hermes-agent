@@ -54,6 +54,22 @@ describe('aggregateSubagentTokens', () => {
     ])
   })
 
+  it('sanitizes invalid input and output values independently', () => {
+    const items = [
+      makeItem({ id: 'negative-input', index: 0, inputTokens: -1, model: ' model-a ', outputTokens: 10 }),
+      makeItem({ id: 'nan-output', index: 1, inputTokens: 20, model: 'model-a', outputTokens: Number.NaN }),
+      makeItem({ id: 'infinite-input', index: 2, inputTokens: Number.POSITIVE_INFINITY, model: 'model-a', outputTokens: 30 }),
+      makeItem({ id: 'negative-output', index: 3, inputTokens: 40, model: 'model-a', outputTokens: Number.NEGATIVE_INFINITY }),
+      makeItem({ id: 'whitespace-model', index: 4, inputTokens: 5, model: '   ', outputTokens: 6 })
+    ]
+
+    expect(aggregateSubagentTokens(items)).toEqual([
+      { inputTokens: 60, model: 'model-a', outputTokens: 40, sessionCount: 4 },
+      { inputTokens: 5, model: 'unknown model', outputTokens: 6, sessionCount: 1 }
+    ])
+    expect(formatSubagentTokenTotal(items)).toBe('Σ 111 tok')
+  })
+
   it('formats a compact total from input and output tokens', () => {
     const items = [makeItem({ id: 'a', index: 0, inputTokens: 1000, outputTokens: 700 })]
 

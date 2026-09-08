@@ -1,7 +1,8 @@
+import { stringWidth } from '@hermes/ink'
 import { describe, expect, it } from 'vitest'
 
 import type { StatusBarSegments } from '../components/appChrome.js'
-import { busyIndicatorWidth, statusBarSegments, statusRuleWidths } from '../components/appChrome.js'
+import { busyIndicatorWidth, statusBarSegments, statusHudFits, statusRuleWidths } from '../components/appChrome.js'
 
 describe('statusRuleWidths', () => {
   it('keeps the status rule within the terminal width', () => {
@@ -101,6 +102,16 @@ describe('statusBarSegments', () => {
       expect(visible).toBeLessThanOrEqual(prevCount)
       prevCount = visible
     }
+  })
+})
+
+describe('statusHudFits', () => {
+  it('hides the dynamic spawn HUD when the remaining tail is too narrow', () => {
+    const label = 'd2/3 ⚡2/4+1 Σ 1.2k tok'
+    const required = stringWidth(` │ ${label}`)
+
+    expect(statusHudFits(required, label)).toBe(true)
+    expect(statusHudFits(required - 1, label)).toBe(false)
   })
 })
 

@@ -313,7 +313,11 @@ export function statusBarSegments(cols: number): StatusBarSegments {
   }
 }
 
-function SpawnHud({ t }: { t: Theme }) {
+export function statusHudFits(availableWidth: number, label: string, prefix = ' │ '): boolean {
+  return availableWidth >= stringWidth(`${prefix}${label}`)
+}
+
+function SpawnHud({ maxWidth, t }: { maxWidth?: number; t: Theme }) {
   // Tight HUD that only appears when the session is actually fanning out.
   // Colour escalates to warn/error as depth or concurrency approaches the cap.
   const delegation = useStore($delegationState)
@@ -370,12 +374,17 @@ function SpawnHud({ t }: { t: Theme }) {
     pieces.push(tokenTotal)
   }
 
+  const label = pieces.join(' ')
   const atCap = depthRatio >= 1 || concRatio >= 1
+
+  if (maxWidth != null && !statusHudFits(maxWidth, label, atCap ? ' │ ⚠ ' : undefined)) {
+    return null
+  }
 
   return (
     <Text color={color}>
       {atCap ? ' │ ⚠ ' : ' │ '}
-      {pieces.join(' ')}
+      {label}
     </Text>
   )
 }
@@ -755,10 +764,9 @@ export function StatusRule({
             {devCreditsText}
           </Text>
         ) : null}
-        {/* SpawnHud isn't part of the tail budget (its width is dynamic), so it
-            renders last — any overflow truncates the HUD itself rather than the
-            budgeted segments before it. It self-hides when no delegation runs. */}
-        <SpawnHud t={t} />
+        {/* SpawnHud is the lowest-priority tail segment. It receives the
+            remaining budget and self-hides when the dynamic label cannot fit. */}
+        <SpawnHud maxWidth={tailBudget} t={t} />
       </Box>
 
       {rightWidth > 0 ? (
