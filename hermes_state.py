@@ -7548,7 +7548,13 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
     )
     _session_compact_cols_sql: Optional[str] = None
 
-    def usage_totals(self, *, min_message_count: int = 1, include_archived: bool = False) -> Dict[str, float]:
+    def usage_totals(
+        self,
+        *,
+        min_message_count: int = 1,
+        include_archived: bool = False,
+        project_root: Optional[str] = None,
+    ) -> Dict[str, float]:
         """Tokens and spend across this store, as one aggregate.
 
         The sidebar shows a profile's totals beside a page of its sessions, so
@@ -7563,6 +7569,9 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         params: List[Any] = [min_message_count]
         if not include_archived:
             where.append("COALESCE(archived, 0) = 0")
+        if project_root is not None:
+            where.append("project_root = ?")
+            params.append(project_root)
 
         with self._read_ctx() as conn:
             row = conn.execute(

@@ -65,3 +65,27 @@ def test_scoped_import_rebinds_caller_selected_project(tmp_path):
         assert db.get_session("imported")["project_root"] == "/trusted"
     finally:
         db.close()
+
+
+def test_usage_totals_can_be_scoped_to_project(tmp_path):
+    from hermes_state import SessionDB
+
+    db = SessionDB(db_path=tmp_path / "state.db")
+    try:
+        for session_id, root, tokens in (("owned", "/trusted", 3), ("foreign", "/other", 99)):
+            db.create_session(session_id, source="cli", project_root=root)
+            with db._lock:
+                db._conn.execute(
+                    "UPDATE sessions SET message_count = 1, input_tokens = ? WHERE id = ?",
+                    (tokens, session_id),
+                )
+                db._conn.commit()
+        assert db.usage_totals(project_root="/trusted")["tokens"] == 3
+    finally:
+        db.close()
+
+
+def test_project_tree_projection_preserves_durable_root():
+    from tui_gateway.server import _project_tree_row
+
+    assert _project_tree_row({"id": "s", "project_root": "/trusted"})["project_root"] == "/trusted"

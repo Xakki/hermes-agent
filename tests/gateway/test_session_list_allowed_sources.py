@@ -55,6 +55,7 @@ def test_session_list_surfaces_all_user_facing_sources(monkeypatch):
     ]
     db = _StubDB(rows)
     monkeypatch.setattr(server, "_get_db", lambda: db)
+    monkeypatch.setattr(server, "_active_project_root", lambda params, db: "/work/a")
 
     resp = _call(limit=10)
     ids = [s["id"] for s in resp["result"]["sessions"]]
@@ -72,18 +73,19 @@ def test_session_list_surfaces_all_user_facing_sources(monkeypatch):
     assert "tool-1" not in ids
 
 
-def test_session_list_requires_project_context(monkeypatch):
+def test_session_list_uses_server_owned_project_context(monkeypatch):
     db = _StubDB([])
     monkeypatch.setattr(server, "_get_db", lambda: db)
 
     response = server.handle_request({"id": "1", "method": "session.list", "params": {}})
 
-    assert response["error"]["code"] == 4008
+    assert response["result"]["sessions"] == []
 
 
 def test_session_list_passes_active_project_to_database(monkeypatch):
     db = _StubDB([])
     monkeypatch.setattr(server, "_get_db", lambda: db)
+    monkeypatch.setattr(server, "_active_project_root", lambda params, db: "/work/a")
 
     _call(limit=1)
 
@@ -110,6 +112,6 @@ def test_session_resume_rejects_cross_project_target(monkeypatch):
         "params": {"current_session_id": "active-a", "session_id": "target-b"},
     })
 
-    assert response["error"]["code"] == 4007
+    assert response["error"]["code"] == 4008
 
 

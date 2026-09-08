@@ -893,11 +893,22 @@ def _(rid, params: dict) -> dict:
     with _profile_db(params) as db:
         if db is None:
             return _db_unavailable_error(rid, code=5007)
+        active_root = _active_project_root(params, db)
+        if not active_root:
+            return _err(rid, 4008, "project context required")
         # A brand-new draft has no persisted row yet; the live re-home below
         # still applies and the row inherits the cwd when it is first written.
-        row_exists = bool(db.get_session(target))
+        durable = db.get_session(target)
+        row_exists = bool(durable)
         if not row_exists and live is None:
             return _err(rid, 4007, "session not found")
+        target_root = (
+            _canonical_project_root(durable.get("project_root"))
+            if durable is not None
+            else _session_project_root(live)
+        )
+        if target_root != active_root:
+            return _err(rid, 4008, "session is outside the active project")
         if row_exists:
             try:
                 db.update_session_cwd(

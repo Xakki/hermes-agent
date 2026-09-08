@@ -368,7 +368,7 @@ def get_profiles_sessions_sidebar(
             # Aggregated in SQL rather than over the window above: the window is
             # a page, and a total that shrank when you scrolled would be worse
             # than no total at all.
-            profile_totals[name] = db.usage_totals()
+            profile_totals[name] = db.usage_totals(project_root=active_project_root)
             cron_rows.extend(_tag(_slice(db, source="cron", cap=cron_cap), name))
             messaging_rows.extend(
                 _tag(_slice(db, exclude=messaging_exclude_list, cap=messaging_cap), name)

@@ -2614,7 +2614,11 @@ class TestSessionDbOffEventLoop:
         class FakeDB:
             def get_session(self, session_id):
                 captured["thread"] = threading.current_thread()
-                return {"id": session_id, "source": "api_server"}
+                return {
+                    "id": session_id,
+                    "source": "api_server",
+                    "project_root": auth_adapter._trusted_project_root,
+                }
 
         auth_adapter._session_db = FakeDB()
         session, err = await auth_adapter._get_existing_session_or_404("sess-x")

@@ -1375,6 +1375,11 @@ class APIServerAdapter(BasePlatformAdapter):
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform.API_SERVER)
         extra = config.extra or {}
+        # API requests have no transport-bound TUI session. Bind the adapter to
+        # its launch project once; never let a request choose this scope.
+        self._trusted_project_root = self._resolve_trusted_project_root(
+            extra.get("trusted_project_root")
+        )
         self._host: str = extra.get("host", os.getenv("API_SERVER_HOST", DEFAULT_HOST))
         raw_port = extra.get("port")
         if raw_port is None:
@@ -1472,6 +1477,36 @@ class APIServerAdapter(BasePlatformAdapter):
         # Shutdown counts this reservation so the request cannot slip through
         # the drain between its first await and _run_agent()/task registration.
         self._pending_agent_requests: int = 0
+
+    @staticmethod
+    def _resolve_trusted_project_root(configured: Any = None) -> Optional[str]:
+        """Resolve only server-owned project authority for session endpoints."""
+        try:
+            from tui_gateway.server import _canonical_project_root
+
+            return _canonical_project_root(configured or os.getcwd())
+        except Exception:
+            return None
+
+    def _session_scope_error(self, session: Dict[str, Any]) -> Optional["web.Response"]:
+        active_root = getattr(self, "_trusted_project_root", None)
+        if not active_root:
+            return web.json_response(
+                _openai_error("project context required", code="project_context_required"),
+                status=403,
+            )
+        try:
+            from tui_gateway.server import _canonical_project_root
+
+            session_root = _canonical_project_root(session.get("project_root"))
+        except Exception:
+            session_root = None
+        if session_root != active_root:
+            return web.json_response(
+                _openai_error("Session is outside the active project", code="session_outside_project"),
+                status=403,
+            )
+        return None
 
     def active_agent_work_count(self) -> int:
         """Return all live agent work owned by this API adapter.
@@ -3331,6 +3366,9 @@ class APIServerAdapter(BasePlatformAdapter):
         session = await asyncio.to_thread(db.get_session, session_id)
         if not session:
             return None, web.json_response(_openai_error(f"Session not found: {session_id}", code="session_not_found"), status=404)
+        scope_err = self._session_scope_error(session)
+        if scope_err:
+            return None, scope_err
         return session, None
 
     async def _conversation_history_for_session(self, session_id: str) -> List[Dict[str, Any]]:
@@ -3352,6 +3390,9 @@ class APIServerAdapter(BasePlatformAdapter):
         db = await self._ensure_session_db_async()
         if db is None:
             return web.json_response(_openai_error("Session database unavailable", code="session_db_unavailable"), status=503)
+        active_root = getattr(self, "_trusted_project_root", None)
+        if not active_root:
+            return web.json_response(_openai_error("project context required", code="project_context_required"), status=403)
 
         limit = self._parse_nonnegative_int(request.query.get("limit"), default=50, maximum=200)
         offset = self._parse_nonnegative_int(request.query.get("offset"), default=0, maximum=1_000_000)
@@ -3366,6 +3407,7 @@ class APIServerAdapter(BasePlatformAdapter):
             # A pin means "always reachable", so a pinned conversation that has
             # aged past the recency window is back-filled rather than dropped.
             include_pinned=True,
+            project_root=active_root,
         )
         # Back-filled pins arrive PAST the limit, so counting them would report
         # another page that doesn't exist. Only the recency window decides.
@@ -3397,6 +3439,9 @@ class APIServerAdapter(BasePlatformAdapter):
         db = await self._ensure_session_db_async()
         if db is None:
             return web.json_response(_openai_error("Session database unavailable", code="session_db_unavailable"), status=503)
+        active_root = getattr(self, "_trusted_project_root", None)
+        if not active_root:
+            return web.json_response(_openai_error("project context required", code="project_context_required"), status=403)
 
         raw_id = body.get("id") or body.get("session_id")
         session_id = str(raw_id).strip() if raw_id else f"api_{int(time.time())}_{uuid.uuid4().hex[:8]}"
@@ -3446,8 +3491,8 @@ class APIServerAdapter(BasePlatformAdapter):
                 import time as _time
                 conn.execute(
                     """INSERT INTO sessions (
-                       id, source, model, model_config, system_prompt, started_at
-                    ) VALUES (?, ?, ?, ?, ?, ?)""",
+                       id, source, model, model_config, system_prompt, started_at, project_root
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     (
                         session_id,
                         source,
@@ -3455,6 +3500,7 @@ class APIServerAdapter(BasePlatformAdapter):
                         json.dumps(model_config) if model_config else None,
                         system_prompt,
                         _time.time(),
+                        active_root,
                     ),
                 )
                 if title is not None:

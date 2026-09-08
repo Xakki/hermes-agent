@@ -12231,6 +12231,7 @@ def _project_tree_row(r: dict) -> dict:
         "cwd": r.get("cwd"),
         "git_branch": r.get("git_branch"),
         "git_repo_root": r.get("git_repo_root"),
+        "project_root": r.get("project_root"),
     }
 
 
