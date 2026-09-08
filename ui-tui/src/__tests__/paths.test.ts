@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { composeTabTitle, fmtCwdBranch, fmtProjectCwdBranch, shortCwd, shortProject } from '../domain/paths.js'
+import {
+  composeTabTitle,
+  fmtAgentStatus,
+  fmtCwdBranch,
+  fmtProjectCwdBranch,
+  shortCwd,
+  shortProject
+} from '../domain/paths.js'
 
 describe('shortCwd', () => {
   const origHome = process.env.HOME
@@ -100,6 +107,40 @@ describe('fmtProjectCwdBranch', () => {
 
   it('keeps the project visible when space is tight', () => {
     expect(fmtProjectCwdBranch('/Users/bb/proj', 'main', 'hermes-agent', 12)).toBe('hermes-agent')
+  })
+})
+
+describe('fmtAgentStatus', () => {
+  const origHome = process.env.HOME
+
+  beforeEach(() => {
+    process.env.HOME = '/Users/bb'
+  })
+
+  afterEach(() => {
+    process.env.HOME = origHome
+  })
+
+  it('shows the workspace, branch, and dirty totals', () => {
+    expect(
+      fmtAgentStatus(
+        '/Users/bb/proj',
+        { branch: 'feature/status', files: 4, isRepo: true, lines: 12 },
+        null,
+        100
+      )
+    ).toBe('~/proj (feature/status) · Δ 4f/12l')
+  })
+
+  it('omits git details outside a repository', () => {
+    expect(
+      fmtAgentStatus(
+        '/tmp/scratch',
+        { branch: null, files: 0, isRepo: false, lines: 0 },
+        null,
+        100
+      )
+    ).toBe('/tmp/scratch')
   })
 })
 

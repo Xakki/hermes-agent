@@ -696,7 +696,11 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           return
         }
 
-        return rpc<SessionMostRecentResponse>('session.most_recent', {}).then(r => {
+        const activeState = getUiState()
+        return rpc<SessionMostRecentResponse>('session.most_recent', {
+          current_session_id: activeState.sid,
+          project_root: activeState.info?.project?.primary_path || process.env.HERMES_CWD || process.cwd()
+        }).then(r => {
           const target = r?.session_id
 
           if (target) {

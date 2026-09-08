@@ -43,9 +43,13 @@ function mount(
   Object.assign(stdout, { columns: 100, isTTY: false, rows: 40 })
   Object.assign(stdin, { isTTY: false })
   Object.assign(stderr, { isTTY: false })
-  stdout.on('data', chunk => {
-    output += chunk.toString()
-  })
+  stdout.write = ((chunk: string | Uint8Array, encodingOrCallback?: BufferEncoding | (() => void), callback?: () => void) => {
+    output += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString()
+    const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback
+    done?.()
+
+    return true
+  }) as typeof stdout.write
 
   inputHarness.handler = undefined
   const element = React.createElement(SubscriptionOverlay, { onClose: () => {}, onPatch, overlay, t })

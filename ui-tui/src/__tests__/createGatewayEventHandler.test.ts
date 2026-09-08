@@ -1049,6 +1049,10 @@ describe('createGatewayEventHandler', () => {
     createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
 
     await vi.waitFor(() => expect(resumeById).toHaveBeenCalledWith('sess-most-recent'))
+    expect(ctx.gateway.rpc).toHaveBeenCalledWith('session.most_recent', {
+      current_session_id: null,
+      project_root: process.env.HERMES_CWD || process.cwd()
+    })
     expect(newSession).not.toHaveBeenCalled()
   })
 

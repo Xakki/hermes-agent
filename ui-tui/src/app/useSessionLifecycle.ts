@@ -341,7 +341,13 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
         const previousSid = getUiState().sid
 
-        gw.request<SessionResumeResponse>('session.resume', { cols: colsRef.current, session_id: id })
+        const activeState = getUiState()
+        gw.request<SessionResumeResponse>('session.resume', {
+          cols: colsRef.current,
+          current_session_id: previousSid,
+          project_root: activeState.info?.project?.primary_path || process.env.HERMES_CWD || process.cwd(),
+          session_id: id
+        })
           .then(raw => {
             const r = asRpcResult<SessionResumeResponse>(raw)
 

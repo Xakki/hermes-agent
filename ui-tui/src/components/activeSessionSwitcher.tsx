@@ -354,7 +354,12 @@ export function ActiveSessionSwitcher({
           gw.request<SessionActiveListResponse>('session.active_list', {
             current_session_id: currentSessionId
           }),
-          includeHistory ? gw.request<SessionListResponse>('session.list', { limit: 200 }) : Promise.resolve(null)
+          includeHistory
+            ? gw.request<SessionListResponse>('session.list', {
+                current_session_id: currentSessionId,
+                project_root: process.env.HERMES_CWD || process.cwd()
+              })
+            : Promise.resolve(null)
         ])
 
         const r = liveRes.status === 'fulfilled' ? asRpcResult<SessionActiveListResponse>(liveRes.value) : null
