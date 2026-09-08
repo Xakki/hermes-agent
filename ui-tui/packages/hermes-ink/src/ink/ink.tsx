@@ -458,6 +458,9 @@ export default class Ink {
       })
     }
   }
+  useSynchronousRendering(): void {
+    this.rootNode.onRender = this.onRender
+  }
   private handleResume = () => {
     if (!this.options.stdout.isTTY) {
       return

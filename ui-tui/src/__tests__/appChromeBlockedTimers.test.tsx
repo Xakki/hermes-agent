@@ -49,9 +49,13 @@ const mountTree = (tree: React.ReactElement, { interactive = false } = {}) => {
     interactive ? { isTTY: true, ref: () => {}, setRawMode: () => {}, unref: () => {} } : { isTTY: false }
   )
   Object.assign(stderr, { isTTY: false })
-  stdout.on('data', chunk => {
-    output += chunk.toString()
-  })
+  stdout.write = ((chunk: string | Uint8Array, encodingOrCallback?: BufferEncoding | (() => void), callback?: () => void) => {
+    output += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString()
+    const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback
+    done?.()
+
+    return true
+  }) as typeof stdout.write
 
   const instance = renderSync(tree, {
     patchConsole: false,
