@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  aggregateSubagentTokens,
   buildSubagentTree,
   descendantIds,
   flattenTree,
   fmtCost,
   fmtDuration,
   fmtTokens,
+  formatSubagentTokenTotal,
   formatSummary,
   hotnessBucket,
   peakHotness,
@@ -28,6 +30,36 @@ const makeItem = (overrides: Partial<SubagentProgress> & Pick<SubagentProgress, 
   toolCount: 0,
   tools: [],
   ...overrides
+})
+
+describe('aggregateSubagentTokens', () => {
+  it('groups flat raw items once, including nested children', () => {
+    const items = [
+      makeItem({ id: 'parent', index: 0, inputTokens: 1000, model: 'provider/model-a', outputTokens: 200 }),
+      makeItem({
+        depth: 1,
+        id: 'child',
+        index: 0,
+        inputTokens: 300,
+        model: 'provider/model-a',
+        outputTokens: 100,
+        parentId: 'parent'
+      }),
+      makeItem({ id: 'unknown', index: 1, inputTokens: 50, outputTokens: 25 })
+    ]
+
+    expect(aggregateSubagentTokens(items)).toEqual([
+      { inputTokens: 1300, model: 'provider/model-a', outputTokens: 300, sessionCount: 2 },
+      { inputTokens: 50, model: 'unknown model', outputTokens: 25, sessionCount: 1 }
+    ])
+  })
+
+  it('formats a compact total from input and output tokens', () => {
+    const items = [makeItem({ id: 'a', index: 0, inputTokens: 1000, outputTokens: 700 })]
+
+    expect(formatSubagentTokenTotal(items)).toBe('Σ 1.7k tok')
+    expect(formatSubagentTokenTotal([])).toBe('')
+  })
 })
 
 describe('aggregate: tokens, cost, files, hotness', () => {

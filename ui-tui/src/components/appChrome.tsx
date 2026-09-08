@@ -13,7 +13,7 @@ import { VERBS } from '../content/verbs.js'
 import { fmtDuration } from '../domain/messages.js'
 import { sessionTokenLabel } from '../domain/usage.js'
 import { stickyPromptFromViewport } from '../domain/viewport.js'
-import { buildSubagentTree, treeTotals, widthByDepth } from '../lib/subagentTree.js'
+import { buildSubagentTree, formatSubagentTokenTotal, treeTotals, widthByDepth } from '../lib/subagentTree.js'
 import { fmtK } from '../lib/text.js'
 import { useScrollbarSnapshot, useViewportSnapshot } from '../lib/viewportStore.js'
 import type { Theme } from '../theme.js'
@@ -362,6 +362,12 @@ function SpawnHud({ t }: { t: Theme }) {
       const suffix = extra > 0 ? `+${extra}` : ''
       pieces.push(`⚡${widthLabel}${suffix}`)
     }
+  }
+
+  const tokenTotal = formatSubagentTokenTotal(subagents)
+
+  if (tokenTotal) {
+    pieces.push(tokenTotal)
   }
 
   const atCap = depthRatio >= 1 || concRatio >= 1

@@ -1,6 +1,41 @@
 import type { SubagentAggregate, SubagentNode, SubagentProgress } from '../types.js'
 
 const ROOT_KEY = '__root__'
+const UNKNOWN_MODEL_LABEL = 'unknown model'
+
+export interface SubagentTokenGroup {
+  inputTokens: number
+  model: string
+  outputTokens: number
+  sessionCount: number
+}
+
+/**
+ * Aggregate the raw snapshot exactly once per subagent session. Do not derive
+ * this from tree aggregates: parent nodes already include descendant totals.
+ */
+export function aggregateSubagentTokens(items: readonly SubagentProgress[]): SubagentTokenGroup[] {
+  const groups = new Map<string, SubagentTokenGroup>()
+
+  for (const item of items) {
+    const model = item.model?.trim() || UNKNOWN_MODEL_LABEL
+    const group = groups.get(model) ?? { inputTokens: 0, model, outputTokens: 0, sessionCount: 0 }
+    group.inputTokens += item.inputTokens ?? 0
+    group.outputTokens += item.outputTokens ?? 0
+    group.sessionCount += 1
+    groups.set(model, group)
+  }
+
+  return [...groups.values()].sort(
+    (a, b) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens) || a.model.localeCompare(b.model)
+  )
+}
+
+export function formatSubagentTokenTotal(items: readonly SubagentProgress[]): string {
+  const total = items.reduce((sum, item) => sum + (item.inputTokens ?? 0) + (item.outputTokens ?? 0), 0)
+
+  return total > 0 ? `Σ ${fmtTokens(total)} tok` : ''
+}
 
 /**
  * Reconstruct the subagent spawn tree from a flat event-ordered list.

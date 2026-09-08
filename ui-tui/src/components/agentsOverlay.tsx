@@ -15,6 +15,7 @@ import type { GatewayClient } from '../gatewayClient.js'
 import type { DelegationPauseResponse, DelegationStatusResponse, SubagentInterruptResponse } from '../gatewayTypes.js'
 import { asRpcResult } from '../lib/rpc.js'
 import {
+  aggregateSubagentTokens,
   buildSubagentTree,
   descendantIds,
   flattenTree,
@@ -313,6 +314,28 @@ function Field({ name, t, value }: { name: string; t: Theme; value: ReactNode })
       <Text color={t.color.label}>{name} · </Text>
       <Text color={t.color.text}>{value}</Text>
     </Text>
+  )
+}
+
+function TokenTotals({ groups, t }: { groups: ReturnType<typeof aggregateSubagentTokens>; t: Theme }) {
+  if (!groups.some(group => group.inputTokens + group.outputTokens > 0)) {
+    return null
+  }
+
+  return (
+    <OverlaySection count={groups.length} defaultOpen t={t} title="Token usage">
+      {groups.map(group => {
+        const total = group.inputTokens + group.outputTokens
+
+        return (
+          <Text color={t.color.text} key={group.model} wrap="truncate-end">
+            <Text color={t.color.label}>{group.model}</Text> · {group.sessionCount} session
+            {group.sessionCount === 1 ? '' : 's'} · {fmtTokens(group.inputTokens)} in · {fmtTokens(group.outputTokens)}{' '}
+            out · {fmtTokens(total)} total
+          </Text>
+        )
+      })}
+    </OverlaySection>
   )
 }
 
@@ -635,6 +658,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
   const spark = useMemo(() => sparkline(widths), [widths])
   const peak = useMemo(() => peakHotness(tree), [tree])
   const rows = useMemo(() => prepareRows(tree, sort, filter), [tree, sort, filter])
+  const tokenGroups = useMemo(() => aggregateSubagentTokens(subagents), [subagents])
 
   const selected = rows[cursor] ?? null
 
@@ -908,6 +932,8 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
           ) : null}
         </Text>
       </Box>
+
+      <TokenTotals groups={tokenGroups} t={t} />
 
       {rows.length === 0 ? (
         <Box flexDirection="column" flexGrow={1}>
