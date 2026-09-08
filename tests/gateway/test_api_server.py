@@ -2339,6 +2339,7 @@ class TestSessionIdHeader:
             {"role": "assistant", "content": "stored reply 1"},
         ]
         mock_db = MagicMock()
+        mock_db.get_session.return_value = {"id": "existing-session", "project_root": os.getcwd()}
         mock_db.get_messages_as_conversation.return_value = db_history
         auth_adapter._session_db = mock_db
         app = _create_app(auth_adapter)
@@ -2365,6 +2366,33 @@ class TestSessionIdHeader:
             # History must come from DB, not from the request body
             assert call_kwargs["conversation_history"] == db_history
             assert call_kwargs["user_message"] == "new question"
+
+    @pytest.mark.asyncio
+    async def test_provided_session_id_cannot_resume_from_another_project(self, auth_adapter, tmp_path):
+        """A valid API key must not authorize cross-project transcript access."""
+        mock_db = MagicMock()
+        mock_db.get_session.return_value = {
+            "id": "foreign-session",
+            "project_root": str(tmp_path / "other-project"),
+        }
+        mock_db.get_messages_as_conversation.return_value = [
+            {"role": "user", "content": "foreign secret"},
+        ]
+        auth_adapter._session_db = mock_db
+        app = _create_app(auth_adapter)
+        async with TestClient(TestServer(app)) as cli:
+            with patch.object(auth_adapter, "_run_agent", new_callable=AsyncMock) as mock_run:
+                resp = await cli.post(
+                    "/v1/chat/completions",
+                    headers={"X-Hermes-Session-Id": "foreign-session", "Authorization": "Bearer sk-secret"},
+                    json={"model": "hermes-agent", "messages": [{"role": "user", "content": "resume"}]},
+                )
+
+            assert resp.status == 403
+            payload = await resp.json()
+            assert payload["error"]["code"] == "session_outside_project"
+            mock_db.get_messages_as_conversation.assert_not_called()
+            mock_run.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

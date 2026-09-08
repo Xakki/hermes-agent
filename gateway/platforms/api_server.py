@@ -4250,13 +4250,13 @@ class APIServerAdapter(BasePlatformAdapter):
                     status=400,
                 )
             session_id = provided_session_id
-            try:
-                db = await self._ensure_session_db_async()
-                if db is not None:
-                    history = await asyncio.to_thread(db.get_messages_as_conversation, session_id)
-            except Exception as e:
-                logger.warning("Failed to load session history for %s: %s", session_id, e)
-                history = []
+            # The session header is only a selector, never project authority.
+            # Resolve and scope the durable row before loading any transcript or
+            # starting the resumed agent turn.
+            _, session_err = await self._get_existing_session_or_404(session_id)
+            if session_err is not None:
+                return session_err
+            history = await self._conversation_history_for_session(session_id)
         else:
             # Derive a stable session ID from the conversation fingerprint so
             # that consecutive messages from the same Open WebUI (or similar)
