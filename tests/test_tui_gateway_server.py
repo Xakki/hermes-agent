@@ -2552,7 +2552,10 @@ def test_session_resume_uses_parent_lineage_for_display(monkeypatch, omit_messag
 
     class FakeDB:
         def get_session(self, target):
-            return {"id": target, "project_root": "/work/a"}
+            return {"id": target, "project_root": str(Path.cwd())}
+
+        def get_session_by_title(self, _target):
+            return None
 
         def reopen_session(self, target):
             captured["reopened"] = target
@@ -2598,7 +2601,7 @@ def test_session_resume_uses_parent_lineage_for_display(monkeypatch, omit_messag
     # _neuter_agent_prewarm_timer fixture; this test only asserts the
     # returned display history.
 
-    params = {"session_id": target, "project_root": "/work/a"}
+    params = {"session_id": target, "project_root": str(Path.cwd())}
     if omit_messages:
         params["omit_messages"] = True
     resp = server.handle_request(
@@ -2836,6 +2839,7 @@ def test_lazy_child_watch_resume_serves_candidate_inclusive_display(monkeypatch,
     monkeypatch.setattr(server, "_claim_or_reuse_live", lambda *a, **k: None)
     monkeypatch.setattr(server, "_child_run_active", lambda *a, **k: False)
     monkeypatch.setattr(server, "_schedule_session_cap_enforcement", lambda *a, **k: None)
+    monkeypatch.chdir(tmp_path)
 
     resp = server.handle_request(
         {
@@ -2909,6 +2913,7 @@ def test_session_resume_follows_compression_tip(monkeypatch, tmp_path):
     )
 
     try:
+        monkeypatch.chdir(tmp_path)
         # eager_build: this asserts the synchronously-built agent binds to the
         # resolved tip (captured["agent_session_id"]); the compression-tip
         # resolution itself runs before the build and is mode-agnostic.
@@ -2933,11 +2938,14 @@ def test_session_resume_passes_stored_runtime_to_agent(monkeypatch):
         def get_session(self, target):
             return {
                 "id": target,
-                "project_root": "/work/a",
+                "project_root": str(Path.cwd()),
                 "model": "gpt-5.4",
                 "billing_provider": "openai-codex",
                 "model_config": '{"reasoning_config":{"enabled":true,"effort":"high"},"service_tier":"priority","base_url":"https://custom.example/v1","api_mode":"chat_completions"}',
             }
+
+        def get_session_by_title(self, _target):
+            return None
 
         def reopen_session(self, target):
             pass
@@ -2974,7 +2982,7 @@ def test_session_resume_passes_stored_runtime_to_agent(monkeypatch):
     # overrides reach _make_agent, info comes from _session_info). The deferred
     # default restores the same overrides via _start_agent_build off-thread.
     resp = server.handle_request(
-        {"id": "1", "method": "session.resume", "params": {"session_id": "stored-session", "eager_build": True, "project_root": "/work/a"}}
+        {"id": "1", "method": "session.resume", "params": {"session_id": "stored-session", "eager_build": True, "project_root": str(Path.cwd())}}
     )
 
     assert resp["result"]["info"] == {"model": "gpt-5.4", "provider": "openai-codex"}
@@ -3003,7 +3011,7 @@ def test_session_resume_profile_uses_profile_db_cwd(monkeypatch, tmp_path):
 
     class ProfileDB:
         def get_session(self, _target):
-            return {"id": target, "cwd": str(profile_cwd), "project_root": "/work/a"}
+            return {"id": target, "cwd": str(profile_cwd), "project_root": str(Path.cwd())}
 
         def get_session_by_title(self, _target):
             return None
@@ -3076,7 +3084,7 @@ def test_session_resume_profile_uses_profile_db_cwd(monkeypatch, tmp_path):
             {
                 "id": "1",
                 "method": "session.resume",
-                "params": {"session_id": target, "profile": "worker", "eager_build": True, "project_root": "/work/a"},
+                "params": {"session_id": target, "profile": "worker", "eager_build": True, "project_root": str(Path.cwd())},
             }
         )
 
@@ -3726,6 +3734,8 @@ def test_startup_runtime_does_not_call_network_detector(monkeypatch):
 
 
 def _session(agent=None, **extra):
+    cwd = extra.get("cwd")
+    extra.setdefault("project_root", cwd)
     return {
         "agent": agent if agent is not None else types.SimpleNamespace(),
         "session_key": "session-key",
@@ -8583,6 +8593,7 @@ def test_file_attach_uploads_remote_file_into_session_workspace(monkeypatch, tmp
     """
     workspace = tmp_path / "workspace"
     workspace.mkdir()
+    monkeypatch.chdir(workspace)
     home = tmp_path / "home"
     fake_cli = types.ModuleType("cli")
     fake_cli._detect_file_drop = lambda raw: None
@@ -8620,6 +8631,7 @@ def test_file_attach_copies_gateway_visible_file_outside_workspace(monkeypatch, 
     """Local case: gateway can see the file but it's outside the workspace → copy in."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
+    monkeypatch.chdir(workspace)
     home = tmp_path / "home"
     source = tmp_path / "outside.txt"
     source.write_text("outside workspace", encoding="utf-8")
@@ -8653,6 +8665,7 @@ def test_file_attach_uses_in_workspace_file_without_copying(monkeypatch, tmp_pat
     """Local case: file already inside the workspace → ref it directly, no copy."""
     workspace = tmp_path / "workspace"
     (workspace / "data").mkdir(parents=True)
+    monkeypatch.chdir(workspace)
     source = workspace / "data" / "exam.csv"
     source.write_text("a,b,c\n1,2,3\n", encoding="utf-8")
     fake_cli = types.ModuleType("cli")
@@ -8687,6 +8700,7 @@ def test_file_attach_errors_when_unresolvable_and_no_bytes(monkeypatch, tmp_path
     """Remote path not on gateway and no data_url → actionable error, not a stage."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
+    monkeypatch.chdir(workspace)
     fake_cli = types.ModuleType("cli")
     fake_cli._detect_file_drop = lambda raw: None
     fake_cli._split_path_input = lambda raw: (raw, "")
@@ -8714,6 +8728,7 @@ def test_file_attach_quotes_ref_with_spaces(monkeypatch, tmp_path):
     """Staged names with spaces must be backtick-quoted so the @file: ref parses."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
+    monkeypatch.chdir(workspace)
     fake_cli = types.ModuleType("cli")
     fake_cli._detect_file_drop = lambda raw: None
     fake_cli._split_path_input = lambda raw: (raw, "")
@@ -11727,8 +11742,11 @@ def test_session_delete_fails_closed_when_active_snapshot_raises(monkeypatch):
     assert "enumerate active sessions" in resp["error"]["message"]
 
 
-def test_session_delete_returns_4007_when_missing(monkeypatch):
+def test_session_delete_rejects_missing_project_scope(monkeypatch):
     class _DB:
+        def get_session(self, sid):
+            return None
+
         def delete_session(self, sid, sessions_dir=None):
             return False
 
@@ -11739,11 +11757,14 @@ def test_session_delete_returns_4007_when_missing(monkeypatch):
     )
 
     assert "error" in resp
-    assert resp["error"]["code"] == 4007
+    assert resp["error"]["code"] == 4008
 
 
 def test_session_delete_propagates_db_exception(monkeypatch):
     class _DB:
+        def get_session(self, sid):
+            return {"id": sid, "project_root": str(Path.cwd())}
+
         def delete_session(self, sid, sessions_dir=None):
             raise RuntimeError("disk full")
 
@@ -11765,6 +11786,9 @@ def test_session_delete_success_returns_deleted_id(monkeypatch):
     captured: dict = {}
 
     class _DB:
+        def get_session(self, sid):
+            return {"id": sid, "project_root": str(Path.cwd())}
+
         def delete_session(self, sid, sessions_dir=None):
             captured["sid"] = sid
             captured["sessions_dir"] = sessions_dir
@@ -11918,6 +11942,9 @@ def test_session_delete_honors_params_profile_sessions_dir(monkeypatch, tmp_path
     class ProfileDB:
         def __init__(self, db_path=None):
             captured["db_path"] = db_path
+
+        def get_session(self, sid):
+            return {"id": sid, "project_root": str(Path.cwd())}
 
         def delete_session(self, sid, sessions_dir=None):
             captured["sid"] = sid
@@ -12239,6 +12266,7 @@ def test_session_branch_writes_to_parent_profile_db(monkeypatch, tmp_path):
     }
     server._sessions["parent"] = parent
     monkeypatch.setattr(server, "_get_db", lambda: LaunchDB())
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("hermes_state.SessionDB", ProfileDB)
     monkeypatch.setattr(server, "_claim_active_session_slot", lambda *a, **k: (None, None))
 
@@ -12355,6 +12383,7 @@ def test_session_branch_installs_parent_profile_secret_scope(monkeypatch, tmp_pa
     }
     server._sessions["parent"] = parent
     monkeypatch.setattr(server, "_get_db", lambda: ProfileDB())
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("hermes_state.SessionDB", ProfileDB)
     monkeypatch.setattr(server, "_claim_active_session_slot", lambda *a, **k: (None, None))
 
@@ -12874,6 +12903,7 @@ def test_session_active_list_enforces_durable_project_root(monkeypatch):
         "_git_common_repo_root_for_cwd",
         lambda path: "/repo/main" if str(path).startswith("/repo/main") else "",
     )
+    monkeypatch.setattr(server, "_active_project_root", lambda params, db: "/repo/main")
     server._sessions["sid-a"] = _session(
         agent=types.SimpleNamespace(model="model-a"),
         project_root="/repo/main/subdir",
@@ -12902,6 +12932,7 @@ def test_session_active_list_reports_live_sessions(monkeypatch):
     previous_sessions = dict(server._sessions)
     server._sessions.clear()
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
+    monkeypatch.setattr(server, "_active_project_root", lambda params, db: str(Path.cwd()))
     server._sessions["sid-a"] = _session(
         agent=types.SimpleNamespace(model="model-a"),
         history=[{"role": "user", "content": "find docs"}],
