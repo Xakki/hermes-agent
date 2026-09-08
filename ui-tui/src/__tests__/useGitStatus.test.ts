@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { resolveGitStatus } from '../hooks/useGitStatus.js'
+import { MAX_UNTRACKED_FILE_BYTES, MAX_UNTRACKED_FILES, MAX_UNTRACKED_TOTAL_LINES, resolveGitStatus } from '../hooks/useGitStatus.js'
 
 const dirs: string[] = []
 
@@ -44,6 +44,31 @@ describe('resolveGitStatus', () => {
       files: 4,
       isRepo: true,
       lines: 5
+    })
+  })
+
+  it('bounds untracked file reads and reports the line cap conservatively', async () => {
+    const cwd = initRepo()
+    const huge = new Uint8Array(MAX_UNTRACKED_FILE_BYTES + 1).fill(97)
+    huge.fill(10, MAX_UNTRACKED_FILE_BYTES - 1)
+    writeFileSync(join(cwd, 'huge.txt'), huge)
+
+    await expect(resolveGitStatus(cwd)).resolves.toMatchObject({
+      files: 1,
+      lines: MAX_UNTRACKED_TOTAL_LINES
+    })
+  })
+
+  it('caps the result when the untracked file list is too large', async () => {
+    const cwd = initRepo()
+
+    for (let idx = 0; idx <= MAX_UNTRACKED_FILES; idx += 1) {
+      writeFileSync(join(cwd, `untracked-${idx}.txt`), 'line\n')
+    }
+
+    await expect(resolveGitStatus(cwd)).resolves.toMatchObject({
+      files: MAX_UNTRACKED_FILES + 1,
+      lines: MAX_UNTRACKED_TOTAL_LINES
     })
   })
 

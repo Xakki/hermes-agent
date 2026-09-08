@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { open } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
 
@@ -47,32 +47,58 @@ const numstatLines = (output: null | string) => {
   }, 0)
 }
 
+export const MAX_UNTRACKED_FILES = 256
+export const MAX_UNTRACKED_FILE_BYTES = 256 * 1024
+export const MAX_UNTRACKED_TOTAL_BYTES = 4 * 1024 * 1024
+export const MAX_UNTRACKED_FILE_LINES = 10_000
+export const MAX_UNTRACKED_TOTAL_LINES = 100_000
+
 const untrackedTextLines = async (cwd: string, paths: string[]) => {
-  const counts = await Promise.all(
-    paths.map(async path => {
-      try {
-        const content = await readFile(resolve(cwd, path))
+  let total = 0
+  let totalBytes = 0
 
-        if (content.includes(0) || content.length === 0) {
-          return 0
-        }
+  for (const path of paths.slice(0, MAX_UNTRACKED_FILES)) {
+    const bytesToRead = Math.min(MAX_UNTRACKED_FILE_BYTES, MAX_UNTRACKED_TOTAL_BYTES - totalBytes)
 
-        let lines = 0
+    if (bytesToRead <= 0) {
+      return MAX_UNTRACKED_TOTAL_LINES
+    }
 
-        for (const byte of content) {
-          if (byte === 10) {
-            lines += 1
-          }
-        }
+    let file
 
-        return lines + (content.at(-1) === 10 ? 0 : 1)
-      } catch {
-        return 0
+    try {
+      file = await open(resolve(cwd, path), 'r')
+      const content = Buffer.allocUnsafe(bytesToRead)
+      const { bytesRead } = await file.read(content, 0, content.length, 0)
+      totalBytes += bytesRead
+
+      if (bytesRead === 0 || content.subarray(0, bytesRead).includes(0)) {
+        continue
       }
-    })
-  )
 
-  return counts.reduce((total, count) => total + count, 0)
+      let lines = 0
+
+      for (let idx = 0; idx < bytesRead; idx += 1) {
+        if (content[idx] === 10) {
+          lines += 1
+        }
+      }
+
+      const truncated = bytesRead === bytesToRead
+      const fileLines = truncated ? MAX_UNTRACKED_FILE_LINES : lines + (content[bytesRead - 1] === 10 ? 0 : 1)
+      total = Math.min(MAX_UNTRACKED_TOTAL_LINES, total + fileLines)
+
+      if (truncated || fileLines >= MAX_UNTRACKED_FILE_LINES || total >= MAX_UNTRACKED_TOTAL_LINES) {
+        return MAX_UNTRACKED_TOTAL_LINES
+      }
+    } catch {
+      // A file can disappear between git status and this probe.
+    } finally {
+      await file?.close().catch(() => undefined)
+    }
+  }
+
+  return paths.length > MAX_UNTRACKED_FILES ? MAX_UNTRACKED_TOTAL_LINES : total
 }
 
 const parseStatus = (output: string) => {
