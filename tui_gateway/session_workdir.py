@@ -91,6 +91,13 @@ def _persisted_session_cwd(session: dict) -> str | None:
     return str(session.get("cwd") or "") or None  # the session's OWN dir, never _session_cwd's gateway-wide fallback
 
 
+def _persisted_project_root(session: dict) -> str | None:
+    cwd = _persisted_session_cwd(session)
+    if not cwd:
+        return None
+    return git_probe.common_repo_root(cwd) or cwd
+
+
 def _heal_dead_cwd(cwd: str) -> str:
     """Resolve a session cwd inside a now-deleted directory (e.g. a removed linked worktree, which probes to no branch
     while the sidebar folds it to the main lane): walk up to the first existing ancestor and take its common git root.
@@ -269,6 +276,7 @@ def _ensure_session_db_row(session: dict) -> bool:
             db.create_session(
                 key, source=_session_source(session), model=row_model, model_config=model_config or None,
                 parent_session_id=session.get("parent_session_id") or None, cwd=_persisted_session_cwd(session),
+                project_root=_persisted_project_root(session),
                 # Self-describing rows: aggregators merging several profile DBs can't rely on which file a row came
                 # from; a NULL is only repaired by the one-shot backfill.
                 # Stamp the launch profile explicitly instead of leaving NULL — NULL is exactly what the

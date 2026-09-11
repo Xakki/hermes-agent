@@ -46,6 +46,7 @@ def query_session_listing(
     search_query: str | None = None,
     limit: int = 10,
     exclude_sources: list[str] | None = None,
+    project_root: str | None = None,
 ) -> list[dict[str, Any]]:
     """Return session rows for interactive listing surfaces (shared CLI/gateway policy).
 
@@ -63,6 +64,7 @@ def query_session_listing(
         limit=max(limit * 4, limit),
         search_query=search or None,
         order_by_last_active=bool(search),
+        project_root=project_root,
     )
     result: list[dict[str, Any]] = []
     for row in rows:

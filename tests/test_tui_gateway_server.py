@@ -16544,8 +16544,9 @@ def test_model_options_preserves_canonical_custom_row_after_agent_init(monkeypat
 
     assert "result" in resp, resp
     assert resp["result"]["provider"] == "custom:local-ollama"
+    # Authenticated Anthropic OAuth is an explicit sign-in even without config/env.
     assert [row["slug"] for row in resp["result"]["providers"]] == [
-        "custom:local-ollama"
+        "anthropic", "custom:local-ollama"
     ]
     canonical.assert_called_once_with(
         base_url="http://127.0.0.1:11434/v1",

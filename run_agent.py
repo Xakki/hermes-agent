@@ -43,6 +43,16 @@ def _launch_cwd_for_session(source: str) -> Optional[str]:
         return None
 
 
+def _launch_project_root_for_session(source: str, cwd: Optional[str]) -> Optional[str]:
+    if not cwd:
+        return None
+    try:
+        from tui_gateway.server import _canonical_project_root
+        return _canonical_project_root(cwd)
+    except Exception:
+        return cwd
+
+
 def _session_source_for_agent(platform: Optional[str]) -> str:
     try:
         from gateway.session_context import get_session_env
@@ -342,7 +352,8 @@ class AIAgent(
                 thread_id=getattr(self, "_thread_id", None),
                 display_name=getattr(self, "_chat_name", None) or getattr(self, "_user_name", None),
                 origin_json=_gateway_origin_json(self), parent_session_id=self._parent_session_id,
-                cwd=_launch_cwd_for_session(source), profile_name=profile_for_session,
+                cwd=(session_cwd := _launch_cwd_for_session(source)),
+                project_root=_launch_project_root_for_session(source, session_cwd), profile_name=profile_for_session,
             )
             self._session_db_created = True
         except Exception as e:

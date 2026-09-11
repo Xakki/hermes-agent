@@ -334,10 +334,12 @@ class CLISessionMixin:
         try:
             from hermes_cli.session_listing import query_session_listing
 
+            from tui_gateway.server import _canonical_project_root
+
             return query_session_listing(
                 self._session_db, source="cli", current_session_id=self.session_id,
                 include_all_sources=False, include_unnamed=True, limit=limit,
-                exclude_sources=["kanban", "tool"])
+                exclude_sources=["kanban", "tool"], project_root=_canonical_project_root(os.getcwd()))
         except Exception:
             return []
 

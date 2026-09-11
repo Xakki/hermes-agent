@@ -2786,7 +2786,8 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
             # include_pinned back-fills pins past the recency window; search_query pushes the
             # title needle into SQL (substring) so a hidden/old row is found, exact match below.
             rows = await asyncio.to_thread(
-                db.list_sessions_rich, source=source, limit=limit, offset=offset,
+                db.list_sessions_rich, source=source, project_root=self._trusted_project_root,
+                limit=limit, offset=offset,
                 include_children=include_children, order_by_last_active=True, include_pinned=True,
                 search_query=title_filter, include_hidden=include_hidden)
             if title_filter:
@@ -2860,10 +2861,10 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
                 return None, "exists"
             conn.execute(
                 """INSERT INTO sessions (
-                   id, source, model, model_config, system_prompt, started_at
-                ) VALUES (?, ?, ?, ?, ?, ?)""",
+                   id, source, model, model_config, system_prompt, project_root, started_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (session_id, source, model_name, json.dumps(model_config) if model_config else None,
-                 system_prompt, time.time()))
+                 system_prompt, self._trusted_project_root, time.time()))
             if title is not None:
                 clean_title = db.sanitize_title(str(title))
                 if clean_title:
