@@ -33,7 +33,7 @@ _IMPORT_SESSION_INSERT_SQL = """INSERT INTO sessions (
                            parent_session_id, started_at, ended_at, end_reason,
                            message_count, tool_call_count, input_tokens, output_tokens,
                            cache_read_tokens, cache_write_tokens, reasoning_tokens,
-                           cwd, git_branch, git_repo_root,
+                           cwd, git_branch, git_repo_root, project_root,
                            billing_provider, billing_base_url, billing_mode,
                            estimated_cost_usd, actual_cost_usd, cost_status, cost_source,
                            pricing_version, title, api_call_count, archived
@@ -43,7 +43,7 @@ _IMPORT_SESSION_INSERT_SQL = """INSERT INTO sessions (
                            NULL, :system_prompt_hash, NULL, :started_at, :ended_at,
                            :end_reason, 0, 0, :input_tokens, :output_tokens,
                            :cache_read_tokens, :cache_write_tokens,
-                           :reasoning_tokens, :cwd, :git_branch, :git_repo_root,
+                           :reasoning_tokens, :cwd, :git_branch, :git_repo_root, :project_root,
                            :billing_provider, :billing_base_url, :billing_mode,
                            :estimated_cost_usd, :actual_cost_usd, :cost_status,
                            :cost_source, :pricing_version, :title,
@@ -52,7 +52,7 @@ _IMPORT_SESSION_INSERT_SQL = """INSERT INTO sessions (
 # Columns copied verbatim from the payload; typed columns are converted below.
 _IMPORT_PASSTHROUGH_COLS = (
     "user_id", "model", "model_config", "end_reason", "cwd", "git_branch", "git_repo_root", "billing_provider",
-    "billing_base_url", "billing_mode", "cost_status", "cost_source", "pricing_version", "title",
+    "billing_base_url", "billing_mode", "cost_status", "cost_source", "pricing_version", "title", "project_root",
 )
 _IMPORT_INT_COLS = (
     "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens", "api_call_count",
@@ -521,7 +521,7 @@ class SessionPortabilityMixin:
                 detached += 1
         return detached
 
-    def import_sessions(self, sessions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def import_sessions(self, sessions: List[Dict[str, Any]], project_root: str = None) -> Dict[str, Any]:
         """Import sessions exported by :meth:`export_session` or ``export_all``. Existing ids
         are skipped. A child keeps its parent only when the parent exists or is in the
         same payload; otherwise it is detached so partial imports pass FK validation.
@@ -541,6 +541,10 @@ class SessionPortabilityMixin:
         if len(sessions) > self._IMPORT_MAX_SESSIONS:
             raise ValueError(f"sessions must contain at most {self._IMPORT_MAX_SESSIONS} entries")
         normalized, errors = self._validate_import_payload(sessions)
+        if project_root:
+            for item in normalized:
+                item["session"]["project_root"] = project_root
+
         if errors:
             return {"ok": False, "imported": 0, "skipped": 0, "detached": 0, "errors": errors}
 

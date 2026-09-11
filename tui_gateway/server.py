@@ -103,6 +103,11 @@ def _canonical_project_root(cwd: str | None) -> str | None:
         return None
 
 
+def _git_common_repo_root_for_cwd(cwd: str) -> str:
+    """Trusted repository root for a cwd; kept as a patchable authority seam."""
+    return git_probe.common_repo_root(cwd)
+
+
 def _session_project_root(session: dict | None) -> str | None:
     session = session or {}
     # The durable project root is authoritative.  Deriving it from cwd is only

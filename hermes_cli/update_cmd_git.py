@@ -227,9 +227,43 @@ def _mark_skip_upstream_prompt():
         (get_hermes_home() / SKIP_UPSTREAM_PROMPT_FILE).touch()
 
 
-def _sync_fork_with_upstream(git_cmd: list[str], cwd: Path) -> bool:
-    """Push updated main to origin (sync fork); True on success."""
-    return _git_ok(git_cmd, ["push", "origin", "main", "--force-with-lease"], cwd, network=True)
+def _sync_fork_with_upstream(git_cmd: list[str], cwd: Path, *, merge_upstream: bool = False) -> bool:
+    """Optionally merge upstream/main into a clean fork, then push the merge."""
+    from hermes_cli.update_cmd import _git_run
+    if not merge_upstream:
+        print("  Skipping upstream sync to preserve your changes.")
+        return False
+    head = _git_stdout(git_cmd, ["rev-parse", "--abbrev-ref", "HEAD"], cwd)
+    if head != "main":
+        print(f"  ✗ HEAD is on '{head or 'unknown'}', not 'main' — skipping upstream merge.")
+        return False
+    status = _git_run(git_cmd, ["status", "--porcelain", "--untracked-files=no"], cwd)
+    if status.returncode != 0 or status.stdout.strip():
+        print("  ✗ Working tree has uncommitted changes — skipping upstream merge.")
+        return False
+    from hermes_cli.update_cmd import _count_commits_between
+    incoming = _count_commits_between(git_cmd, cwd, "HEAD", "upstream/main")
+    if incoming <= 0:
+        return False
+    print("→ Merging upstream/main into your fork...")
+    merge = _git_run(git_cmd, ["merge", "--no-edit", "upstream/main"], cwd)
+    if merge.returncode != 0:
+        conflicts = _git_run(git_cmd, ["diff", "--name-only", "--diff-filter=U"], cwd)
+        _git_run(git_cmd, ["merge", "--abort"], cwd)
+        files = [line for line in conflicts.stdout.splitlines() if line.strip()]
+        print(f"  ✗ Merge conflict in {len(files)} file(s) — merge aborted:")
+        for path in files:
+            print(f"    {path}")
+        print("    Resolve manually with: git merge upstream/main")
+        return False
+    print(f"  ✓ Merged {incoming} upstream commit(s) into your fork")
+    push = _git_run(git_cmd, ["push", "origin", "main"], cwd, network=True)
+    if push.returncode == 0:
+        print("  ✓ Pushed to origin/main")
+    else:
+        print("  ⚠ Could not push the merge to origin (the local merge is intact).")
+        print("    git push origin main")
+    return True
 
 
 def _offer_upstream_remote(git_cmd: list[str], cwd: Path, *, assume_yes: bool, input_fn) -> bool:
@@ -290,12 +324,10 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path, *, assume_yes: 
         print("  ✗ Could not compare branches. Skipping upstream sync.")
         return False
     if origin_ahead > 0:
-        print(
-            f"\nℹ Your fork has {origin_ahead} commit(s) not on upstream.\n"
-            "  Skipping upstream sync to preserve your changes.\n"
-            "  If you want to merge upstream changes, run:\n    git pull upstream main"
-        )
-        return True
+        print(f"\nℹ Your fork has {origin_ahead} commit(s) not on upstream.")
+        from hermes_cli.config import load_config
+        merge_upstream = bool(load_config().get("updates", {}).get("merge_upstream", False))
+        return _sync_fork_with_upstream(git_cmd, cwd, merge_upstream=merge_upstream)
     if upstream_ahead == 0:
         print("  ✓ Fork is up to date with upstream")
         return True

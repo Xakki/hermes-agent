@@ -377,6 +377,10 @@ class _ResponsesStream:
 class OpenAICompatRoutesMixin:
     """/v1/chat/completions and /v1/responses handlers + SSE writers."""
 
+    def _session_scope_error(self, session: Dict[str, Any]) -> Optional[Any]:
+        """Implemented by the adapter that owns the active project authority."""
+        raise NotImplementedError
+
     def _select_request_route(
         self, body: Dict[str, Any], *, session_id, gateway_session_key, model_alias) -> tuple:
         """Resolve the model_routes alias + per-request overrides ->
@@ -473,6 +477,11 @@ class OpenAICompatRoutesMixin:
             try:
                 db = await self._ensure_session_db_async()
                 if db is not None:
+                    session = await asyncio.to_thread(db.get_session, provided_session_id)
+                    if not session:
+                        return _error_response(f"Session not found: {provided_session_id}", 404, code="session_not_found")
+                    if (scope_error := self._session_scope_error(session)) is not None:
+                        return scope_error
                     # #98619/#13437: a client-addressed id from before a compression rotation
                     # must adopt the live continuation tip — history loads from it, the turn and
                     # the wake target bind it, and a detached delegation delivery row persisted

@@ -71,6 +71,11 @@ def _workspace_key_clause(key: str) -> Tuple[str, List[str]]:
     )
 
 
+def _project_root_clause(project_root: str) -> Tuple[str, List[str]]:
+    root = (project_root or "").strip().rstrip("/\\") or (project_root or "").strip()
+    return "s.project_root = ?", [root]
+
+
 # First user message of a session, shaped by _shape_preview() in Python.
 # The indentation is part of the list_sessions_rich SQL text.
 _PREVIEW_COL_SQL = f"""COALESCE(
@@ -207,7 +212,7 @@ _SAME_KEY_NAMESPACE_SQL = (
 _UPSERT_KEEP_EXISTING_SQL = ",\n".join(
     f"                       {col} = COALESCE(sessions.{col}, excluded.{col})" for col in (
         "session_key", "chat_id", "chat_type", "thread_id", "parent_session_id", "cwd", "profile_name",
-        "git_repo_root", "origin_json", "display_name",
+        "git_repo_root", "origin_json", "display_name", "project_root",
     )
 )
 
@@ -225,7 +230,7 @@ _INHERIT_SEP = ",\n" + " " * 27
 _INHERIT_PARENT_META_SQL = (
     "UPDATE sessions\n                       SET "
     + _INHERIT_SEP.join((
-        *(_inherit_col_sql(c) for c in ("cwd", "git_repo_root", "git_branch")),
+        *(_inherit_col_sql(c) for c in ("cwd", "git_repo_root", "git_branch", "project_root")),
         _inherit_col_sql("profile_name", "\n" + " " * 46 + f"AND ({_SAME_KEY_NAMESPACE_SQL})"),
     ))
     + "\n                     WHERE id = ? AND parent_session_id IS NOT NULL"
@@ -279,6 +284,7 @@ class SessionSessionsMixin:
         chat_id: str = None, chat_type: str = None, thread_id: str = None,
         parent_session_id: str = None, cwd: str = None, profile_name: Optional[str] = None,
         git_repo_root: str = None, origin_json: str = None, display_name: str = None,
+        project_root: str = None,
     ) -> None:
         """Upsert a session row, never overwriting what an earlier writer set (the gateway creates a
         bare row before create_session carries the real model/prompt). chat_id/thread_id scope gateway
@@ -315,9 +321,9 @@ class SessionSessionsMixin:
                    id, source, user_id, session_key, chat_id, chat_type, thread_id,
                    model, model_config, system_prompt, system_prompt_hash,
                    parent_session_id, cwd, profile_name, git_repo_root,
-                   origin_json, display_name, started_at
+                   origin_json, display_name, project_root, started_at
                 )
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
                        model = COALESCE(sessions.model, excluded.model),
                        model_config = CASE
@@ -353,7 +359,7 @@ class SessionSessionsMixin:
                 (
                     session_id, source, user_id, session_key, chat_id, chat_type, thread_id, model,
                     json.dumps(model_config) if model_config else None, system_prompt_hash,
-                    parent_session_id, cwd, profile_name, git_repo_root, origin_json, display_name,
+                    parent_session_id, cwd, profile_name, git_repo_root, origin_json, display_name, project_root,
                     time.time(),
                 ),
             )
@@ -1193,6 +1199,7 @@ class SessionSessionsMixin:
         order_by_last_active: bool = False, include_archived: bool = False, archived_only: bool = False,
         id_query: str = None, search_query: str = None, compact_rows: bool = False,
         include_pinned: bool = False, session_key: str = None, include_hidden: bool = False,
+        project_root: str = None,
     ) -> List[Dict[str, Any]]:
         """List sessions with preview and ``last_active`` in one query. ``order_by_last_active`` sorts
         by the chain TIP via a recursive CTE (the only path honouring ``id_query`` / ``search_query``);
@@ -1203,6 +1210,10 @@ class SessionSessionsMixin:
             exclude_sources=exclude_sources, cwd_prefix=cwd_prefix, min_message_count=min_message_count,
             archived_only=archived_only, include_archived=include_archived,
         )
+        if project_root:
+            clause, clause_params = _project_root_clause(project_root)
+            where_clauses.append(clause)
+            params.extend(clause_params)
         if not include_hidden:
             where_clauses.append("s.hidden = 0")
         where_sql = _where_sql(where_clauses)
@@ -1363,6 +1374,7 @@ class SessionSessionsMixin:
 
     def search_sessions(
         self, source: str = None, limit: int = 20, offset: int = 0, workspace_key: str = None,
+        project_root: str = None,
     ) -> List[Dict[str, Any]]:
         """Sessions MRU-first with a computed ``last_active``; ``workspace_key`` scopes to one workspace
         so ``hermes -c``/``--resume`` picks its last session."""
@@ -1375,6 +1387,10 @@ class SessionSessionsMixin:
             ws_clause, ws_params = _workspace_key_clause(workspace_key)
             where_clauses.append(ws_clause)
             params.extend(ws_params)
+        if project_root:
+            clause, clause_params = _project_root_clause(project_root)
+            where_clauses.append(clause)
+            params.extend(clause_params)
         return [self._session_row_dict(row) for row in self._read_all(
             "SELECT s.*, COALESCE(sp.prompt, s.system_prompt) AS _system_prompt_resolved, "
             f"{_sql_session_last_active('s')} AS last_active "
@@ -1387,7 +1403,7 @@ class SessionSessionsMixin:
     def session_count(
         self, source: str = None, sources: List[str] = None, cwd_prefix: str = None,
         min_message_count: int = 0, include_archived: bool = False, archived_only: bool = False,
-        exclude_children: bool = False, exclude_sources: List[str] = None,
+        exclude_children: bool = False, exclude_sources: List[str] = None, project_root: str = None,
     ) -> int:
         """Count sessions with list_sessions_rich's filters so a paired "load more" total matches."""
         where_clauses, params = _session_filter_where(
@@ -1395,6 +1411,10 @@ class SessionSessionsMixin:
             exclude_sources=exclude_sources, cwd_prefix=cwd_prefix, min_message_count=min_message_count,
             archived_only=archived_only, include_archived=include_archived,
         )
+        if project_root:
+            clause, clause_params = _project_root_clause(project_root)
+            where_clauses.append(clause)
+            params.extend(clause_params)
         return self._read_one(f"SELECT COUNT(*) FROM sessions s{_where_sql(where_clauses, ' ')}", params)[0]
 
     def session_count_ge(self, n: int = 1) -> bool:
@@ -1558,17 +1578,27 @@ class SessionSessionsMixin:
         "SELECT 1 FROM messages WHERE messages.session_id = sessions.id)"
     )
 
-    def count_empty_sessions(self) -> int:
+    def count_empty_sessions(self, project_root: str = None) -> int:
         """Count of empty, ended, non-archived sessions; ended_at guards a fresh session's first message."""
-        return self._read_one(f"SELECT COUNT(*) FROM sessions WHERE {self._EMPTY_SESSION_WHERE}")[0]
+        where = self._EMPTY_SESSION_WHERE
+        params = []
+        if project_root:
+            where += " AND project_root = ?"
+            params.append(project_root)
+        return self._read_one(f"SELECT COUNT(*) FROM sessions WHERE {where}", params)[0]
 
-    def delete_empty_sessions(self, sessions_dir: Optional[Path] = None) -> int:
+    def delete_empty_sessions(self, sessions_dir: Optional[Path] = None, project_root: str = None) -> int:
         """Delete every empty, ended, non-archived session in one transaction, orphaning (not cascading)
         children; transcript files are swept too."""
         removed_ids: list[str] = []
         def _do(conn):
+            where = self._EMPTY_SESSION_WHERE
+            params = []
+            if project_root:
+                where += " AND project_root = ?"
+                params.append(project_root)
             session_ids = {row["id"] for row in conn.execute(
-                f"SELECT id FROM sessions WHERE {self._EMPTY_SESSION_WHERE}"
+                f"SELECT id FROM sessions WHERE {where}", params
             ).fetchall()}
             if not session_ids:
                 return 0

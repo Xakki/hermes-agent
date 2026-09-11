@@ -431,7 +431,11 @@ def _(rid, params: dict, db) -> dict:
         limit = int(params.get("limit", 200) or 200)
         # Over-fetch: per-source filtering + tip merging must not leave us short. ``include_hidden`` is for
         # surfaces that OWN hidden sessions (Bots pane, pickers).
-        rows = _listing_rows(db, max(limit * 2, 200), include_hidden=_flag(params, "include_hidden"))[:limit]
+        project_root = _active_project_root(params, db)
+        if not project_root:
+            return _err(rid, 4008, "project context required")
+        rows = _listing_rows(db, max(limit * 2, 200), include_hidden=_flag(params, "include_hidden"),
+                             project_root=project_root)[:limit]
         return _ok(rid, {"sessions": [_session_row_summary(s) for s in rows]})
     except Exception as e:
         return _err(rid, 5006, str(e))
@@ -837,6 +841,15 @@ def _(rid, params: dict) -> dict:
         _resume_follow_tip(ctx)
         if (resp := _resume_guard(ctx)) is not None:
             return resp
+        # Preserve the legacy client-gone/active-session refusal before adding
+        # project ownership checks; refusal must not rebind a live session.
+        with _session_resume_lock:
+            live = _find_live_session_by_key(ctx.target, ctx.profile_home)
+            if live is not None and (resp := _reattach_refusal(ctx.rid, live[0], live[1])) is not None:
+                return resp
+        active_root = _active_project_root(params, ctx.db)
+        if not active_root or _session_project_root(ctx.found) != active_root:
+            return _err(rid, 4008, "session outside active project")
         ctx.profile_resume_cwd = _str_param(ctx.found, "cwd") or _profile_configured_cwd(ctx.profile_home)
         # Fast path: reuse a session live IN THIS PROFILE (never another profile's runtime).
         with _session_resume_lock:
@@ -921,7 +934,11 @@ def _(rid, params: dict) -> dict:
     # ``_finalized`` sessions linger until the reaper pops them (they inflated the footer). Do NOT filter on
     # the WS-detached sentinel: detached is attachable until grace-reap, and ``hermes --tui`` rides stdio.
     # Keep insertion order (focused must not jump).
-    rows = [_session_live_item(sid, session, current) for sid, session in snapshot if not session.get("_finalized")]
+    project_root = _active_project_root(params, _get_db())
+    if not project_root:
+        return _err(rid, 4008, "project context required")
+    rows = [_session_live_item(sid, session, current) for sid, session in snapshot
+            if not session.get("_finalized") and _session_project_root(session) == project_root]
     return _ok(rid, {"sessions": rows})
 
 
@@ -945,18 +962,24 @@ def _(rid, params: dict) -> dict:
     """Delete a stored session + transcripts; refused while live here (FK trips on the agent's next flush)."""
     if not (target := params.get("session_id", "")):
         return _err(rid, 4006, "session_id required")
-    snapshot, err = _snapshot_sessions(rid)
-    if err:
-        return err
-    if any(s.get("session_key") == target for _sid, s in snapshot):
-        return _err(rid, 4023, "cannot delete an active session")
-    profile_home = _profile_home((params.get("profile") or "").strip() or None)
-    with _profile_db(params) as db:
-        if db is None:
+    with _profile_db(params) as scope_db:
+        # Preserve the legacy order: database availability, active-session snapshot,
+        # then project ownership of the durable target row.
+        if scope_db is None:
             return _db_unavailable_error(rid, code=5036)
+        snapshot, err = _snapshot_sessions(rid)
+        if err:
+            return err
+        if any(s.get("session_key") == target for _sid, s in snapshot):
+            return _err(rid, 4023, "cannot delete an active session")
+        active_root = _active_project_root(params, scope_db)
+        target_row = scope_db.get_session(target)
+        if not active_root or target_row is None or _session_project_root(target_row) != active_root:
+            return _err(rid, 4008, "session outside active project")
         try:
+            profile_home = _profile_home((params.get("profile") or "").strip() or None)
             home = Path(profile_home) if profile_home is not None else get_hermes_home()
-            deleted = db.delete_session(target, sessions_dir=home / "sessions")
+            deleted = scope_db.delete_session(target, sessions_dir=home / "sessions")
         except Exception as e:
             return _err(rid, 5036, f"delete failed: {e}")
     return _ok(rid, {"deleted": target}) if deleted else _err(rid, 4007, "session not found")

@@ -1172,6 +1172,29 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         self._browser_control_artifacts: Dict[str, ArtifactStore] = {}
         self._browser_control_artifact_limiter: Optional[ArtifactRateLimiter] = None
 
+    @staticmethod
+    def _resolve_trusted_project_root(configured: Any = None) -> Optional[str]:
+        try:
+            from tui_gateway.server import _canonical_project_root
+            return _canonical_project_root(configured or os.getcwd())
+        except Exception:
+            return None
+
+    def _session_scope_error(self, session: Dict[str, Any]) -> Optional["web.Response"]:
+        active_root = getattr(self, "_trusted_project_root", None)
+        if not active_root:
+            return web.json_response(_openai_error("project context required", code="project_context_required"), status=403)
+        try:
+            from tui_gateway.server import _canonical_project_root
+            session_root = _canonical_project_root(
+                session.get("project_root") or session.get("cwd") or os.getcwd()
+            )
+        except Exception:
+            session_root = None
+        if session_root != active_root:
+            return web.json_response(_openai_error("Session is outside the active project", code="session_outside_project"), status=403)
+        return None
+
     def active_agent_work_count(self) -> int:
         """All live agent work: pending admissions + in-flight turns + live /v1/runs tasks
         (task-based, since ``_active_run_agents`` has a queued-before-agent gap)."""
@@ -2729,6 +2752,8 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         session = await asyncio.to_thread(db.get_session, session_id)
         if not session:
             return None, _error_response(f"Session not found: {session_id}", 404, code="session_not_found")
+        if (scope_error := self._session_scope_error(session)) is not None:
+            return None, scope_error
         return session, None
 
     async def _conversation_history_for_session(self, session_id: str) -> List[Dict[str, Any]]:

@@ -589,7 +589,7 @@ export function StatusRule({
     (ctxLabel ? stringWidth(' │ ') + stringWidth(ctxLabel) : 0) +
     (tokenLabel ? stringWidth(' │ ') + stringWidth(tokenLabel) : 0)
 
-  const rightLabel = sessionTitle && ok('title') ? ` ${sessionTitle} ` : cwdLabel
+  const rightLabel = sessionTitle && ok('title') ? `${cwdLabel}  ${sessionTitle}` : cwdLabel
   const { leftWidth, rightWidth, separatorWidth } = statusRuleWidths(cols, rightLabel, essentialWidth)
 
   // Whole-segment progressive disclosure for the tail: a segment renders only
