@@ -380,8 +380,9 @@ def _anthropic_aux_stream_event_hook() -> Callable[[Any], None]:
 
 
 # A dead stream fails at the no-progress window (first token AND between tokens); a live
-# stream re-arms per event, bounded by _aux_stream_total_ceiling().
-_AUX_STREAM_NO_PROGRESS_TIMEOUT_SECONDS = 60.0
+# stream re-arms per event, bounded by _aux_stream_total_ceiling(). Smaller task/host budgets
+# still clamp this shared maximum.
+_AUX_STREAM_NO_PROGRESS_TIMEOUT_SECONDS = 300.0
 
 
 @contextlib.contextmanager
@@ -1117,10 +1118,9 @@ class _CodexStreamGuard:
         self.no_progress_timeout = _AUX_STREAM_NO_PROGRESS_TIMEOUT_SECONDS
         # Progress-aware stream deadlines (supersedes the old single absolute kill at ``total_timeout``).
         # Three regimes: 1. First token: the stream must produce its first substantive payload within
-        # ``no_progress_timeout`` (60s default) or we fail fast and let the caller's normal retry/fallback
-        # chain run — a dead (or keepalive-only zombie) Codex stream no longer holds the full 300s
-        # compression budget before falling back (masoria report, Aug 2026: 3 stacked 300s waits -> 20+ min
-        # stuck on "Summarizing"). 2. Streaming: every substantive event re-arms the deadline by
+        # ``no_progress_timeout`` (300s shared maximum, shortened by a smaller per-task timeout) or we
+        # fail into the caller's normal retry/fallback chain. The host deadline and total ceiling still
+        # bound the whole request. 2. Streaming: every substantive event re-arms the deadline by
         # ``no_progress_timeout`` — a live stream is never killed by an absolute total, so a long reasoning
         # summary that is actually producing tokens completes instead of timing out at 300s and falling back
         # (#54915's original complaint, fixed properly). Keepalive/lifecycle frames do NOT re-arm, mirroring

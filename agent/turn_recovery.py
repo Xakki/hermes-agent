@@ -465,6 +465,42 @@ def _recover_format_errors(
     return False
 
 
+def _recover_lingering_codex_token_expired(
+    agent: Any, _retry: TurnRetryState, *, status_code: Optional[int], error_context: Any,
+    messages: List[Dict[str, Any]], auth_refresh_was_attempted: bool,
+) -> bool:
+    """Drop stale reasoning replay after the one-shot Codex/xAI OAuth refresh failed."""
+    if (
+        status_code != 401
+        or str(error_context.get("reason") or "").strip().lower() != "token_expired"
+        or agent.api_mode != "codex_responses"
+        or agent.provider not in {"openai-codex", "xai-oauth"}
+        or not auth_refresh_was_attempted
+        or _retry.invalid_encrypted_content_retry_attempted
+        or not bool(getattr(agent, "_codex_reasoning_replay_enabled", True))
+        or not any(
+            isinstance(message, dict)
+            and message.get("role") == "assistant"
+            and isinstance(message.get("codex_reasoning_items"), list)
+            and message.get("codex_reasoning_items")
+            for message in messages
+        )
+    ):
+        return False
+    _retry.invalid_encrypted_content_retry_attempted = True
+    replay_stats = agent._disable_codex_reasoning_replay(messages)
+    _vlines(
+        agent,
+        f"⚠️  Codex/xAI OAuth remained token_expired after refresh — disabled replay and "
+        f"stripped {replay_stats['items']} item(s) from {replay_stats['messages']} message(s), retrying...",
+    )
+    logger.warning(
+        "%sLingering token_expired recovery: disabled replay and stripped %d items from %d messages",
+        agent.log_prefix, replay_stats["items"], replay_stats["messages"],
+    )
+    return True
+
+
 def recover_after_classification(
     agent: Any, api_error: Exception, classified: Any, _retry: TurnRetryState, *,
     status_code: Optional[int], error_context: Any, messages: List[Dict[str, Any]],
@@ -576,7 +612,14 @@ def recover_after_classification(
             _vlines(agent, "🔕 OAuth subscription doesn't support the 1M-context beta — disabled for this session and retrying...")
             return True, recovered_with_pool
 
+    codex_auth_refresh_was_attempted = _retry.codex_auth_retry_attempted
     if _refresh_credentials_after_401(agent, api_error, _retry, status_code):
+        return True, recovered_with_pool
+
+    if _recover_lingering_codex_token_expired(
+        agent, _retry, status_code=status_code, error_context=error_context, messages=messages,
+        auth_refresh_was_attempted=codex_auth_refresh_was_attempted,
+    ):
         return True, recovered_with_pool
 
     if _recover_format_errors(agent, api_error, classified, _retry, messages, api_messages):
