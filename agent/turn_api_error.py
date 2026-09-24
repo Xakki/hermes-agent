@@ -54,6 +54,7 @@ def handle_api_error(
     conversation_history: Any, approx_tokens: Any, retry_count: Any, max_retries: Any,
     compression_attempts: Any, max_compression_attempts: Any, api_call_count: Any,
     api_request_id: Any, api_start_time: Any, effective_task_id: Any, turn_id: Any,
+    credential_identity: Any = None,
 ) -> ApiErrorVerdict:
     """Recover from ``api_error`` in the original order. Every fallback activation must leave
     the retry loop with ``restart_with_rebuilt_messages`` armed (``"break"``) so the pre-API
@@ -77,14 +78,24 @@ def handle_api_error(
     if agent.thinking_callback:
         agent.thinking_callback("")
 
+    status_code = getattr(api_error, "status_code", None)
+    failed_api_mode = agent.api_mode
     _recovered, active_system_prompt = recover_before_classification(
         agent, api_error, messages=messages, api_messages=api_messages, api_kwargs=api_kwargs,
         active_system_prompt=active_system_prompt,
     )
     if _recovered:
+        # A provider attempt still failed even when recovery bypasses classification.
+        agent._invoke_api_request_error_hook(
+            task_id=effective_task_id, turn_id=turn_id, api_request_id=api_request_id,
+            api_call_count=api_call_count, api_start_time=api_start_time, api_kwargs=api_kwargs,
+            error_type=type(api_error).__name__, error_message=str(api_error),
+            status_code=status_code, retry_count=retry_count, max_retries=max_retries,
+            retryable=True, reason="pre_classification_recovery",
+            credential_identity=credential_identity, api_mode=failed_api_mode,
+        )
         return _verdict("continue")
 
-    status_code = getattr(api_error, "status_code", None)
     error_context = agent._extract_api_error_context(api_error)
 
     # Process is exiting mid-flight: retries/rotation/fallbacks are futile and the
@@ -122,7 +133,8 @@ def handle_api_error(
         api_call_count=api_call_count, api_start_time=api_start_time, api_kwargs=api_kwargs,
         error_type=type(api_error).__name__, error_message=str(api_error), status_code=status_code,
         retry_count=retry_count, max_retries=max_retries, retryable=classified.retryable,
-        reason=classified.reason.value,
+        reason=classified.reason.value, credential_identity=credential_identity,
+        api_mode=failed_api_mode,
     )
 
     _recovered, recovered_with_pool = recover_after_classification(

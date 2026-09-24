@@ -553,6 +553,7 @@ def handle_content_policy_refusal(
     messages: List[Dict[str, Any]], api_messages: Any, api_kwargs: Any, active_system_prompt: Any,
     conversation_history: Any, api_call_count: int, effective_task_id: Any, turn_id: Any,
     api_request_id: Any, api_start_time: float, retry_count: int, max_retries: int,
+    credential_identity: Any = None,
 ) -> RefusalVerdict:
     """HTTP-200 refusal (``finish_reason`` ``content_filter`` / ``guardrail_intervened``).
     Deterministic for the unchanged prompt — never retried: one configured-fallback try,
@@ -573,6 +574,7 @@ def handle_content_policy_refusal(
         error_message=_refusal_text or "model declined to respond (content_filter)",
         status_code=None, retry_count=retry_count, max_retries=max_retries, retryable=False,
         reason=FailoverReason.content_policy_blocked.value,
+        credential_identity=credential_identity,
     )
     stop_thinking_spinner(agent, thinking_spinner)
 

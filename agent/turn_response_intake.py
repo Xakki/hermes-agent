@@ -54,7 +54,7 @@ def _coerce_content_text(raw: Any) -> str:
 def _fire_post_api_request_hook(
     agent: Any, response: Any, assistant_message: Any, finish_reason: Any, *, api_messages: Any,
     api_call_count: Any, api_duration: Any, api_start_time: Any, api_request_id: Any,
-    effective_task_id: Any, turn_id: Any,
+    effective_task_id: Any, turn_id: Any, credential_identity: Any = None,
 ) -> None:
     from agent.conversation_loop import _moa_reference_metrics_for_hook
 
@@ -72,6 +72,8 @@ def _fire_post_api_request_hook(
                 provider=agent.provider,
                 base_url=agent.base_url,
                 api_mode=agent.api_mode,
+                credential_id=(credential_identity or {}).get("credential_id"),
+                account_name=(credential_identity or {}).get("account_name"),
                 api_call_count=api_call_count,
                 api_duration=api_duration,
                 started_at=api_start_time,
@@ -115,7 +117,7 @@ def _relay_thinking(agent: Any, content: str) -> None:
 def normalize_model_response(
     agent: Any, *, response: Any, messages: Any, api_messages: Any, conversation_history: Any,
     api_call_count: Any, api_duration: Any, api_start_time: Any, api_request_id: Any,
-    effective_task_id: Any, turn_id: Any,
+    effective_task_id: Any, turn_id: Any, credential_identity: Any = None,
 ) -> ResponseIntakeVerdict:
     """Normalize ``response`` into ``assistant_message`` (str content, never dict/list) and run
     the post-response hooks and continuation guards, in the original order."""
@@ -139,6 +141,7 @@ def normalize_model_response(
         agent, response, assistant_message, finish_reason, api_messages=api_messages,
         api_call_count=api_call_count, api_duration=api_duration, api_start_time=api_start_time,
         api_request_id=api_request_id, effective_task_id=effective_task_id, turn_id=turn_id,
+        credential_identity=credential_identity,
     )
 
     content = assistant_message.content

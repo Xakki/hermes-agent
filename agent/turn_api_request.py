@@ -32,6 +32,7 @@ class ApiRequestBuild:
     api_kwargs: Any
     _original_api_kwargs: Any
     _llm_middleware_trace: Any
+    credential_identity: Any = None
 
 
 def _set_extra_header(api_kwargs: Any, key: str, value: str) -> None:
@@ -45,7 +46,7 @@ def _fire_pre_api_request_hook(
     agent: Any, api_kwargs: Any, api_messages: Any, _llm_middleware_trace: Any, *, messages: Any,
     original_user_message: Any, approx_tokens: Any, total_chars: Any, retry_count: Any,
     api_call_count: Any, api_request_id: Any, api_start_time: Any, effective_task_id: Any,
-    turn_id: Any,
+    turn_id: Any, credential_identity: Any = None,
 ) -> None:
     from agent.conversation_loop import _system_prompt_for_hooks
 
@@ -74,6 +75,8 @@ def _fire_pre_api_request_hook(
                 provider=agent.provider,
                 base_url=agent.base_url,
                 api_mode=agent.api_mode,
+                credential_id=(credential_identity or {}).get("credential_id"),
+                account_name=(credential_identity or {}).get("account_name"),
                 api_call_count=api_call_count,
                 retry_count=retry_count,
                 request_messages=list(request_messages) if isinstance(request_messages, list) else [],
@@ -86,6 +89,7 @@ def _fire_pre_api_request_hook(
                 started_at=api_start_time,
                 middleware_trace=list(_llm_middleware_trace),
                 request=agent._api_request_payload_for_hook(api_kwargs),
+                request_options=agent._api_request_options_for_hook(api_kwargs),
             )
     except Exception:
         pass
@@ -161,12 +165,14 @@ def build_api_request(
         _original_api_kwargs = dict(api_kwargs)
         _llm_middleware_trace = []
 
+    credential_identity = agent._credential_identity_for_api_request()
     _fire_pre_api_request_hook(
         agent, api_kwargs, api_messages, _llm_middleware_trace, messages=messages,
         original_user_message=original_user_message, approx_tokens=approx_tokens,
         total_chars=total_chars, retry_count=retry_count, api_call_count=api_call_count,
         api_request_id=api_request_id, api_start_time=api_start_time,
         effective_task_id=effective_task_id, turn_id=turn_id,
+        credential_identity=credential_identity,
     )
 
     if env_var_enabled("HERMES_DUMP_REQUESTS"):
@@ -187,5 +193,5 @@ def build_api_request(
             )
     return ApiRequestBuild(
         "fallthrough", api_messages, _moa_prepared_request, tools_for_api, api_kwargs,
-        _original_api_kwargs, _llm_middleware_trace,
+        _original_api_kwargs, _llm_middleware_trace, credential_identity,
     )

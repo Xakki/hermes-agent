@@ -89,6 +89,7 @@ def check_api_response(
     truncated_tool_call_retries: Any, current_turn_user_idx: Any, api_call_count: Any,
     api_request_id: Any, api_start_time: Any, effective_task_id: Any, turn_id: Any,
     _preflight_compression_blocked: Any, _last_preflight_pressure: Any,
+    credential_identity: Any = None,
 ) -> ResponseCheckVerdict:
     """Verify ``response`` in the original order. The retry buffer is NOT cleared on success
     (bytes back != usable content); ``_preflight_compression_blocked``/``_last_preflight_pressure``
@@ -131,6 +132,7 @@ def check_api_response(
             api_call_count=api_call_count, api_request_id=api_request_id,
             api_start_time=api_start_time, api_duration=api_duration,
             effective_task_id=effective_task_id, turn_id=turn_id,
+            credential_identity=credential_identity,
         )
         thinking_spinner = _iv.thinking_spinner
         active_system_prompt = _iv.active_system_prompt
@@ -150,7 +152,7 @@ def check_api_response(
             active_system_prompt=active_system_prompt, conversation_history=conversation_history,
             api_call_count=api_call_count, effective_task_id=effective_task_id, turn_id=turn_id,
             api_request_id=api_request_id, api_start_time=api_start_time, retry_count=retry_count,
-            max_retries=max_retries,
+            max_retries=max_retries, credential_identity=credential_identity,
         )
         thinking_spinner = None
         active_system_prompt = _rv.active_system_prompt
@@ -227,7 +229,7 @@ def retry_invalid_response(
     messages: Any, api_messages: Any, api_kwargs: Any, active_system_prompt: Any,
     conversation_history: Any, retry_count: Any, max_retries: Any, compression_attempts: Any,
     api_call_count: Any, api_request_id: Any, api_start_time: Any, api_duration: Any,
-    effective_task_id: Any, turn_id: Any,
+    effective_task_id: Any, turn_id: Any, credential_identity: Any = None,
 ) -> InvalidResponseVerdict:
     """Malformed/empty provider response: fire the error hook, stop the spinner, eager
     fallback (empty responses often mean rate limiting), terminal result at max retries,
@@ -250,6 +252,7 @@ def retry_invalid_response(
         error_message=", ".join(error_details) or "Invalid API response",
         status_code=getattr(getattr(response, "error", None), "code", None),
         retry_count=retry_count, max_retries=max_retries, retryable=True, reason="invalid_response",
+        credential_identity=credential_identity,
     )
     # Retry status is buffered and only surfaced if every retry+fallback exhausts.
     thinking_spinner = stop_thinking_spinner(agent, thinking_spinner)
