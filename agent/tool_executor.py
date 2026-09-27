@@ -990,7 +990,10 @@ def _commit_tool_result(
                 function_name, function_args, function_result, failed=is_error, tool_call_id=tool_call_id,
             )
         if is_error:
-            logger.warning("Tool %s returned error (%.2fs): %s", function_name, tool_duration, error_preview(function_result))
+            # search_files misses are routine exploration, not faults; every other tool's
+            # observed error stays WARNING and error semantics are unchanged.
+            _log_tool_error = logger.info if function_name == "search_files" else logger.warning
+            _log_tool_error("Tool %s returned error (%.2fs): %s", function_name, tool_duration, error_preview(function_result))
         elif success_log_chars is not None:
             logger.info("tool %s completed (%.2fs, %d chars)", function_name, tool_duration, success_log_chars)
         if not blocked:

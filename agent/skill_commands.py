@@ -346,7 +346,8 @@ def _scan_skill_md(skill_md: Path, disabled: set, seen_names: set, commands: Dic
     # A collision with a core command (name or alias, via resolve_command) skips
     # auto-registration; the skill stays loadable via /skill <name>.
     if resolve_command(cmd_name) is not None:
-        logger.warning("Skill %r generates slash command '/%s' which collides with a core Hermes command; "
+        # INFO: an expected, routine skip — the skill stays loadable via /skill <name>.
+        logger.info("Skill %r generates slash command '/%s' which collides with a core Hermes command; "
                        "skipping auto-registration. Use '/skill %s' instead.", name, cmd_name, name)
         return
     # Dedup on the slug too: "git_helper" and "git-helper" normalize the same.

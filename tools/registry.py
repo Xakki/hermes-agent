@@ -331,8 +331,10 @@ def _check_fn_cached(fn: Callable) -> bool:
             return True
 
         # No recent success (or grace expired) — honor the failure; logged so silent tool
-        # loss in quiet mode (subagents) is diagnosable.
-        logger.warning(
+        # loss in quiet mode (subagents) is diagnosable. A returned-False probe is an
+        # expected unavailability (INFO); a raised probe is a fault and stays WARNING.
+        _log_unavailable = logger.info if outcome == "returned False" else logger.warning
+        _log_unavailable(
             "check_fn %s %s; dependent tools will be unavailable this turn", _fn_label(fn), outcome)
         _check_fn_cache[cache_key] = (now, False)
         return False
