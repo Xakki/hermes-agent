@@ -2964,6 +2964,7 @@ export interface SessionResumeParams {
   omit_messages?: boolean
   eager_build?: boolean
   close_on_disconnect?: boolean
+  inline_images?: boolean
 }
 export interface SessionResumeResult {
   session_id: string
@@ -3138,6 +3139,17 @@ export interface SessionSetHiddenParams {
 }
 export interface SessionSetHiddenResult {
   hidden: boolean
+  session_key: string
+}
+/** ``session_id`` (or its ``session_key`` alias) is a live runtime id first, else a stored id / key / title. */
+export interface SessionArchiveParams {
+  session_id?: string | null
+  session_key?: string | null
+  archived?: boolean
+  profile?: string | null
+}
+export interface SessionArchiveResult {
+  archived: boolean
   session_key: string
 }
 export interface SessionWorkspaceMoveParams {
@@ -4202,6 +4214,7 @@ export interface PluginsManageResult {
   warnings?: string[] | null
   missing_env?: string[] | null
   python_dependencies?: string[] | null
+  known_issues?: string[] | null
   after_install_path?: string | null
   enabled?: boolean | null
   sha?: string | null
@@ -5157,6 +5170,8 @@ export interface RpcMethods {
   'session.activate': { params: SessionActivateParams; result: SessionActivateResult }
   /** Live sessions in this process, insertion order (not a DB browser). */
   'session.active_list': { params: SessionActiveListParams; result: SessionActiveListResult }
+  /** Set/clear archived (soft-hide, messages kept) on a session + lineage; Desktop PATCH parity. */
+  'session.archive': { params: SessionArchiveParams; result: SessionArchiveResult }
   /** Fork a live session into a new stored child that shares the parent's history so far. */
   'session.branch': { params: SessionBranchParams; result: SessionBranchResult }
   /** Whole-session branch of a stored parent: the owning backend reads and copies the transcript, which never crosses the wire (a separate method so an older gateway fails loudly, not with an empty branch). */
@@ -5469,6 +5484,7 @@ export const RPC_METHODS = [
   'rollback.restore',
   'session.activate',
   'session.active_list',
+  'session.archive',
   'session.branch',
   'session.branch_stored',
   'session.branch_whole',
