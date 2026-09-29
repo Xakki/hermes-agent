@@ -354,8 +354,8 @@ async def search_sessions(
                 ownership = db.get_session(raw_sid)
                 if not ownership or not ownership.get("project_root"):
                     return
-                from tui_gateway.server import _canonical_project_root
-                if _canonical_project_root(ownership["project_root"]) != _active_project_root(profile):
+                from tui_gateway.git_probe import canonical_project_root
+                if canonical_project_root(ownership["project_root"]) != _active_project_root(profile):
                     return
                 root = compression_root(raw_sid)
                 if root in seen or len(seen) >= safe_limit:

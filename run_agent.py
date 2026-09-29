@@ -57,8 +57,8 @@ def _launch_project_root_for_session(source: str, cwd: Optional[str]) -> Optiona
     if not cwd:
         return None
     try:
-        from tui_gateway.server import _canonical_project_root
-        return _canonical_project_root(cwd)
+        from tui_gateway.git_probe import canonical_project_root
+        return canonical_project_root(cwd)
     except Exception:
         return cwd
 

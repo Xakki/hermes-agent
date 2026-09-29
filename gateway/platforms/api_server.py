@@ -1269,8 +1269,8 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
     @staticmethod
     def _resolve_trusted_project_root(configured: Any = None) -> Optional[str]:
         try:
-            from tui_gateway.server import _canonical_project_root
-            return _canonical_project_root(configured or os.getcwd())
+            from tui_gateway.git_probe import canonical_project_root
+            return canonical_project_root(configured or os.getcwd())
         except Exception:
             return None
 
@@ -1279,8 +1279,8 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         if not active_root:
             return web.json_response(_openai_error("project context required", code="project_context_required"), status=403)
         try:
-            from tui_gateway.server import _canonical_project_root
-            session_root = _canonical_project_root(
+            from tui_gateway.git_probe import canonical_project_root
+            session_root = canonical_project_root(
                 session.get("project_root") or session.get("cwd") or os.getcwd()
             )
         except Exception:

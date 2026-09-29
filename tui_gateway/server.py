@@ -94,13 +94,7 @@ _db_error: str | None = None
 
 
 def _canonical_project_root(cwd: str | None) -> str | None:
-    if not cwd:
-        return None
-    try:
-        candidate = os.path.realpath(os.path.abspath(os.path.expanduser(str(cwd))))
-        return _git_common_repo_root_for_cwd(candidate) or candidate
-    except Exception:
-        return None
+    return git_probe.canonical_project_root(cwd, root_probe=_git_common_repo_root_for_cwd)
 
 
 def _git_common_repo_root_for_cwd(cwd: str) -> str:
