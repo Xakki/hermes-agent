@@ -142,7 +142,17 @@ def _listing_rows(persistence, limit: int, **kwargs) -> list:
     from persistence.conversation.sessions import SessionOrder, SessionQuery, SessionWindow
     entries = persistence.sessions.list_sessions(SessionQuery(order=SessionOrder.LAST_ACTIVE, **kwargs),
                                                  SessionWindow(limit=limit), compact_rows=True)
-    return [row for row in (entry.as_list_row() for entry in entries) if not _denied_source(row)]
+    rows = [entry.as_list_row() for entry in entries]
+    visible = [row for row in rows if not _denied_source(row)]
+    source_counts: dict[str, int] = {}
+    safe_sources = {"cli", "tui", "desktop", "oneshot", "subagent", "tool", "kanban", "unknown", "cron", "api"}
+    for row in rows:
+        source = str(row.get("source") or "").strip().lower()
+        key = source if source in safe_sources else "other"
+        source_counts[key] = source_counts.get(key, 0) + 1
+    logger.debug("session.list diagnostics raw_count=%d visible_count=%d source_counts=%s hidden_included=%s",
+                 len(rows), len(visible), source_counts, bool(kwargs.get("include_hidden")))
+    return visible
 
 
 def _snapshot_sessions(rid):
@@ -447,7 +457,6 @@ def _(rid, params: dict, persistence) -> dict:
         # Over-fetch: per-source filtering + tip merging must not leave us short. ``include_hidden`` is for
         # surfaces that OWN hidden sessions (Bots pane, pickers).
         from hermes_cli.session_listing import show_subagent_sessions
-
         # ``sessions.show_subagents`` (the store's own profile config) re-admits delegate runs (#97202).
         include_subagents = show_subagent_sessions(persistence.scope.profile_dir)
         rows = _listing_rows(persistence, max(limit * 2, 200), include_hidden=_flag(params, "include_hidden"),
@@ -455,8 +464,10 @@ def _(rid, params: dict, persistence) -> dict:
         # No live_message_count here on purpose: the bulk listing serves rows whose open
         # paths never demand history (expectHistory defaults false); the count is a
         # per-session scan and would turn one listing call into hundreds of them.
+        logger.info("session.list completed output_count=%d", len(rows))
         return _ok(rid, {"sessions": [_session_row_summary(s) for s in rows]})
     except Exception as e:
+        logger.warning("session.list failed error_type=%s", type(e).__name__)
         return _err(rid, 5006, str(e))
 
 

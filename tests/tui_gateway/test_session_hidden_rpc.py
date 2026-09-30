@@ -11,6 +11,8 @@ Covers the two seams Bot Mode's "sessions are always hidden" policy leans on:
   every default caller keeps the hidden rows dropped.
 """
 
+import logging
+
 import pytest
 
 import tui_gateway.server as srv
@@ -71,6 +73,29 @@ def test_set_hidden_without_flag_leaves_visible_session_alone(db):
     assert session_row(db, "plain-chat")["hidden"] == 0
 
 
+def test_session_list_emits_safe_filter_counts(db, caplog):
+    caplog.set_level(logging.DEBUG, logger="tui_gateway.server")
+    for sid in ("tui-one", "tui-two", "tui-three"):
+        seed_session(db, sid, "tui", title=f"PRIVATE_TITLE_{sid}")
+        raw_holder(db)._execute_write(
+            lambda conn, sid=sid: conn.execute("UPDATE sessions SET message_count = 1 WHERE id = ?", (sid,)))
+
+    envelope = _call("session.list", {})
+    assert "error" not in envelope
+    assert {row["id"] for row in envelope["result"]["sessions"]} == {"tui-one", "tui-two", "tui-three"}
+    record = next((r for r in caplog.records if "session.list diagnostics" in r.getMessage()), None)
+    assert record is not None
+    assert "raw_count=3" in record.getMessage()
+    assert "visible_count=3" in record.getMessage()
+    assert "source_counts={'tui': 3}" in record.getMessage()
+    assert "PRIVATE_TITLE" not in record.getMessage()
+    assert record.levelno == logging.DEBUG
+    info = next((r for r in caplog.records if "session.list completed" in r.getMessage()), None)
+    assert info is not None
+    assert info.levelno == logging.INFO
+    assert "output_count=3" in info.getMessage()
+
+
 def test_session_list_include_hidden(db):
     _seed(db, "plain-chat")
     _seed(db, "bot-chat")
@@ -81,6 +106,21 @@ def test_session_list_include_hidden(db):
 
     all_rows = _call("session.list", {"include_hidden": True})["result"]["sessions"]
     assert {s["id"] for s in all_rows} == {"plain-chat", "bot-chat"}
+
+
+def test_session_list_dispatch_accepts_current_session_authority(db):
+    """The TUI sends its runtime session id alongside the listing request."""
+    response = srv.handle_request({
+        "id": "resume-list",
+        "method": "session.list",
+        "params": {
+            "limit": 200,
+            "current_session_id": "new-runtime-session",
+        },
+    })
+
+    assert isinstance(response, dict)
+    assert "error" not in response, response
 
 
 @pytest.mark.parametrize("source", ["oneshot", "kanban", "tool"])
