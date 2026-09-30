@@ -24,9 +24,11 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import socket
 import sys
 import tempfile
 import threading
+import types
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
@@ -140,6 +142,14 @@ def agent_env():
     for mod in list(sys.modules):
         if mod == "run_agent" or mod.startswith("agent.") or mod.startswith("tools.") or mod.startswith("hermes_"):
             del sys.modules[mod]
+    # The test runner already provisions dependencies. Process bootstrap would
+    # probe the real install's manifest; only its loopback TCP helper is needed.
+    bootstrap = types.ModuleType("hermes_bootstrap")
+    bootstrap.__dict__["_happy_eyeballs_create_connection"] = (
+        lambda address, timeout=None, source_address=None, socket_options=():
+        socket.create_connection(address, timeout, source_address)
+    )
+    sys.modules["hermes_bootstrap"] = bootstrap
     from run_agent import AIAgent
 
     agent = AIAgent(
