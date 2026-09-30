@@ -245,17 +245,12 @@ def test_mixed_batch_preserves_tool_call_result_pairing(agent_env):
 
 
 
-def test_invalid_tool_exhaustion_closes_tool_tail(agent_env):
-    """Invalid-tool 3-strike partial must not leave a durable tool→user tail (#48879 class).
-
-    Retries <3 append assistant+error tool rows, so the transcript already ends
-    on ``tool`` before the exhaustion early-return. That return must close the
-    sequence (same contract as interrupt aborts) so the next user turn is not
-    ``tool → user`` for strict providers.
-    """
+@pytest.mark.parametrize("invalid_name", ["", "frobnicate_xyz"])
+def test_invalid_tool_exhaustion_closes_tool_tail(agent_env, invalid_name, monkeypatch):
+    """После трёх невалидных вызовов хвост закрывается, а CLI возвращает ошибку."""
     agent, handler = agent_env
     for _ in range(3):
-        handler.response_queue.append(_tc_resp("frobnicate_xyz", "{}"))
+        handler.response_queue.append(_tc_resp(invalid_name, "{}"))
 
     result = agent.run_conversation("degenerate", conversation_history=[], task_id="t")
 
@@ -264,4 +259,33 @@ def test_invalid_tool_exhaustion_closes_tool_tail(agent_env):
     assert msgs, "expected persisted conversation messages"
     assert msgs[-1].get("role") == "assistant"
     assert "invalid tool call" in (msgs[-1].get("content") or "").lower()
+
+    tool_results = [message for message in msgs if message.get("role") == "tool"]
+    assert len(tool_results) == 2
+    assert all(message.get("name") == invalid_name for message in tool_results)
+    call_ids = [
+        call["id"] for message in msgs if message.get("role") == "assistant"
+        for call in message.get("tool_calls") or []
+    ]
+    assert sorted(message["tool_call_id"] for message in tool_results) == sorted(call_ids)
+
+    from types import SimpleNamespace
+
+    import cli
+
+    for name in ("HERMES_KANBAN_GOAL_MODE", "HERMES_KANBAN_TASK", "HERMES_TURN_AUTHOR"):
+        monkeypatch.delenv(name, raising=False)
+    fake_cli = SimpleNamespace(
+        agent=SimpleNamespace(
+            session_id="neutral-validator-session",
+            run_conversation=lambda **_kwargs: result,
+        ),
+        session_id="neutral-validator-session",
+        conversation_history=[],
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        cli._run_quiet_single_query(fake_cli, "neutral fixture")
+    assert exc_info.value.code == 1
+    assert result.get("completed") is False
+    assert result.get("failed") is True
 

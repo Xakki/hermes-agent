@@ -62,6 +62,7 @@ def _partial_exit(agent, messages, conversation_history, api_call_count, final_r
         "api_calls": api_call_count,
         "completed": False,
         "partial": True,
+        "failed": True,
         "error": final_response,
     }
 
