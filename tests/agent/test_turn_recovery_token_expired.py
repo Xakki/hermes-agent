@@ -42,8 +42,9 @@ class _RecoveryAgent:
     def _buffer_vprint(self, _message):
         pass
 
-    def _vprint(self, _message, *, force):
+    def _vprint(self, _message, *, force, diagnostic=False):
         assert force is True
+        assert diagnostic is True
 
 
 def _cached_reasoning_messages():

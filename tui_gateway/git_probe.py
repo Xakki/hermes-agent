@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 
 from hermes_cli._subprocess_compat import bounded_git_probe
@@ -117,6 +117,19 @@ def common_repo_root(cwd: str) -> str:
         return repo_root(cwd)
 
     return _cache.resolve(f"common:{cwd}", _probe)
+
+
+def canonical_project_root(
+    cwd: str | None, *, root_probe: Callable[[str], str] | None = None,
+) -> str | None:
+    """Resolve a project root without importing the stdio-owning RPC server."""
+    if not cwd:
+        return None
+    try:
+        candidate = os.path.realpath(os.path.abspath(os.path.expanduser(str(cwd))))
+        return (root_probe or common_repo_root)(candidate) or candidate
+    except Exception:
+        return None
 
 
 def resolve(cwd: str) -> dict | None:

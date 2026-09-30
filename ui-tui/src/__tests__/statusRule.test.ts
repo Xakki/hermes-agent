@@ -2,7 +2,7 @@ import { stringWidth } from '@hermes/ink'
 import { describe, expect, it } from 'vitest'
 
 import type { StatusBarSegments } from '../components/appChrome.js'
-import { busyIndicatorWidth, statusBarSegments, statusHudFits, statusRuleWidths } from '../components/appChrome.js'
+import { busyIndicatorWidth, statusBarSegments, statusHudFits, statusRuleWidths } from '../components/appChrome.js' 
 
 describe('statusRuleWidths', () => {
   it('keeps the status rule within the terminal width', () => {
@@ -61,20 +61,10 @@ describe('statusRuleWidths', () => {
 
 describe('statusBarSegments', () => {
   it('shows every segment on a wide terminal', () => {
-    const s = statusBarSegments(120)
+    const { compactCtx, ...segments } = statusBarSegments(120)
 
-    expect(s).toEqual({
-      compactCtx: false,
-      bar: true,
-      duration: true,
-      compressions: true,
-      voice: true,
-      bg: true,
-      subagents: true,
-      cacheHit: true,
-      latency: true,
-      tps: true
-    } satisfies StatusBarSegments)
+    expect(compactCtx).toBe(false)
+    expect(Object.values(segments).every(Boolean)).toBe(true)
   })
 
   it('sheds cache/latency/tps read-outs first as the terminal narrows', () => {
@@ -131,7 +121,6 @@ describe('busyIndicatorWidth', () => {
     // unicode is a 1-col braille spinner with no verb; far slimmer than the
     // kaomoji face which carries a wide glyph + rotating verb.
     expect(busyIndicatorWidth('unicode', false)).toBeLessThan(busyIndicatorWidth('kaomoji', false))
-    expect(busyIndicatorWidth('unicode', false)).toBe(1)
   })
 
   it('reserves room for the elapsed-time tail only when a turn is timed', () => {

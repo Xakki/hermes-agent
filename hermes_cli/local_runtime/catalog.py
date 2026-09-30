@@ -175,10 +175,27 @@ _HOST_BANDWIDTH_GB_S = 80.0         # spilled weights stream over host DRAM
 # compress floor, which marks unusable, not unpleasant.
 PLEASANT_FLOOR_TOK_S = 20.0
 
+# Shipped short-context reference rates, not benchmarks run during recommendation.
+# Windows N1X / b10964 CUDA: MTP2 measured 21.76–21.96 tok/s over four 512-token
+# prose probes; a four-slot smoke measured 21.89. At 32K input the reference was
+# 18.82 tok/s: this is a baseline estimate, not a context-independent guarantee.
+# Unmatched hardware, backend, quant or draft depth retains the bandwidth estimate.
+_MEASURED_DECODE_TOK_S = {
+    ("win32", "cuda", "NVIDIA RTX Spark N1X",
+     "qwen3.8-27b", "UD-Q4_K_M", 2): 21.9,
+}
+
 
 def predicted_decode_tok_s(entry: CatalogEntry, variant: QuantVariant, budget: HardwareBudget, *,
-                           spilled: bool = False) -> float:
-    """Memory-bound decode prediction for ordering and floor-gating."""
+                           spilled: bool = False, backend: str = "auto") -> float:
+    """Shipped measured baseline where matched, otherwise the memory-bound estimate."""
+    # A named NVIDIA device uses CUDA under the normal automatic backend policy.
+    effective_backend = "cuda" if backend == "auto" and budget.gpu_name else backend
+    # Drivers may append a parenthesized description to the stable device name.
+    gpu_name = budget.gpu_name.partition(" (")[0]
+    key = (budget.platform, effective_backend, gpu_name, entry.id, variant.quant, entry.mtp_draft_depth)
+    if budget.uma and entry.mtp and not spilled and (measured := _MEASURED_DECODE_TOK_S.get(key)) is not None:
+        return measured
     bandwidth = (_HOST_BANDWIDTH_GB_S if spilled
                  else _UMA_BANDWIDTH_GB_S if budget.uma
                  else _DISCRETE_BANDWIDTH_GB_S)
@@ -187,15 +204,15 @@ def predicted_decode_tok_s(entry: CatalogEntry, variant: QuantVariant, budget: H
 
 
 def recommended_entry(budget: HardwareBudget,
-                      entries: "tuple[CatalogEntry, ...] | None" = None
+                      entries: "tuple[CatalogEntry, ...] | None" = None, *, backend: str = "auto"
                       ) -> "tuple[CatalogEntry, str] | None":
     """The catalog's default pick for THIS machine, with its reason key.
 
     Callers pass pre-filtered entries when some are ineligible for reasons the catalog can't know
     (engine too old). Reasons: best-quality-resident (quality won among resident entries clearing
     the pleasant floor); speed-gated-quality (same, but the floor eliminated a HIGHER quality
-    candidate); fastest-resident (nothing resident clears the floor); least-painful-spilled
-    (nothing runs resident; fastest from host memory — MoE by construction).
+    candidate); fastest-resident (nothing resident clears the floor). Returns None when no
+    eligible entry runs resident; spilled models remain available for explicit selection.
     """
     pool = CATALOG if entries is None else entries
     fitting = [(e, c) for e in pool if (c := select_variant(e, budget)) is not None]
@@ -203,7 +220,7 @@ def recommended_entry(budget: HardwareBudget,
         return None
 
     def speed(t, spilled=False):
-        return predicted_decode_tok_s(t[0], t[1].variant, budget, spilled=spilled)
+        return predicted_decode_tok_s(t[0], t[1].variant, budget, spilled=spilled, backend=backend)
 
     resident = [(e, c) for e, c in fitting if c.zero_spill]
     pleasant = [t for t in resident if speed(t) >= PLEASANT_FLOOR_TOK_S]
@@ -213,7 +230,9 @@ def recommended_entry(budget: HardwareBudget,
         return (pick, "speed-gated-quality" if floor_gated else "best-quality-resident")
     if resident:
         return (max(resident, key=speed)[0], "fastest-resident")
-    return (max(fitting, key=lambda t: speed(t, spilled=True))[0], "least-painful-spilled")
+    # A spilled model may be usable, but it is not a recommendation. Keep it
+    # discoverable through Browse so the user can opt in with the degradation visible.
+    return None
 
 
 # ── catalog data: packaged JSON, refreshed from GitHub in memory ─
@@ -273,7 +292,7 @@ def _load_catalog(doc: dict) -> "tuple[CatalogEntry, ...]":
 def _packaged_catalog() -> "tuple[CatalogEntry, ...]":
     from importlib.resources import files
 
-    raw = files("hermes_cli.local_runtime").joinpath("catalog.json").read_text(encoding="utf-8")
+    raw = files("hermes_cli.local_runtime").joinpath("catalog.json").read_text(encoding="utf-8-sig")
     return _load_catalog(json.loads(raw))
 
 
