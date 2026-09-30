@@ -83,6 +83,7 @@ cli-config.yaml
 skills/.hub/
 ignored/
 .worktrees/
+/.agents/worktrees/
 environments/benchmarks/evals/
 
 # Web UI build output
