@@ -2,6 +2,7 @@ import os
 from unittest.mock import MagicMock, patch
 
 from cli import HermesCLI
+import tui_gateway.server as srv
 
 
 def _make_cli():
@@ -21,6 +22,29 @@ def _make_cli():
 
 
 class TestCliResumeCommand:
+    def test_recent_session_listing_logs_counts_without_session_content(self, caplog, tmp_path):
+        import logging
+
+        cli_obj = _make_cli()
+        db = MagicMock()
+        db.list_sessions_rich.return_value = [{
+            "id": "synthetic-session", "title": "PRIVATE_TITLE", "preview": "PRIVATE_PREVIEW",
+            "source": "cli", "last_active": 1,
+        }]
+        cli_obj._session_db = db
+        caplog.set_level(logging.DEBUG, logger="cli")
+
+        with patch.object(srv, "_canonical_project_root", return_value=str(tmp_path)):
+            rows = cli_obj._list_recent_sessions()
+        record = next((r for r in caplog.records if "/resume diagnostics" in r.getMessage()), None)
+        assert record is not None
+        assert len(rows) == 1
+        assert "visible_count=1" in record.getMessage()
+        assert "source_counts={'cli': 1}" in record.getMessage()
+        assert "project_scoped=True" in record.getMessage()
+        assert "PRIVATE_TITLE" not in record.getMessage()
+        assert "PRIVATE_PREVIEW" not in record.getMessage()
+
     def test_show_recent_sessions_includes_indexes_and_resume_hint(self, capsys):
         cli_obj = _make_cli()
         cli_obj._list_recent_sessions = MagicMock(return_value=[

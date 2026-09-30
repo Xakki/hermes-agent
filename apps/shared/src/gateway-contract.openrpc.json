@@ -31214,6 +31214,18 @@
             "default": false,
             "title": "Include Hidden",
             "type": "boolean"
+          },
+          "current_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Current Session Id"
           }
         },
         "title": "SessionListParams",
@@ -31731,6 +31743,18 @@
             ],
             "default": null,
             "title": "Project Root"
+          },
+          "current_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Current Session Id"
           },
           "cols": {
             "anyOf": [

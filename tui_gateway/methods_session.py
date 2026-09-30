@@ -147,7 +147,16 @@ def _auto_resume_denied_source(row: dict) -> bool:
 def _listing_rows(db, limit: int, **kwargs) -> list:
     """Human-facing ``list_sessions_rich`` rows (most recent first), deny-list applied."""
     rows = db.list_sessions_rich(source=None, limit=limit, order_by_last_active=True, compact_rows=True, **kwargs)
-    return [row for row in rows if not _denied_source(row)]
+    visible = [row for row in rows if not _denied_source(row)]
+    source_counts: dict[str, int] = {}
+    safe_sources = {"cli", "tui", "desktop", "oneshot", "subagent", "tool", "kanban", "unknown", "cron", "api"}
+    for row in rows:
+        source = str(row.get("source") or "").strip().lower()
+        key = source if source in safe_sources else "other"
+        source_counts[key] = source_counts.get(key, 0) + 1
+    logger.debug("session.list diagnostics raw_count=%d visible_count=%d source_counts=%s hidden_included=%s",
+                 len(rows), len(visible), source_counts, bool(kwargs.get("include_hidden")))
+    return visible
 
 
 def _snapshot_sessions(rid):
@@ -522,13 +531,16 @@ def _(rid, params: dict, db) -> dict:
         from hermes_cli.session_listing import show_subagent_sessions
         project_root = _active_project_root(params, db)
         if not project_root:
+            logger.warning("session.list unavailable reason=project_context_missing")
             return _err(rid, 4008, "project context required")
         db_path = getattr(db, "db_path", None)
         include_subagents = bool(db_path) and show_subagent_sessions(Path(db_path).parent)
         rows = _listing_rows(db, max(limit * 2, 200), include_hidden=_flag(params, "include_hidden"),
                              project_root=project_root, include_subagents=include_subagents)[:limit]
+        logger.info("session.list completed output_count=%d", len(rows))
         return _ok(rid, {"sessions": [_session_row_summary(s) for s in rows]})
     except Exception as e:
+        logger.warning("session.list failed error_type=%s", type(e).__name__)
         return _err(rid, 5006, str(e))
 
 
