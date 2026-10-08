@@ -528,6 +528,7 @@ export function StatusRule({
   indicatorStyle = 'kaomoji',
   notice,
   usage,
+  yolo = false,
   bgCount,
   lastTurnEndedAt,
   liveSessionCount,
@@ -542,6 +543,12 @@ export function StatusRule({
   const contextMark = usage.context_estimated ? '~' : ''
   const barColor = ctxBarColor(pct, t)
   const segs = statusBarSegments(cols)
+  const sessionTitleCodePoints = Array.from(sessionTitle ?? '')
+
+  const displaySessionTitle =
+    sessionTitleCodePoints.length <= 18
+      ? sessionTitleCodePoints.join('')
+      : `${sessionTitleCodePoints.slice(0, 17).join('')}…`
 
   // display.status_bar.fields visibility gate (same key + names as the
   // classic CLI bar). null = user hasn't customized → everything shows.
@@ -559,6 +566,7 @@ export function StatusRule({
           ? `${compactNumber(usage.total)} tok`
           : ''
       : ''
+
   const tokenLabel = sessionTokenLabel(usage)
 
   const bar = !segs.compactCtx && usage.context_max && ok('context_pct') ? ctxBar(pct) : ''
@@ -569,6 +577,8 @@ export function StatusRule({
   const batteryText = showBattery ? batteryLabel(battery!) : ''
   const batteryColorVal = showBattery ? batteryColor(battery!, t) : ''
   const batteryWidth = showBattery ? stringWidth(`${batteryText} │ `) : 0
+  const showYolo = yolo && ok('yolo')
+  const yoloWidth = showYolo ? stringWidth(' │ ⚠ YOLO') : 0
 
   // A credits notice replaces the status/verb slot, but only when idle —
   // while busy the FaceTicker always wins (R1 render priority). The notice
@@ -600,9 +610,10 @@ export function StatusRule({
     stringWidth(' │ ') +
     stringWidth(modelText) +
     (ctxLabel ? stringWidth(' │ ') + stringWidth(ctxLabel) : 0) +
-    (tokenLabel ? stringWidth(' │ ') + stringWidth(tokenLabel) : 0)
+    (tokenLabel ? stringWidth(' │ ') + stringWidth(tokenLabel) : 0) +
+    yoloWidth
 
-  const rightLabel = sessionTitle && ok('title') ? `${cwdLabel}  ${sessionTitle}` : cwdLabel
+  const rightLabel = displaySessionTitle && ok('title') ? `${cwdLabel}  ${displaySessionTitle}` : cwdLabel
   const { leftWidth, rightWidth, separatorWidth } = statusRuleWidths(cols, rightLabel, essentialWidth)
 
   // Whole-segment progressive disclosure for the tail: a segment renders only
@@ -706,6 +717,12 @@ export function StatusRule({
             ellipsizes instead of crushing model │ ctx (R3-M7). */}
         <Box flexDirection="row" flexShrink={0}>
           <Text color={t.color.border}>{'─ '}</Text>
+          {showYolo ? (
+            <>
+              <Text color={t.color.warn}>⚠ YOLO</Text>
+              <Text color={t.color.muted}>{' │ '}</Text>
+            </>
+          ) : null}
           {showBattery ? (
             <Text color={batteryColorVal}>
               {batteryText}
@@ -864,7 +881,11 @@ export function StatusRule({
         <>
           <Text color={t.color.border}>{separatorWidth >= 3 ? ' ─ ' : ' '}</Text>
           <Box flexShrink={0} width={rightWidth}>
-            <Text bold={!!sessionTitle} color={sessionTitle ? t.color.accent : t.color.label} wrap="truncate-end">
+            <Text
+              bold={!!displaySessionTitle}
+              color={displaySessionTitle ? t.color.accent : t.color.label}
+              wrap="truncate-end"
+            >
               {rightLabel}
             </Text>
           </Box>
@@ -984,6 +1005,7 @@ interface StatusRuleProps {
   modelFast?: boolean
   modelReasoningEffort?: string
   modelReasoningEffortWire?: string
+  yolo?: boolean
   indicatorStyle?: IndicatorStyle
   notice?: Notice | null
   sessionStartedAt?: null | number

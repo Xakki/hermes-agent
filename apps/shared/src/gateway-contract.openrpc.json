@@ -7594,6 +7594,32 @@
             ],
             "default": null,
             "title": "Answers"
+          },
+          "action_metadata": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/InteractionActionMetadata"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Action Metadata"
+          },
+          "interaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InteractionTiming"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -16444,6 +16470,65 @@
           "messages"
         ],
         "title": "InsightsGetResult",
+        "type": "object"
+      },
+      "InteractionActionMetadata": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "InteractionActionMetadata",
+        "type": "object"
+      },
+      "InteractionTiming": {
+        "additionalProperties": false,
+        "description": "Display-only snapshot; the host alone owns deadlines and settlement.",
+        "properties": {
+          "remaining_seconds": {
+            "title": "Remaining Seconds",
+            "type": "number"
+          },
+          "reminder_remaining_seconds": {
+            "title": "Reminder Remaining Seconds",
+            "type": "number"
+          },
+          "reminded": {
+            "default": false,
+            "title": "Reminded",
+            "type": "boolean"
+          },
+          "show_countdown": {
+            "default": true,
+            "title": "Show Countdown",
+            "type": "boolean"
+          },
+          "phase": {
+            "default": "human",
+            "title": "Phase",
+            "type": "string"
+          }
+        },
+        "required": [
+          "remaining_seconds",
+          "reminder_remaining_seconds"
+        ],
+        "title": "InteractionTiming",
         "type": "object"
       },
       "InterruptStatus": {

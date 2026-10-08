@@ -4821,10 +4821,12 @@ class TestNoProgressTimeoutTaskConfigGating:
         """#108104: a REAL config.yaml ``auxiliary.compression.no_progress_timeout`` must set the
         guard's substantive-progress window through the genuine call_llm -> _prepare_aux_request ->
         CodexAuxiliaryClient path (both the first-output and between-output deadlines derive from
-        ``guard.no_progress_timeout``); other tasks keep the 60s default; a non-positive value
+        ``guard.no_progress_timeout``); other tasks keep the canonical guard default; a non-positive value
         is rejected with a warning and falls back to the default."""
         import hermes_yaml as yaml
         from agent import auxiliary_client as aux
+
+        default_window = aux._CodexStreamGuard(SimpleNamespace(close=lambda: None), 600).no_progress_timeout
 
         home = tmp_path / ".hermes"
         home.mkdir()
@@ -4859,17 +4861,20 @@ class TestNoProgressTimeoutTaskConfigGating:
         (home / "config.yaml").write_text(yaml.safe_dump(
             {"auxiliary": {"compression": {"timeout": 600, "no_progress_timeout": 5}}}))
         assert _run("compression") == 5.0
+        assert aux._get_task_no_progress_timeout("compression") == 5.0
         # Per-task: the compression override does not leak into another task (timeout 600 so the
         # min(window, total_timeout) clamp cannot mask the default).
         (home / "config.yaml").write_text(yaml.safe_dump(
             {"auxiliary": {"compression": {"timeout": 600, "no_progress_timeout": 5},
                            "title_generation": {"timeout": 600}}}))
-        assert _run("title_generation") == 60.0
+        assert aux._get_task_no_progress_timeout("title_generation") is None
+        assert _run("title_generation") == default_window
 
         (home / "config.yaml").write_text(yaml.safe_dump(
             {"auxiliary": {"compression": {"timeout": 600, "no_progress_timeout": -3}}}))
         with caplog.at_level(logging.WARNING, logger="agent.auxiliary_client"):
-            assert _run("compression") == 60.0
+            assert _run("compression") == default_window
+            assert aux._get_task_no_progress_timeout("compression") is None
         assert any(r.levelno == logging.WARNING for r in caplog.records)
 
 

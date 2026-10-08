@@ -251,7 +251,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
   const cancelOverlayFromCtrlC = () => {
     if (overlay.clarify) {
-      return actions.answerClarify('')
+      return actions.answerClarify(overlay.clarify.interaction ? 'stop' : '')
     }
 
     if (overlay.approval) {

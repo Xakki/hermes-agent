@@ -934,6 +934,12 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
         setStatus(p.text)
 
+        if (p.kind === 'interaction') {
+          turnController.clearStatusTimer()
+
+          return
+        }
+
         if (p.kind === 'compressing' || p.kind === 'compacting') {
           sys(p.text)
           turnController.clearStatusTimer()

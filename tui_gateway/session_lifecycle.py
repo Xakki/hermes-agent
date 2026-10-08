@@ -471,6 +471,8 @@ def _teardown_session(session: dict | None, *, end_reason: str = "tui_close") ->
     slash-worker is closed in ``_finalize_session`` (the single chokepoint), NOT here. Idempotent via ``_finalized``."""
     if not session:
         return
+    from tui_gateway.interaction_host import invalidate
+    invalidate(session)
     _finalize_session(session, end_reason=end_reason)
     _announce_session_reclaimed(session, end_reason)
     with contextlib.suppress(Exception):
@@ -636,6 +638,8 @@ def _ws_session_is_orphaned(session: dict | None) -> bool:
 def _interrupt_session_turn(sid: str, session: dict, *, request_id: str | None = None) -> bool:
     """Apply the shared ``session.interrupt`` contract to one claimed session; returns whether the compute-host control
     channel was used. The WS orphan reaper reuses this so a dead client gets the same partial-history/queue semantics."""
+    from tui_gateway.interaction_host import invalidate
+    invalidate(session)
     use_compute_host = _session_uses_compute_host(session)
     should_interrupt = bool(session.get("running"))
     run_thread_alive = False

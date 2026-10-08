@@ -85,6 +85,19 @@ const serverRequest = (method: string, params: Record<string, unknown>, id = `sr
 }
 
 describe('createGatewayEventHandler', () => {
+  it('projects real solver phases without a human overlay or a status-restore timer', () => {
+    resetOverlayState()
+    resetUiState()
+    const handler = createGatewayEventHandler(buildCtx([]))
+
+    handler({ type: 'status.update', payload: { kind: 'interaction', text: 'Solver decision: up to 600s from handoff; human wait ended.' } })
+    expect(getUiState().status).toContain('600s from handoff')
+    expect(getOverlayState().clarify).toBeNull()
+    handler({ type: 'status.update', payload: { kind: 'interaction', text: 'Solver blocked; no action selected and no human timer restarted.' } })
+    expect(getUiState().status).toContain('Solver blocked')
+    expect(getOverlayState().clarify).toBeNull()
+  })
+
   beforeEach(() => {
     resetOverlayState()
     resetUiState()

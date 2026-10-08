@@ -150,6 +150,32 @@ export function ClarifyPrompt({ cols = 80, onAnswer, onCancel, onQuestionAnswer,
   const choices = req.choices ?? []
   const batch = req.questions ?? []
   const isBatch = batch.length > 0
+  const timing = isBatch ? undefined : req.interaction
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    if (!timing) {
+      return
+    }
+
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+
+    return () => clearInterval(timer)
+  }, [timing])
+  const elapsed = Math.max(0, (now - (req.receivedAt ?? now)) / 1000)
+  const remaining = Math.max(0, Math.ceil((timing?.remaining_seconds ?? 0) - elapsed))
+  const reminded = timing && (timing.reminded || elapsed >= timing.reminder_remaining_seconds)
+
+  const timingDisplay = timing ? (
+    <Box flexDirection="column">
+      <Text color={t.color.muted}>
+        {timing.phase === 'human' ? 'Human decision' : 'Solver decision'}
+        {timing.show_countdown ? ` · ${remaining}s remaining` : ''}
+        {remaining === 0 ? ' · expired; no action selected' : ''}
+      </Text>
+      {reminded && remaining > 0 && timing.phase === 'human' ? <Text color={t.color.warn}>Reminder: a human decision is still pending.</Text> : null}
+      <Text color={t.color.warn}>Once: one solver decision. Always: native YOLO / AUTO, including command auto-approval. Stop: cancel now.</Text>
+    </Box>
+  ) : null
 
   // ── Batch (A-compact) state: status list + one expanded active question.
   // `active` walks the QUESTION list (Tab/Shift-Tab cycle it, any order);
@@ -218,6 +244,12 @@ export function ClarifyPrompt({ cols = 80, onAnswer, onCancel, onQuestionAnswer,
   }
 
   useInput((ch, key) => {
+    if (timing && (ch === 's' || (key.ctrl && ch === 'c'))) {
+      onAnswer('stop')
+
+      return
+    }
+
     if (key.escape) {
       if (typing) {
         setTyping(false)
@@ -285,11 +317,25 @@ export function ClarifyPrompt({ cols = 80, onAnswer, onCancel, onQuestionAnswer,
       return
     }
 
+    if (timing && remaining === 0) {
+      return
+    }
+
+    if (timing && (ch === 'o' || ch === 'a')) {
+      const control = ch === 'o' ? 'Once' : 'Always (YOLO; all commands auto-approved)'
+
+      if (choices.includes(control)) {
+        onAnswer(control)
+      }
+
+      return
+    }
+
     if (key.upArrow && sel > 0) {
       setSel(s => s - 1)
     }
 
-    if (key.downArrow && sel < choices.length) {
+    if (key.downArrow && sel < choices.length - (timing ? 1 : 0)) {
       setSel(s => s + 1)
     }
 
@@ -399,17 +445,19 @@ export function ClarifyPrompt({ cols = 80, onAnswer, onCancel, onQuestionAnswer,
   return (
     <Box flexDirection="column">
       {heading}
+      {timingDisplay}
 
-      {[...choices, 'Other (type your answer)'].map((c, i) => (
+      {(timing ? choices : [...choices, 'Other (type your answer)']).map((c, i) => (
         <Text key={i}>
           <Text color={t.color.muted} {...chipRowProps(t, sel === i)}>
             {sel === i ? '▸ ' : '  '}
-            {i + 1}. {c}
+            {i + 1}. {req.actionMetadata?.find(row => row.id === c)?.label ?? c}
           </Text>
+          {req.actionMetadata?.find(row => row.id === c)?.description ? <Text color={t.color.muted}> · {req.actionMetadata.find(row => row.id === c)!.description}</Text> : null}
         </Text>
       ))}
 
-      <Text color={t.color.muted}>↑/↓ select · Enter confirm · 1-{choices.length} quick pick · Esc/Ctrl+C cancel</Text>
+      <Text color={t.color.muted}>↑/↓ select · Enter confirm · 1-{choices.length} quick pick · {timing ? 'O Once · A Always · S Stop · Esc dismiss' : 'Esc/Ctrl+C cancel'}</Text>
     </Box>
   )
 }

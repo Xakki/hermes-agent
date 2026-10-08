@@ -1,6 +1,6 @@
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 
-import type { ClarifyBatchQuestion } from '../types.js'
+import type { ClarifyBatchQuestion, ClarifyReq } from '../types.js'
 
 import { patchOverlayState } from './overlayStore.js'
 import { rememberServerRequest } from './serverRequestStore.js'
@@ -63,7 +63,16 @@ export function createServerRequestHandler(ctx: ServerRequestHandlerContext): (r
         patchOverlayState({
           clarify: batch.length
             ? { answers, choices: null, question: '', questions: batch, requestId: request.id }
-            : { choices: strList(p.choices), question: str(p.question), requestId: request.id }
+            : {
+                actionMetadata: (Array.isArray(p.action_metadata) ? p.action_metadata : [])
+                  .filter((row): row is Record<string, unknown> => !!row && typeof row === 'object')
+                  .map(row => ({ id: str(row.id), label: str(row.label), description: str(row.description) })),
+                choices: strList(p.choices),
+                interaction: p.interaction as ClarifyReq['interaction'],
+                question: str(p.question),
+                receivedAt: Date.now(),
+                requestId: request.id
+              }
         })
         open(request, 'waiting for input…')
 

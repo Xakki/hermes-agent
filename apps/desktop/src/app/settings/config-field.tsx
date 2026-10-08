@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import type { ConfigFieldSchema } from '@/types/hermes'
 
 import { ComboboxInput } from './combobox-input'
+import { ConfigJsonField } from './config-json-field'
 import { CONTROL_TEXT, EMPTY_SELECT_VALUE, FIELD_DESCRIPTIONS, FIELD_LABELS, FREE_INPUT_KEYS } from './constants'
 import { FallbackModelsField } from './fallback-models-field'
 import { fieldCopyForSchemaKey } from './field-copy'
@@ -213,6 +214,16 @@ export function ConfigField({
         }
         placeholder={c.commaSeparated}
         value={Array.isArray(value) ? value.join(', ') : String(value ?? '')}
+      />
+    )
+  }
+
+  if (schema.type === 'json') {
+    return wideRow(
+      <ConfigJsonField
+        className={cn('min-h-28 resize-y bg-background font-mono', CONTROL_TEXT)}
+        onChange={onChange}
+        value={value}
       />
     )
   }

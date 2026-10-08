@@ -209,6 +209,78 @@ class TestStatusBarSegment:
 
         assert "focus" in text
 
+    @pytest.mark.parametrize("title, expected", [
+        ("short", "short"),
+        ("12345678901234567", "12345678901234567"),
+        ("123456789012345678", "123456789012345678"),
+        ("1234567890123456789", "12345678901234567…"),
+        ("длинное название сессии", "длинное название…"),
+        ("界" * 19, "界" * 13 + "…"),
+    ])
+    def test_title_badge_caps_visible_characters_without_changing_source(self, title, expected):
+        from cli import HermesCLI
+
+        badge = HermesCLI._status_title_badge(title, 120)
+        assert badge is not None
+        rendered = badge[0].strip()
+        assert rendered == expected
+        assert len(rendered) <= 18
+        assert HermesCLI._status_bar_display_width(rendered) <= 28
+        title_host = HermesCLI.__new__(HermesCLI)
+        title_host.session_id = "sid"
+        title_host._pending_title = title
+        assert HermesCLI._get_status_bar_session_title(title_host) == title
+        title_host._pending_title = None
+        title_host._status_bar_title_session_id = "previous-session"
+        title_host._session_db = MagicMock()
+        title_host._session_db.get_session_title.return_value = title
+        assert HermesCLI._get_status_bar_session_title(title_host) == title
+
+    @pytest.mark.parametrize("width", [24, 40, 60, 120])
+    def test_title_badge_respects_allocated_cells_on_narrow_bars(self, width):
+        from cli import HermesCLI
+
+        placement = HermesCLI._status_title_badge("界" * 30, width)
+        assert placement is not None
+        badge, _ = placement
+        rendered = badge.strip()
+        title_width = max(6, min(30, width // 3))
+        assert len(rendered) <= 18
+        assert HermesCLI._status_bar_display_width(rendered) <= title_width - 2
+        assert rendered.endswith("…")
+
+    @pytest.mark.parametrize("styled", [False, True])
+    def test_title_truncation_and_yolo_segment_are_shared_by_both_renderers(self, styled):
+        from cli import HermesCLI
+
+        host = HermesCLI.__new__(HermesCLI)
+        host.model = "opus"
+        host._status_bar_visible = True
+        host._prompt_stash = SimpleNamespace(indicator=lambda: "")
+        snapshot = {
+            "model_name": "opus", "model_short": "opus", "duration": "1m",
+            "session_title": "a session title that is definitely longer than eighteen",
+            "context_percent": 12, "context_tokens": 1000, "context_length": 200000,
+            "compressions": 0, "active_background_tasks": 0,
+            "active_background_processes": 0, "active_background_subagents": 0,
+            "battery_label": "", "battery_category": "dim", "focus_label": "",
+            "prompt_elapsed": "", "idle_since": "",
+        }
+        if styled:
+            with patch.object(HermesCLI, "_get_status_bar_snapshot", return_value=snapshot), \
+                 patch.object(HermesCLI, "_is_session_yolo_active", return_value=True), \
+                 patch.object(HermesCLI, "_get_tui_terminal_width", return_value=120), \
+                 patch.object(HermesCLI, "_vim_mode_label", return_value=""):
+                frags = HermesCLI._get_status_bar_fragments(host)
+            text = "".join(value for _, value in frags)
+        else:
+            with patch.object(HermesCLI, "_get_status_bar_snapshot", return_value=snapshot), \
+                 patch.object(HermesCLI, "_is_session_yolo_active", return_value=True):
+                text = HermesCLI._build_status_bar_text(host, width=120)
+        assert "a session title t…" in text
+        assert "⚠ YOLO" in text
+        assert snapshot["session_title"] == "a session title that is definitely longer than eighteen"
+
 
 
 

@@ -36,6 +36,21 @@ class ClarifyQuestion(Params):
     multi_select: bool = False
 
 
+class InteractionActionMetadata(Params):
+    id: str
+    label: str
+    description: str = ""
+
+
+class InteractionTiming(Params):
+    """Display-only snapshot; the host alone owns deadlines and settlement."""
+    remaining_seconds: float
+    reminder_remaining_seconds: float
+    reminded: bool = False
+    show_countdown: bool = True
+    phase: str = "human"
+
+
 class ClarifyRequestParams(ServerRequestParams):
     """Single question: ``question`` / ``choices`` (/ ``multi_select``); batch: ``questions``.
     ``answers`` rides only on a reconnect replay (locks the server already accepted)."""
@@ -45,6 +60,8 @@ class ClarifyRequestParams(ServerRequestParams):
     multi_select: bool | None = None
     questions: list[ClarifyQuestion] | None = None
     answers: dict[str, str] | None = None
+    action_metadata: list[InteractionActionMetadata] | None = None
+    interaction: InteractionTiming | None = None
 
 
 class ClarifyResult(Result):

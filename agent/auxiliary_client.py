@@ -2677,7 +2677,8 @@ def _relay_sync_stream(
     kwargs = prepare_chat_messages(client, kwargs)
     # The bypass runs inside the provider callback, AFTER Relay has seen (and possibly
     # rewritten) the real conversation; applying it to `kwargs` would hand Relay an empty one.
-    create = lambda request: client.chat.completions.create(**bypass_chat_sdk_request_transform(request, client))  # noqa: E731
+    from agent.auxiliary_budget import bounded_create
+    create = lambda request: bounded_create(client, bypass_chat_sdk_request_transform(request, client))  # noqa: E731
     route = _relay_auxiliary_metadata(provider=provider, api_mode=api_mode)
     if route is None:
         return create(kwargs)
@@ -6970,6 +6971,7 @@ def _create_with_progress_once(
     ``force_stream``, where a stream-only provider rejects the plain call by definition, so the original
     error is surfaced to the normal recovery chains instead.
     """
+    from agent.auxiliary_budget import bounded_create
     kwargs = bypass_chat_sdk_request_transform(kwargs, client)
     _notify_aux_dispatch()
     # Dispatch alone is not forward progress: a 401/retry/fallback dispatch must not
@@ -6977,13 +6979,13 @@ def _create_with_progress_once(
     # total ceiling instead of idling out (#114938). Progress ticks only for
     # substantive stream payloads or a completed usable response.
     if (not _aux_progress_active() and not force_stream) or _client_streams_internally(client):
-        response = client.chat.completions.create(**kwargs)
+        response = bounded_create(client, kwargs)
         if not _client_streams_internally(client):
             _notify_aux_provider_response()
         return response
     stream_kwargs, model, total_ceiling = _stream_request_plan(kwargs)
     try:
-        chunks = client.chat.completions.create(**stream_kwargs)
+        chunks = bounded_create(client, stream_kwargs)
     except Exception as exc:
         # Genuine provider failures aren't streaming's fault — surface unchanged so the
         # recovery chains see the same error as a plain call.
@@ -6995,7 +6997,7 @@ def _create_with_progress_once(
         logger.debug("Auxiliary %s: streamed request failed (%s); retrying non-streaming",
                      task or "call", exc)
         _notify_aux_dispatch()
-        response = client.chat.completions.create(**kwargs)
+        response = bounded_create(client, kwargs)
         _notify_aux_provider_response()
         return response
     # Some shims (MoA quiet mode, defensive adapters) return a complete response despite
@@ -7655,7 +7657,8 @@ def _next_fallback_after_quarantine(
         failed_base_url=route.base_info, failure_scope=failure_scope)
     if task_chain_only:
         return fb
-    if fb[0] is None and is_auto:
+    from agent.auxiliary_budget import decision_budget_active
+    if fb[0] is None and (is_auto or decision_budget_active()):
         fb = _try_main_fallback_chain(
             task, resolved_provider or "auto", reason=reason, failed_model=failed_model,
             failed_base_url=route.base_info, failure_scope=failure_scope)
@@ -7720,7 +7723,8 @@ def _ladder_provider_fallback(first_err: Exception, route: _LadderRoute):
     fb_client, fb_model, fb_label = _try_configured_fallback_chain(
         task, resolved_provider or "auto", reason=reason, failed_model=_chain_failed_model,
         failed_base_url=route.base_info, failure_scope=_chain_failure_scope)
-    if fb_client is None and is_auto:
+    from agent.auxiliary_budget import decision_budget_active
+    if fb_client is None and (is_auto or decision_budget_active()):
         fb_client, fb_model, fb_label = _try_main_fallback_chain(
             task, resolved_provider or "auto", reason=reason, failed_model=_chain_failed_model,
             failed_base_url=route.base_info, failure_scope=_chain_failure_scope)

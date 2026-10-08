@@ -131,6 +131,16 @@ export interface ClarifyReq {
   /** Answers already locked server-side (qid → answer): seeded from the
    *  reconnect replay, updated as the user locks each question. */
   answers?: Record<string, string>
+  actionMetadata?: { id: string; label: string; description: string }[]
+  interaction?: {
+    remaining_seconds: number
+    reminder_remaining_seconds: number
+    reminded: boolean
+    show_countdown: boolean
+    phase: string
+  }
+  /** Local receipt time, not an authority or backend wall-clock deadline. */
+  receivedAt?: number
 }
 
 export interface Msg {

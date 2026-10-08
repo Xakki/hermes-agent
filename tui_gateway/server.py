@@ -722,8 +722,12 @@ def _emit(event: str, sid: str, payload: dict | None = None) -> bool:
 
 from tui_gateway import server_requests as _server_requests  # noqa: E402
 
+def _observe_native_request(req, actor, event):
+    from tui_gateway.interaction_host import observe_native
+    observe_native(req, actor, event)
+
 _server_requests.bind_sinks(lambda frame: write_json(frame), lambda event, sid, payload: _emit(event, sid, payload),
-                            lambda sid: _session_client_answers_requests(sid))
+                            lambda sid: _session_client_answers_requests(sid), _observe_native_request)
 
 
 # Live WS peer transports (maintained by tui_gateway.ws): the only route for session-less background
@@ -1391,6 +1395,8 @@ def _ask(method: str, sid: str, params: dict, timeout: float | None = 300) -> st
     """Server→client request whose answer is one string under ``value`` (sudo, secret, vault prompts, GUI reads,
     MCP setup). Empty string when the renderer skipped, timed out, or was cancelled."""
     from tui_gateway import server_requests
+    if method in server_requests._HUMAN_METHODS:
+        timeout = 600
     result = server_requests.send(method, sid, params, timeout=timeout)
     value = (result or {}).get("value", "")
     return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
@@ -1400,11 +1406,7 @@ def _ask(method: str, sid: str, params: dict, timeout: float | None = 300) -> st
 def _clarify_timeout_seconds() -> float | None:
     """Clarify wait for the TUI/desktop bridge from the canonical config (gateway/CLI parity); 300s
     historical default if config can't be read; ``<= 0`` = unlimited → None (never auto-skip)."""
-    with contextlib.suppress(Exception):
-        from tools.clarify_gateway import get_clarify_timeout
-        timeout = get_clarify_timeout()
-        return timeout if timeout > 0 else None
-    return 300
+    return 600
 
 
 def _clarify_block(sid: str, q, c, multi_select=False, questions=None) -> str:

@@ -4310,12 +4310,27 @@ export interface ClarifyRequestParams {
   multi_select?: boolean | null
   questions?: ClarifyQuestion[] | null
   answers?: Record<string, string> | null
+  action_metadata?: InteractionActionMetadata[] | null
+  interaction?: InteractionTiming | null
 }
 export interface ClarifyQuestion {
   qid: string
   question: string
   choices?: string[] | null
   multi_select?: boolean
+}
+export interface InteractionActionMetadata {
+  id: string
+  label: string
+  description?: string
+}
+/** Display-only snapshot; the host alone owns deadlines and settlement. */
+export interface InteractionTiming {
+  remaining_seconds: number
+  reminder_remaining_seconds: number
+  reminded?: boolean
+  show_countdown?: boolean
+  phase?: string
 }
 /** Single: ``{answer}`` ('' = skip). Batch: ``{answers}`` for the whole set (early locks go through the ``clarify.lock`` RPC); a response with neither is cancel-all. */
 export interface ClarifyResult {

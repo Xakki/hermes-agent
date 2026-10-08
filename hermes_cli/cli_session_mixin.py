@@ -509,6 +509,8 @@ class CLISessionMixin:
             _sync_process_session_id, datetime)
         from hermes_cli.cli_model_switch_mixin import _resolve_cli_reasoning
         old_session_id = self.session_id
+        from hermes_cli.interaction_host import invalidate_cli
+        invalidate_cli(self)
         _boundary_snapshot = None
         if self.agent:
             if self.conversation_history:
