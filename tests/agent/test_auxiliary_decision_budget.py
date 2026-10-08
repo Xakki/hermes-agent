@@ -226,26 +226,126 @@ def test_response_bytes_and_usage_are_bounded_by_actual_wire_cap(cap, oversized,
         client.close()
 
 
-@pytest.mark.parametrize("route_flags", [False, True])
-def test_codex_native_adapter_rejects_raised_budget_before_http(route_flags):
+@pytest.mark.parametrize("used_capped_budget", [False, True])
+def test_codex_native_adapter_allows_uncapped_wire_and_reports_usage(used_capped_budget):
+    import json
     from types import SimpleNamespace
     from agent.auxiliary_client import _CodexCompletionsAdapter
+    from agent.auxiliary_client import _RELAY_AUX_CALL_CONTEXT
     from agent.auxiliary_budget import DecisionBudget, DecisionBudgetExceeded, bounded_create, decision_budget
     seen = []
+    response_sizes = []
+    decision = '{"choice":"stop"}'
+    output_tokens = 150001
+    def transport(req):
+        seen.append(json.loads(req.content))
+        events = [
+            {"type": "response.created", "response": {"id": "resp_fixture", "status": "in_progress", "model": "fixture"}},
+            {"type": "response.output_item.done", "output_index": 0, "item": {
+                "id": "msg_fixture", "type": "message", "status": "completed", "role": "assistant",
+                "content": [{"type": "output_text", "text": decision, "annotations": []}]}},
+            {"type": "response.completed", "response": {"id": "resp_fixture", "status": "completed",
+                "model": "fixture", "output": None,
+                "usage": {"input_tokens": 1, "output_tokens": output_tokens, "total_tokens": output_tokens + 1,
+                          "output_tokens_details": {"reasoning_tokens": 17}}}},
+        ]
+        wire = "".join("data: " + json.dumps(event) + "\n\n" for event in events)
+        response_sizes.append(len(wire.encode()))
+        return httpx.Response(200, headers={"content-type": "text/event-stream"},
+                              stream=httpx.ByteStream(wire.encode()))
     client = OpenAI(api_key="synthetic", base_url="https://chatgpt.com/backend-api/codex", http_client=httpx.Client(
-        transport=httpx.MockTransport(lambda req: seen.append(req) or httpx.Response(200, json={}))))
+        transport=httpx.MockTransport(transport)))
+    setattr(client, "_hermes_aux_effective_provider", "openai-codex")
     adapter = SimpleNamespace(_real_client=client, chat=SimpleNamespace(completions=_CodexCompletionsAdapter(client, "fixture")))
-    if route_flags:
-        # Exercise the existing explicit guard when a transport exposes its route marker.
-        adapter.chat.completions._route_flags = lambda: SimpleNamespace(is_codex_backend=True)
-    budget = DecisionBudget(time.monotonic() + 600, lambda: False)
-    rejection = "Codex backend has no enforceable output cap" if route_flags else "physical attempt/input/output budget exhausted"
+    budget = DecisionBudget(time.monotonic() + 600, lambda: False,
+                            max_output_tokens=150000 if used_capped_budget else 256)
+    capped_client = OpenAI(api_key="synthetic", base_url="https://fixture.invalid/v1", http_client=httpx.Client(
+        transport=httpx.MockTransport(lambda req: httpx.Response(429, json={"error": {"message": "fixture"}}))))
+    token = _RELAY_AUX_CALL_CONTEXT.set({"provider": "generic", "task": "interaction_decision"})
     try:
-        # The native shim without that marker omits the wire cap and fails at the physical boundary.
-        with decision_budget(budget), pytest.raises(DecisionBudgetExceeded, match=rejection):
-            bounded_create(adapter, {"model": "fixture", "messages": [], "max_tokens": 150000})
-        assert not seen and not budget.attempts and budget.output_reserved == 0
+        with decision_budget(budget):
+            if used_capped_budget:
+                with pytest.raises(Exception):
+                    bounded_create(capped_client, {"model": "fixture", "messages": [], "max_tokens": 150000})
+                assert budget.output_reserved == 150000
+            _RELAY_AUX_CALL_CONTEXT.set({"provider": "openai-codex", "task": "interaction_decision"})
+            result = bounded_create(adapter, {"model": "fixture", "messages": [{"role": "user", "content": "choose"}], "max_tokens": 150000})
+        assert result.choices[0].message.content == decision
+        assert seen
+        wire_body = json.dumps(seen[0])
+        assert not any(f'"{field}"' in wire_body for field in ("max_output_tokens", "max_tokens", "max_completion_tokens"))
+        assert [row["output_cap"] for row in budget.attempts] == ([150000, None] if used_capped_budget else [None])
+        assert budget.attempts[-1]["output_tokens"] == output_tokens
+        assert budget.attempts[-1]["response_model"] == "fixture"
+        assert response_sizes[0] <= 65536
+        assert budget.output_reserved == (150000 if used_capped_budget else 0)
+        assert budget.attempts[0]["input_bytes"] <= 8192
+        generic = DecisionBudget(time.monotonic() + 600, lambda: False)
+        with pytest.raises(DecisionBudgetExceeded):
+            generic.start(httpx.Request("POST", "https://fixture.invalid/v1/responses", json={"model": "fixture"}), "generic")
+        assert not generic.attempts
     finally:
+        _RELAY_AUX_CALL_CONTEXT.reset(token)
+        capped_client.close()
+        client.close()
+
+
+@pytest.mark.parametrize("fault", ["deadline", "cancel", "input", "tools", "attempts", "response-size", "stream-cancel", "stream-deadline"])
+def test_uncapped_codex_keeps_other_physical_boundaries(fault):
+    import threading
+    from types import SimpleNamespace
+    from agent.auxiliary_client import _CodexCompletionsAdapter, _RELAY_AUX_CALL_CONTEXT
+    from agent.auxiliary_budget import DecisionBudget, DecisionBudgetExceeded, bounded_create, decision_budget
+
+    seen = []
+    closed = threading.Event()
+    revoked = [fault == "cancel"]
+    budget = DecisionBudget(time.monotonic() + (-1 if fault == "deadline" else 30),
+                            lambda: revoked[0], attempts=1, max_output_tokens=256)
+
+    class FixtureStream(httpx.SyncByteStream):
+        def __iter__(self):
+            if fault in {"stream-cancel", "stream-deadline"}:
+                if fault == "stream-cancel":
+                    revoked[0] = True
+                else:
+                    budget.deadline = time.monotonic() - 1
+                assert closed.wait(5), "uncapped physical stream was not closed"
+            yield b"x" * 65537
+
+        def close(self):
+            closed.set()
+
+    def transport(request):
+        seen.append(request)
+        if fault == "attempts":
+            return httpx.Response(429, json={"error": {"message": "fixture limit"}})
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=FixtureStream())
+
+    client = OpenAI(api_key="synthetic", base_url="https://chatgpt.com/backend-api/codex", max_retries=2,
+                    http_client=httpx.Client(transport=httpx.MockTransport(transport)))
+    adapter = SimpleNamespace(_real_client=client, chat=SimpleNamespace(completions=_CodexCompletionsAdapter(client, "fixture")))
+    kwargs = {"model": "fixture", "messages": [{"role": "user", "content": "x" * 9000 if fault == "input" else "choose"}],
+              "max_tokens": 256}
+    if fault == "tools":
+        kwargs["tools"] = [{"type": "function", "function": {"name": "fixture", "parameters": {"type": "object", "properties": {}}}}]
+    token = _RELAY_AUX_CALL_CONTEXT.set({"provider": "openai-codex", "task": "interaction_decision"})
+    try:
+        with decision_budget(budget):
+            if fault == "attempts":
+                with pytest.raises(Exception):
+                    bounded_create(adapter, kwargs)
+            with pytest.raises(DecisionBudgetExceeded):
+                bounded_create(adapter, kwargs)
+        dispatched = fault in {"attempts", "response-size", "stream-cancel", "stream-deadline"}
+        assert len(seen) == len(budget.attempts) == int(dispatched)
+        assert budget.output_reserved == 0 and client.max_retries == 2
+        if dispatched:
+            assert budget.attempts[0]["output_cap"] is None
+        if fault in {"response-size", "stream-cancel", "stream-deadline"}:
+            assert closed.is_set()
+    finally:
+        _RELAY_AUX_CALL_CONTEXT.reset(token)
         client.close()
 
 

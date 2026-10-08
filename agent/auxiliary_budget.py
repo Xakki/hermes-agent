@@ -12,6 +12,7 @@ import copy
 import json
 import threading
 import time
+from types import SimpleNamespace
 
 import httpx
 
@@ -53,16 +54,21 @@ class DecisionBudget:
                 raise DecisionBudgetExceeded("unsupported decision wire body")
             caps = [payload[key] for key in ("max_tokens", "max_completion_tokens", "max_output_tokens") if key in payload]
             cap = caps[0] if len(caps) == 1 else None
+            from agent.codex_responses_adapter import classify_responses_route
+            uncapped_codex = classify_responses_route(SimpleNamespace(
+                provider=provider, base_url=str(request.url))).is_codex_backend
             if (len(self.attempts) >= self.limit or len(body) > 8192
                     or self.input_bytes + len(body) > 24576 or payload.get("tools")
-                    or type(cap) is not int or not 0 < cap <= self.max_output_tokens
-                    or self.output_reserved + cap > INTERACTION_MAX_OUTPUT_TOKENS):
+                    or (not uncapped_codex and (type(cap) is not int or not 0 < cap <= self.max_output_tokens
+                    or self.output_reserved + cap > INTERACTION_MAX_OUTPUT_TOKENS))):
                 raise DecisionBudgetExceeded("physical attempt/input/output budget exhausted")
             self.input_bytes += len(body)
-            self.output_reserved += cap  # Failed/unknown usage is charged conservatively, never refunded.
             row = {"attempt": len(self.attempts) + 1, "provider": provider or "UNKNOWN",
                    "model": str(payload.get("model") or "UNKNOWN"), "status": "UNKNOWN",
-                   "input_bytes": len(body), "output_cap": cap, "response_model": "UNKNOWN"}
+                   "input_bytes": len(body), "output_cap": None if uncapped_codex else cap,
+                   "response_model": "UNKNOWN"}
+            if not uncapped_codex:
+                self.output_reserved += cap  # Failed/unknown usage is charged conservatively, never refunded.
             self.attempts.append(row)
             return row
 
@@ -70,13 +76,18 @@ class DecisionBudget:
         self.check()
         if not isinstance(payload, dict):
             return
-        row["response_model"] = str(payload.get("model") or "UNKNOWN")[:256]
-        usage = payload.get("usage") or {}
+        response = payload.get("response")
+        if isinstance(response, dict):
+            row["response_model"] = str(payload.get("model") or response.get("model") or "UNKNOWN")[:256]
+        else:
+            row["response_model"] = str(payload.get("model") or "UNKNOWN")[:256]
+        usage = payload.get("usage") or (response.get("usage") if isinstance(response, dict) else None) or {}
         if isinstance(usage, dict):
             output = usage.get("completion_tokens", usage.get("output_tokens"))
             if type(output) is int:
                 row["output_tokens"] = output
-                if output < 0 or output > row["output_cap"] or output > INTERACTION_MAX_OUTPUT_TOKENS:
+                if output < 0 or (row["output_cap"] is not None and
+                                  (output > row["output_cap"] or output > INTERACTION_MAX_OUTPUT_TOKENS)):
                     raise DecisionBudgetExceeded("provider exceeded requested output cap")
 
 
@@ -98,7 +109,7 @@ class _DecisionStream(httpx.SyncByteStream):
         self.stream, self.budget = stream, budget
         self.row, self.streaming = row, streaming
         # Small explicit caps retain their original allowance; larger caps include SSE framing.
-        self.byte_limit = 65536 if row["output_cap"] <= 256 else 65536 + row["output_cap"] * 512
+        self.byte_limit = 65536 if row["output_cap"] is None or row["output_cap"] <= 256 else 65536 + row["output_cap"] * 512
         self._line = bytearray()
         self._event_data = bytearray()
         self._skip_lf = False
@@ -203,19 +214,29 @@ def bounded_create(client, kwargs):
     route = _RELAY_AUX_CALL_CONTEXT.get()
     provider = route.get("provider", "UNKNOWN") if route else "UNKNOWN"
     kwargs = dict(kwargs)
-    cap_key = "max_completion_tokens" if "max_completion_tokens" in kwargs else "max_tokens"
-    cap = kwargs.get(cap_key, budget.max_output_tokens)
-    if type(cap) is not int or cap <= 0:
-        raise DecisionBudgetExceeded("invalid decision output cap")
-    remaining = INTERACTION_MAX_OUTPUT_TOKENS - budget.output_reserved
-    if remaining <= 0:
-        raise DecisionBudgetExceeded("physical output budget exhausted")
-    kwargs[cap_key] = min(budget.max_output_tokens, remaining, cap)
+    from agent.auxiliary_client import _CodexCompletionsAdapter
+    from agent.codex_responses_adapter import classify_responses_route
     real = getattr(client, "_real_client", client)
     completions = client.chat.completions
-    flags = getattr(completions, "_route_flags", None)
-    if callable(flags) and flags().is_codex_backend:
-        raise DecisionBudgetExceeded("Codex backend has no enforceable output cap")
+    route_flags = classify_responses_route(SimpleNamespace(
+        provider=provider or getattr(real, "_hermes_aux_effective_provider", None),
+        base_url=str(getattr(real, "base_url", "") or "")))
+    uncapped_codex = isinstance(completions, _CodexCompletionsAdapter) and route_flags.is_codex_backend
+    cap_key = "max_completion_tokens" if "max_completion_tokens" in kwargs else "max_tokens"
+    if uncapped_codex:
+        kwargs.pop("max_tokens", None)
+        kwargs.pop("max_completion_tokens", None)
+        kwargs.pop("max_output_tokens", None)
+        cap = None
+    else:
+        cap = kwargs.get(cap_key, budget.max_output_tokens)
+    if not uncapped_codex and (type(cap) is not int or cap <= 0):
+        raise DecisionBudgetExceeded("invalid decision output cap")
+    remaining = INTERACTION_MAX_OUTPUT_TOKENS - budget.output_reserved
+    if not uncapped_codex and remaining <= 0:
+        raise DecisionBudgetExceeded("physical output budget exhausted")
+    if not uncapped_codex:
+        kwargs[cap_key] = min(budget.max_output_tokens, remaining, cap)
     if not callable(getattr(real, "with_options", None)) or not isinstance(getattr(real, "_client", None), httpx.Client):
         raise DecisionBudgetExceeded("selected transport has no bounded native HTTP boundary")
     http = _DecisionHTTPClient(real._client, budget, provider)
@@ -232,7 +253,7 @@ def bounded_create(client, kwargs):
         result = bounded.chat.completions.create(**kwargs)
         usage = getattr(result, "usage", None)
         output = getattr(usage, "completion_tokens", None)
-        if type(output) is int and output > kwargs[cap_key]:
+        if type(output) is int and not uncapped_codex and output > kwargs[cap_key]:
             raise DecisionBudgetExceeded("provider exceeded requested output cap")
         return result
     finally:

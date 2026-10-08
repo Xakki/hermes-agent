@@ -30,7 +30,8 @@ The owner profile's `interaction` section accepts these validated fields:
 - `decision_timeout_seconds`: positive integer at most 600, default 600.
 - `max_attempts`: positive integer at most 3, default 3.
 - `max_output_tokens`: positive integer at most 150000, default 150000. This is
-  the per-request output cap; a lower explicit setting remains a per-request cap.
+  the per-request output cap on supported capped routes; it does not limit
+  generation on the native openai-codex HTTP route.
 - `show_countdown`: boolean, default true for the native Ink human-wait card.
 - `decision_prompt`: bounded operational preference, never an authorization override.
 - `task_sources`: unique project-local names, default `todo`, `grooming`, `freeze`.
@@ -64,32 +65,35 @@ Native transport ownership, request generation, input priority, and message hist
 remain separate from model decision contents. The implementation adds no model tool
 for changing mode or native command approval rules.
 
-## Fail-closed configured inference
+## Configured inference limits
 
-Each decision has a separate fixed aggregate ceiling of 150000 generated/output
-tokens across all physical attempts, including retries and configured fallbacks.
-The outgoing cap is no larger than the configured per-request cap, an explicit
-lower caller cap, or the remaining aggregate reservation. Each dispatched attempt
-consumes its entire reservation conservatively, without usage refunds; failed or
-unknown usage cannot release budget. A full-size first attempt can therefore
-exhaust the decision budget before the finite maximum of three attempts. Smaller
-configured caps can leave room for subsequent attempts. Provider-reported completion
-usage includes reasoning where the provider counts it there; reasoning is not
-added a second time. Usage above the actual wire cap is rejected.
+Supported routes with an enforceable output-token parameter have a fixed aggregate
+ceiling of 150000 generated/output tokens across physical attempts, including
+retries and configured fallbacks. On those routes, the outgoing cap
+is no larger than the configured per-request cap, an explicit lower caller cap,
+or the remaining aggregate reservation. Each dispatched attempt consumes its
+entire reservation conservatively, without usage refunds; failed or unknown usage
+cannot release budget. A full-size first attempt can therefore exhaust the budget
+before the finite maximum of three attempts. Smaller caps can leave room for retries.
+Provider-reported completion usage includes reasoning where counted; reasoning is
+not added a second time. Usage above an actual wire cap is rejected.
 
 Input byte bounds remain separate. This is not an exact combined input/output or
-billing cap. Response bytes remain finite and scale with the actual outgoing cap,
-with an allowance for streaming framing; the final parsed choice remains short and
-strict. The solver deadline remains 600 seconds from successful handoff (or a lower
-configured timeout), never renewed by retries, chooser delay, or callback delay.
+billing cap. Response bytes remain finite, independently of generated-token counts:
+65,536 bytes for uncapped Codex and a cap-scaled framing allowance on supported
+capped routes. This byte bound does not cap server-side generation. The final parsed
+choice remains short and strict. The solver deadline remains 600 seconds from
+successful handoff (or a lower configured timeout), never renewed by retries,
+chooser delay, or callback delay.
 
-The existing Codex decision budget guard remains intact. Repository code documents
-that the actual Codex backend rejects `max_output_tokens`; generic Responses schema
-recognition, timers, captured bytes, or a prompt instruction do not establish a
-provider-enforced generation/billing cap. Configured Codex inference is therefore
-BLOCKED. No paid/live solver request has been made and no route substituted.
-Offline fixtures are identified as such and are not provider-health evidence.
-Public protocol retrieval remains parked following the original native refusal.
+The existing openai-codex HTTP route is an owner-approved exception: its native
+adapter cannot transmit an output-token cap. That route does not reserve a
+provider-side generation/billing cap; this implementation makes no guarantee of
+a maximum generated-token count. It still uses finite attempts, deadline/cancellation,
+bounded input and response bytes, no tools, isolated SDK retries, and result
+validation. Other supported routes remain fail-closed when an enforceable cap is
+absent. Synthetic offline fixtures are not live-provider evidence; no live solver
+inference is authorized or claimed here.
 
 Telegram and other external button delivery, installed profile activation, and
 service restart/deployment are outside this implementation checkpoint.
