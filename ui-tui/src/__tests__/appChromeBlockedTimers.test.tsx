@@ -34,14 +34,14 @@ const mounted: Array<() => void> = []
  * Teardown is registered up front so a failing assertion still unmounts the
  * tree — a leaked instance would keep re-arming timers into the next test.
  */
-const mountTree = (tree: React.ReactElement, { interactive = false } = {}) => {
+const mountTree = (tree: React.ReactElement, { interactive = false, cols = 120 } = {}) => {
   const stdout = new PassThrough()
   const stdin = new PassThrough()
   const stderr = new PassThrough()
 
   let output = ''
 
-  Object.assign(stdout, { columns: 120, isTTY: false, rows: 20 })
+  Object.assign(stdout, { columns: cols, isTTY: false, rows: 20 })
   // PromptZone's prompts call `useInput`, which needs raw mode; without it Ink
   // swaps the whole tree for an error panel and stops updating.
   Object.assign(
@@ -116,6 +116,14 @@ const oneSecondTimers = (spy: IntervalSpy) => armedDelays(spy).filter(delay => d
 const oneSecondTicks = (spy: IntervalSpy) =>
   spy.mock.calls.filter(call => call[1] === 1000).map(call => call[0] as () => void)
 
+describe('StatusRule YOLO warning narrow-terminal visibility', () => {
+  it.each([24, 32, 44])('renders the active warning at %i columns', async cols => {
+    const rule = mountTree(<StatusRule {...idleProps} cols={cols} yolo />, { cols })
+
+    await vi.waitFor(() => expect(rule.output()).toContain('⚠ YOLO'))
+  })
+})
+
 // ── AppLayout harness ────────────────────────────────────────────────
 //
 // teknium1's review of this file was right that mounting StatusRule alone
@@ -136,9 +144,9 @@ const layoutProps: AppLayoutProps = {
   actions: {
     activateLiveSession: () => {},
     answerApproval: () => {},
-    answerClarify: () => {},
     answerSecret: () => {},
     answerSudo: () => {},
+    cancelClarify: () => {},
     clearSelection: () => {},
     closeLiveSession: () => Promise.resolve(null),
     newLiveSession: () => {},
@@ -374,7 +382,7 @@ describe('status-chrome timers track the current overlay model', () => {
     ['agents', { agents: true }],
     ['approval', { approval: { command: 'ls', requestId: 'a-1' } as OverlayState['approval'] }],
     ['billing', { billing: { kind: 'credits' } as OverlayState['billing'] }],
-    ['clarify', { clarify: { question: 'which?', requestId: 'c-1' } as OverlayState['clarify'] }],
+    ['clarify', { clarify: { questions: [{ choices: null, qid: 'q0', question: 'which?' }], requestId: 'c-1' } }],
     ['confirm', { confirm: { onConfirm: () => {}, prompt: 'sure?' } as OverlayState['confirm'] }],
     ['journey', { journey: true }],
     ['secret', { secret: { envVar: 'TOKEN', prompt: 'token?' } as OverlayState['secret'] }],
@@ -414,6 +422,23 @@ describe('status-chrome timers track the current overlay model', () => {
 // above ComposerPane) and FloatingOverlays (absolute, growing upward), then
 // assert on what is actually on screen rather than on the store alone.
 describe('AppLayout status-rule visibility', () => {
+  it('updates the YOLO badge from live session-info store changes', async () => {
+    const layout = mountLayout({}, { info: { yolo: true } })
+
+    await vi.waitFor(() => expect(layout.output()).toContain('⚠ YOLO'))
+
+    layout.clear()
+    patchUiState({ info: { yolo: false } })
+    await vi.waitFor(() => {
+      expect(layout.output()).not.toBe('')
+      expect(layout.output()).not.toContain('⚠ YOLO')
+    })
+
+    layout.clear()
+    patchUiState({ info: { yolo: true } })
+    await vi.waitFor(() => expect(layout.output()).toContain('⚠ YOLO'))
+  })
+
   it('keeps the status rule on screen AND its clock advancing under a flow-layout approval prompt', async () => {
     const layout = mountLayout({ approval: { command: 'rm -rf /', requestId: 'a-1' } as OverlayState['approval'] })
 

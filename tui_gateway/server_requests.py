@@ -21,6 +21,12 @@ Batch clarify keeps per-question locks (``clarify.lock`` → :func:`lock_answer`
 editable until every question is locked, locked answers survive a timeout, and the last lock
 resolves the request with the full answer set.
 
+Window-owned bridges (``preview.read`` / ``preview.act`` / ``terminal.read`` / ``window.read`` /
+``tour``) are answered only by the window showing the session; every other attached window declines
+with :data:`NOT_SHOWN_CODE`. A decline does not settle the request — the owner may still answer — until
+every answering client attached to the session has declined; then the request resolves with
+:data:`NOT_SHOWN_MESSAGE` at once instead of the agent waiting out the deadline (#119333).
+
 Capability: a client says once per connection that it answers server→client requests
 (``client.capabilities {server_requests: true}`` → :func:`advertise`). A WebSocket client that never
 did is a build older than this half of the protocol — it drops the frame silently and the agent
@@ -30,21 +36,46 @@ return the same ``None`` an error response produces without writing the frame (#
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
 import uuid
 from typing import Any, Callable
 
+from hermes_constants import SUDO_PASSWORD_TIMEOUT_SECONDS
+
 logger = logging.getLogger(__name__)
 
 
 class ServerRequest:
-    __slots__ = ("id", "sid", "method", "params", "event", "result", "answered", "created_at",
-                 "qids", "locked", "on_result")
+    __slots__ = (
+        "accept_result",
+        "admit",
+        "answered",
+        "created_at",
+        "deadline",
+        "declined",
+        "event",
+        "id",
+        "locked",
+        "logical_reminder",
+        "logical_request",
+        "method",
+        "on_result",
+        "params",
+        "qids",
+        "reminded",
+        "reminder_at",
+        "reminder_timer",
+        "result",
+        "settled_at",
+        "sid",
+    )
 
     def __init__(self, sid: str, method: str, params: dict, *, qids: list[str] | None = None,
-                 on_result: Callable[[dict | None], None] | None = None) -> None:
+                 on_result: Callable[[dict | None], None] | None = None,
+                 timeout: float | None = None) -> None:
         self.id = f"srq-{uuid.uuid4().hex[:12]}"
         self.sid = sid
         self.method = method
@@ -55,17 +86,38 @@ class ServerRequest:
         self.created_at = time.time()
         # Batch clarify: question ids still to lock, and the answers locked so far.
         self.qids = list(qids) if qids else None
-        self.locked: dict[str, str] = {}
+        self.locked: dict[str, str | None] = {}
         self.on_result = on_result
+        now = time.monotonic()
+        if method in _HUMAN_METHODS:
+            limit = SUDO_PASSWORD_TIMEOUT_SECONDS if method == "sudo" else 600
+            timeout = limit if timeout is None else min(limit, timeout)
+        self.deadline = None if timeout is None else now + max(0, timeout)
+        self.reminder_at = now + 300
+        self.reminded = False
+        self.reminder_timer: threading.Timer | None = None
+        self.logical_request: str | None = None
+        self.logical_reminder: Callable[[], bool] | None = None
+        self.admit: Callable[[], bool] | None = None
+        self.accept_result: Callable[[dict | None], bool] | None = None
+        self.settled_at: float | None = None
+        # Client transports that answered NOT_SHOWN_CODE (no window there shows this session).
+        self.declined: set = set()
 
     def frame(self) -> dict:
         return {"jsonrpc": "2.0", "id": self.id, "method": self.method,
-                "params": {"session_id": self.sid, **self.params}}
+                "params": self.snapshot()["params"]}
 
     def snapshot(self) -> dict:
         """``open_requests`` entry: the request as sent, plus the batch answers locked so far so a
         reconnecting client restores its ✓ state."""
         params = {"session_id": self.sid, **self.params}
+        if isinstance(params.get("interaction"), dict):
+            now = time.monotonic()
+            params["interaction"] = {**params["interaction"],
+                "remaining_seconds": max(0, (self.deadline or now) - now),
+                "reminder_remaining_seconds": max(0, self.reminder_at - now),
+                "reminded": self.reminded}
         if self.locked:
             params["answers"] = dict(self.locked)
         return {"id": self.id, "method": self.method, "params": params}
@@ -77,11 +129,21 @@ _open: dict[str, ServerRequest] = {}
 # Frame sinks, bound by ``bind_sinks`` from server.py at import time (like the method_ctx split
 # modules): importing server back from here would pick a different module object under the test
 # fixtures that patch ``sys.modules`` around the server import.
-_write: Callable[[dict], Any] = lambda frame: None  # noqa: E731
-_emit: Callable[[str, str, dict], Any] = lambda event, sid, payload: None  # noqa: E731
+_write: Callable[[dict], Any] = lambda frame: None
+_emit: Callable[[str, str, dict], Any] = lambda event, sid, payload: None
 # ``answerable(sid)``: False only when every client attached to the session is a build that never
 # advertised handling server→client requests (session_transports.py::_session_client_answers_requests).
-_answerable: Callable[[str], bool] = lambda sid: True  # noqa: E731
+_answerable: Callable[[str], bool] = lambda sid: True
+_observe: Callable[[ServerRequest, str, str], Any] = lambda req, actor, event: None
+# ``clients(sid)``: the attached client transports that answer server→client requests — the set whose
+# unanimous NOT_SHOWN_CODE decline settles a window-owned request (session_transports.py).
+_clients: Callable[[str], list] = lambda sid: []
+
+# Error code a client answers when none of its windows shows the request's session, and the refusal the
+# tool reports once every attached client said so. Mirrored in apps/desktop server-requests.ts.
+NOT_SHOWN_CODE = 4404
+NOT_SHOWN_MESSAGE = ("No Hermes Desktop window is showing this chat, so its preview, terminal and tour are out "
+                     "of reach. Ask the user to open this chat in the Desktop app, then retry.")
 
 # Client transports that sent ``client.capabilities {server_requests: true}`` (identity set: StdioTransport
 # has __slots__ and cannot be weak-referenced; ws.py forgets a peer on disconnect).
@@ -89,9 +151,11 @@ _answering_clients: set = set()
 
 
 def bind_sinks(write_json: Callable[[dict], Any], emit: Callable[[str, str, dict], Any],
-               answerable: Callable[[str], bool]) -> None:
-    global _write, _emit, _answerable
+               answerable: Callable[[str], bool], observe=None, *, clients: Callable[[str], list] | None = None) -> None:
+    global _write, _emit, _answerable, _clients, _observe
     _write, _emit, _answerable = write_json, emit, answerable
+    _clients = clients or (lambda sid: [])
+    _observe = observe or (lambda req, actor, event: None)
 
 
 def advertise(transport: Any, server_requests: bool) -> None:
@@ -123,10 +187,46 @@ def _unanswerable(method: str, sid: str) -> bool:
 
 
 def _emit_cancel(req: ServerRequest, reason: str) -> None:
+    _cancel_reminder(req)
+    _observe_event(req, "host", reason)
     _emit("request.cancel", req.sid, {"id": req.id, "method": req.method, "reason": reason})
 
 
-def _register(req: ServerRequest) -> None:
+_HUMAN_METHODS = frozenset({"approval", "clarify", "sudo", "secret", "vault.unlock_prompt", "vault.save_login", "vault.code"})
+
+
+def _observe_event(req: ServerRequest, actor: str, event: str) -> None:
+    if req.method not in _HUMAN_METHODS or req.logical_request is not None:
+        return
+    try:
+        _observe(req, actor, event)
+    except Exception as exc:
+        logger.warning("Native interaction observer failed: %s", type(exc).__name__)
+
+
+def _expired(req: ServerRequest) -> bool:
+    return req.deadline is not None and time.monotonic() >= req.deadline
+
+
+def _cancel_reminder(req: ServerRequest) -> None:
+    if req.reminder_timer is not None:
+        req.reminder_timer.cancel()
+
+
+def _remind_pending(req: ServerRequest) -> None:
+    with _lock:
+        if (_open.get(req.id) is not req or req.reminded or _expired(req)
+                or time.monotonic() < req.reminder_at):
+            return
+        req.reminded = True
+    if req.logical_reminder is not None and not req.logical_reminder():
+        return
+    _observe_event(req, "host", "reminder")
+    # No command, password, question or transcript is sent to an observer.
+    _emit("status.update", req.sid, {"kind": "interaction", "text": f"A human decision is pending ({req.id})."})
+
+
+def _register(req: ServerRequest) -> bool:
     from tui_gateway.contracts import registry as contracts
 
     contract = contracts.SERVER_REQUESTS.get(req.method)
@@ -135,26 +235,55 @@ def _register(req: ServerRequest) -> None:
     _, problem = contracts.validate_params(contract, {"session_id": req.sid, **req.params})
     if problem is not None:
         raise ValueError(problem)  # a key the renderer's typed handler would never read: our bug
+    if req.admit is not None and not req.admit():
+        return False
     with _lock:
         _open[req.id] = req
-    _write(req.frame())
+    # Admission may acquire host/history locks or withdraw this request. Never
+    # invoke it with the registry locked; recheck after publication closes the
+    # invalidation-before-registration window.
+    if req.admit is not None and not req.admit():
+        cancel_request(req.id, reason="revoked")
+        return False
+    _observe_event(req, "host", "opened")
+    try:
+        _write(req.frame())
+    except BaseException:
+        with _lock:
+            _open.pop(req.id, None)
+        raise
+    with _lock:
+        if (req.method in _HUMAN_METHODS and _open.get(req.id) is req
+                and (req.deadline is None or req.deadline > req.reminder_at)):
+            req.reminder_timer = threading.Timer(max(0, req.reminder_at - time.monotonic()), _remind_pending, args=(req,))
+            req.reminder_timer.daemon = True
+    if req.reminder_timer is not None:
+        req.reminder_timer.start()
+    return True
 
 
 def send(method: str, sid: str, params: dict, *, timeout: float | None,
-         qids: list[str] | None = None) -> dict | None:
+         qids: list[str] | None = None, on_open: Callable[[ServerRequest], None] | None = None,
+         accept_result: Callable[[dict | None], bool] | None = None,
+         on_result: Callable[[dict | None], None] | None = None) -> dict | None:
     """Send one request and block for the response ``result`` (a dict).
 
     Returns ``None`` when the renderer never answered (timeout, cancel, or an error response — e.g.
     a client without a handler for ``method``). ``timeout`` semantics: None → wait until answered or
-    cancelled, 0 → return immediately, > 0 → bounded wait. A batch (``qids``) that times out
-    returns ``{"answers": <locked so far>, "timed_out": True}`` instead of None.
+    cancelled, 0 → return immediately, > 0 → bounded wait. A batch (``qids``) that settled returns
+    ``{"answers": <locked so far>, "outcome"}`` (``submitted`` / ``cancelled`` / ``timed_out``).
     """
     if _unanswerable(method, sid):
         return None
-    req = ServerRequest(sid, method, params, qids=qids)
-    _register(req)
+    req = ServerRequest(sid, method, params, qids=qids, timeout=timeout, on_result=on_result)
+    req.accept_result = accept_result
+    if on_open is not None:
+        on_open(req)
+    if not _register(req):
+        return None
     try:
-        req.event.wait(timeout)
+        remaining = None if req.deadline is None else max(0, req.deadline - time.monotonic())
+        req.event.wait(remaining)
     except BaseException:
         # The wait itself died (KeyboardInterrupt, SystemExit, injected error): withdraw the request
         # or it stays in _open forever — replayed to every reconnecting client and reported by
@@ -170,12 +299,16 @@ def send(method: str, sid: str, params: dict, *, timeout: float | None,
         # settlement (resolve_response / lock_answer / cancel) already popped it (#112548).
         timed_out = _open.pop(req.id, None) is req
         answered, result, locked = req.answered, req.result, dict(req.locked)
+    _cancel_reminder(req)
     if answered:
+        # The winning response owns completion even when its outside-lock
+        # callback outlasts the human timer. The chooser must not race it.
+        req.event.wait()
         return result
     if timed_out:
         _emit_cancel(req, "timeout")
         if req.qids is not None:
-            return {"answers": locked, "timed_out": True}
+            return {"answers": locked, "outcome": "timed_out"}
     return None
 
 
@@ -198,23 +331,73 @@ def send_async(method: str, sid: str, params: dict, on_result: Callable[[dict | 
     return settle
 
 
-def resolve_response(frame: dict) -> bool:
+def _is_not_shown(frame: dict) -> bool:
+    error = frame.get("error")
+    return isinstance(error, dict) and error.get("code") == NOT_SHOWN_CODE
+
+
+def _decline(rid: str, transport: Any) -> bool:
+    """One client's "no window here shows this session". Settles only once every answering client
+    attached to the session declined: a bystander window must not beat the owner (#113348), and with
+    no owner at all the agent gets the refusal now rather than at the deadline (#119333). A decline
+    from an unknown transport (relayed, proxied) is recorded nowhere and the wait goes on."""
+    with _lock:
+        req = _open.get(rid)
+    if req is None:
+        logger.debug("server request %s: decline dropped, request no longer open", rid)
+        return False
+    clients = set(_clients(req.sid)) if transport is not None else set()
+    with _lock:
+        if _open.get(rid) is not req:
+            return True  # settled meanwhile
+        if transport is not None:
+            req.declined.add(transport)
+        if not clients or not clients <= req.declined:
+            return True
+        _open.pop(rid, None)
+        req.result = {"value": json.dumps({"success": False, "error": NOT_SHOWN_MESSAGE})}
+        req.answered = True
+    _cancel_reminder(req)
+    req.settled_at = time.monotonic()
+    try:
+        if req.on_result is not None:
+            req.on_result(req.result)
+    finally:
+        req.event.set()
+    _observe_event(req, "host", "not_shown")
+    return True
+
+
+def resolve_response(frame: dict, transport: Any = None, *, actor="user") -> bool:
     """Route one client response frame to its open request. False when nothing is waiting for that id
-    (already timed out / cancelled, or owned by another process — see the compute-host bridge)."""
+    (already timed out / cancelled, or owned by another process — see the compute-host bridge).
+    *transport* is the client connection the frame arrived on (counts a NOT_SHOWN_CODE decline)."""
     rid = frame.get("id")
     if not isinstance(rid, str):
         return False
+    if _is_not_shown(frame):
+        return _decline(rid, transport)
     with _lock:
         req = _open.get(rid)
-        if req is None:
+        if req is None or _expired(req):
             # Already settled (timed out, cancelled, answered from another surface) or owned by
             # another process; say so — a dropped answer used to vanish without a trace.
             logger.debug("server request %s: response dropped, request no longer open", rid)
+            return False
+    # Qualification is not settlement. It may take owner locks or reenter this
+    # registry; privileged effects belong in on_result after the winning commit.
+    if req.accept_result is not None and "error" not in frame:
+        if not req.accept_result(frame.get("result")):
+            return False
+    with _lock:
+        settled_at = time.monotonic()
+        if _open.get(rid) is not req or (req.deadline is not None and settled_at >= req.deadline):
             return False
         # Removing the request and committing its outcome are one settlement.
         # ``cancel()`` also settles under this lock, so the first side to get
         # here wins instead of a later cancellation overwriting a response.
         _open.pop(rid, None)
+        req.settled_at = settled_at
         if "error" in frame:
             logger.debug("server request %s (%s) answered with error: %s", rid, req.method, frame.get("error"))
             req.result, req.answered = None, False
@@ -228,43 +411,71 @@ def resolve_response(frame: dict) -> bool:
                 merged = dict(req.locked)
                 if isinstance(answers, dict):
                     merged.update(answers)
-                req.result = {**req.result, "answers": merged}
+                req.result = {**req.result, "answers": merged, "outcome": "submitted"}
+            elif req.qids:
+                req.result = {"answers": dict(req.locked), "outcome": "cancelled"}
             req.answered = True
-    if req.on_result is not None:
-        req.on_result(req.result)
-    req.event.set()
+    _cancel_reminder(req)
+    try:
+        if req.on_result is not None:
+            req.on_result(req.result)
+    finally:
+        req.event.set()
+    _observe_event(req, actor if req.answered else "host", "answered" if req.answered else "error")
     return True
 
 
-def lock_answer(request_id: str, question_id: str, answer: str) -> list[str] | None:
-    """Lock one batch-clarify answer (update-in-place). Returns the question ids still unanswered;
-    the last lock resolves the request with the full ``{"answers"}`` set. ``None`` when no open
-    batch has that id (expired or foreign); ``ValueError`` for an unknown question id."""
+def lock_answer(request_id: str, question_id: str, answer: str | None) -> list[str] | None:
+    """Lock one batch-clarify answer (update-in-place; ``None`` = skipped). Returns the question ids
+    still unanswered; the last lock resolves the request with the full ``{"answers"}`` set. ``None``
+    when no open batch has that id (expired or foreign); ``ValueError`` for an unknown question id."""
     with _lock:
         req = _open.get(request_id)
-        if req is None or req.qids is None:
+        if req is None or req.qids is None or _expired(req):
             return None
         if question_id not in req.qids:
             raise ValueError(f"unknown question_id {question_id!r}")
         req.locked[question_id] = answer
         remaining = [qid for qid in req.qids if qid not in req.locked]
         if not remaining:
-            req.result, req.answered = {"answers": dict(req.locked)}, True
+            req.result, req.answered = {"answers": dict(req.locked), "outcome": "submitted"}, True
             _open.pop(request_id, None)
     if not remaining:
+        _cancel_reminder(req)
         req.event.set()
+        _observe_event(req, "user", "batch_answered")
     return remaining
 
 
-def cancel(sid: str | None = None, reason: str = "interrupted") -> int:
-    """Withdraw open requests — only *sid*'s (session.interrupt must not touch other sessions'), or
-    every one when *sid* is None (shutdown). Blocked waits return None; queue-backed requests run
-    ``on_result(None)`` so their owner can settle. Returns the number withdrawn."""
+def cancel_request(request_id: str, reason: str = "interrupted") -> bool:
+    """Withdraw only the correlated host control, never a sibling security request."""
     with _lock:
-        targets = [req for req in _open.values() if sid is None or req.sid == sid]
+        req = _open.pop(request_id, None)
+        if req is None:
+            return False
+        req.result, req.answered = None, False
+    _cancel_reminder(req)
+    if req.on_result is not None:
+        req.on_result(None)
+    req.event.set()
+    _emit_cancel(req, reason)
+    return True
+
+
+def cancel(sid: str | None = None, reason: str = "interrupted", *, method: str | None = None) -> int:
+    """Withdraw open requests — only *sid*'s (session.interrupt must not touch other sessions'), or
+    every one when *sid* is None (shutdown); *method* narrows it to one request kind. Blocked waits
+    return None (a batch returns its locked answers with ``outcome: cancelled``); queue-backed requests
+    run ``on_result(None)`` so their owner can settle. Returns the number withdrawn."""
+    with _lock:
+        targets = [req for req in _open.values()
+                   if (sid is None or req.sid == sid) and (method is None or req.method == method)]
         for req in targets:
             _open.pop(req.id, None)
-            req.result, req.answered = None, False
+            if req.qids is not None:
+                req.result, req.answered = {"answers": dict(req.locked), "outcome": "cancelled"}, True
+            else:
+                req.result, req.answered = None, False
     for req in targets:
         if req.on_result is not None:
             req.on_result(None)
@@ -301,5 +512,7 @@ def is_response_frame(obj: Any) -> bool:
 
 def reset_for_tests() -> None:
     with _lock:
+        for req in _open.values():
+            _cancel_reminder(req)
         _open.clear()
         _answering_clients.clear()

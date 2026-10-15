@@ -16,7 +16,7 @@ import logging
 import pytest
 
 import tui_gateway.server as srv
-import tui_gateway.methods_session  # noqa: F401  (registers the RPC methods)
+import tui_gateway.methods_session
 from hermes_state import SessionDB
 
 
@@ -64,6 +64,14 @@ def test_set_hidden_unknown_id_still_errors(db):
     assert envelope.get("error"), envelope
 
 
+def test_set_hidden_without_flag_leaves_visible_session_alone(db):
+    """#122190: a flag-less ``session.set_hidden`` is rejected, never treated as hide."""
+    _seed(db, "plain-chat")
+    assert db.get_session("plain-chat")["hidden"] == 0
+
+    envelope = _call("session.set_hidden", {"session_id": "plain-chat"})
+    assert envelope.get("error"), envelope
+    assert db.get_session("plain-chat")["hidden"] == 0
 
 
 def test_session_list_emits_safe_filter_counts(db, caplog, monkeypatch, tmp_path):
@@ -115,7 +123,7 @@ def test_session_list_include_hidden(db):
 
 def test_session_list_dispatch_accepts_current_session_authority(db):
     """The TUI sends its runtime session id so the server can resolve project authority."""
-    response = getattr(srv, "handle_request")({
+    response = srv.handle_request({
         "id": "resume-list",
         "method": "session.list",
         "params": {
