@@ -13,7 +13,7 @@ def get_host(sid: str, session: dict) -> InteractionHost:
         host = session.get("interaction_host")
         if host is None:
             from hermes_cli.interaction_config import resolve_interaction
-            with getattr(server, "_session_profile_runtime_scope")(session, hydrate_secrets=False):
+            with server._session_profile_runtime_scope(session, hydrate_secrets=False):
                 settings = resolve_interaction()
             def phase_sink(phase, token):
                 if host is None or host.pending is None or host.pending.request_id != token.request_id or token.generation != host.lifecycle.generation:
@@ -26,14 +26,14 @@ def get_host(sid: str, session: dict) -> InteractionHost:
                 server._emit("status.update", sid, {"kind": "interaction", "text": texts[phase]})
             host = InteractionHost(sid, str(session.get("profile_home") or get_hermes_home()), settings=settings,
                 auto_enabled=lambda: effective_auto(session["session_key"]),
-                enable_auto=lambda: getattr(server, "_set_yolo")(None, {"session_id": sid, "scope": "session"}, "yolo", "on", session),
-                cancel_owned=lambda: getattr(server, "_interrupt_session_turn")(sid, session), phase_sink=phase_sink,
+                enable_auto=lambda: server._set_yolo(None, {"session_id": sid, "scope": "session"}, "yolo", "on", session),
+                cancel_owned=lambda: server._interrupt_session_turn(sid, session), phase_sink=phase_sink,
                 native_controls_only=True)
             def record(row):
                 import json
                 import uuid
-                with getattr(server, "_session_profile_runtime_scope")(session, hydrate_secrets=False):
-                    with getattr(server, "_session_db")(session) as db:
+                with server._session_profile_runtime_scope(session, hydrate_secrets=False):
+                    with server._session_db(session) as db:
                         if db is not None:
                             db.set_meta(f"interaction:{session['session_key']}:{uuid.uuid4().hex}", json.dumps(row))
             host.lifecycle._record_sink = record
@@ -48,7 +48,7 @@ def get_host(sid: str, session: dict) -> InteractionHost:
 def accepted_goal(session: dict) -> str:
     from tui_gateway import server
     from hermes_cli.goals import GoalManager
-    with getattr(server, "_session_profile_runtime_scope")(session, hydrate_secrets=False):
+    with server._session_profile_runtime_scope(session, hydrate_secrets=False):
         state = GoalManager(session_id=session["session_key"]).state
         return state.goal if state is not None else ""
 
@@ -63,7 +63,7 @@ def observe_native(req, actor, event):
 def command(sid: str, session: dict, arg: str) -> str:
     from tui_gateway import server
     transport = server.current_transport()
-    contains = getattr(server, "_session_transport_contains")
+    contains = server._session_transport_contains
     owner = server._session_auth_user_id(session)
     caller = server._transport_auth_user_id(transport)
     if (transport is None or not contains(session, transport) or session.get("_closing")
@@ -95,15 +95,15 @@ def admit_task(sid, session, text, *, host=None):
 
 def dependencies_pending(sid: str, session: dict) -> bool:
     from tui_gateway import server
-    if getattr(server, "_session_has_active_delegations")(sid, session):
+    if server._session_has_active_delegations(sid, session):
         return True
     from hermes_cli.goals import gather_background_processes
     if gather_background_processes(owner_task_id=session.get("session_key")):
         return True
-    with getattr(server, "_session_profile_runtime_scope")(session, hydrate_secrets=False):
+    with server._session_profile_runtime_scope(session, hydrate_secrets=False):
         from hermes_cli.loops import LoopManager
         loop = LoopManager(session_id=session.get("session_key", ""))
-        return getattr(server, "_active_goal_manager")(session) is not None or loop.is_active()
+        return server._active_goal_manager(session) is not None or loop.is_active()
 
 
 def maybe_completion(sid: str, session: dict, result):
@@ -158,7 +158,7 @@ def maybe_completion(sid: str, session: dict, result):
                     return False
                 transport = server.current_transport()
                 if transport is None or (
-                    not getattr(server, "_session_transport_contains")(session, transport)
+                    not server._session_transport_contains(session, transport)
                     or creator != server._transport_auth_user_id(transport)):
                     return False
                 if configuration:
@@ -212,7 +212,7 @@ def maybe_completion(sid: str, session: dict, result):
                 session["running"] = True
                 session["_interaction_followup"] = True
                 generation = int(session.get("_queued_prompt_generation", 0))
-            getattr(server, "_run_prompt_submit")(None, sid, session, prompt, queued_prompt_generation=generation)
+            server._run_prompt_submit(None, sid, session, prompt, queued_prompt_generation=generation)
     with session["history_lock"]:
         if session.get("running") or session.get("_closing") or session.get("queued_prompt") or session.get("queued_prompts"):
             return

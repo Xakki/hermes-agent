@@ -145,7 +145,7 @@ def test_native_worker_child_identity_descendants_and_cleanup(authority, enabled
             return {"api_call_count": 0}
 
     run = _ChildRun(PassiveChild(), None, 0, "passive probe", None, None, child_task_id="passive-task")
-    result, failure, deferred = run.await_child()
+    _result, failure, deferred = run.await_child()
     assert seen == [(child_id, enabled, "1" if enabled else None)]
     assert bool(failure) == raises and deferred is False
     assert get_current_session_key() == authority

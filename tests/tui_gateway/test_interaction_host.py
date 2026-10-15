@@ -12,7 +12,7 @@ def test_live_slash_grant_is_owner_only_and_interrupt_revokes(tmp_path, monkeypa
                "history_lock": threading.RLock(), "running": False,
                "history": []}
     from hermes_cli.goals import GoalManager
-    with getattr(server, "_session_profile_runtime_scope")(session, hydrate_secrets=False):
+    with server._session_profile_runtime_scope(session, hydrate_secrets=False):
         GoalManager(session_id="fixture").set("accepted goal")
     monkeypatch.setitem(server._sessions, "fixture", session)
     monkeypatch.setattr(server, "current_transport", lambda: foreign)
@@ -103,7 +103,7 @@ def test_native_pending_once_and_actor_persistence_and_admission(tmp_path, monke
         assert submitted[0][0][3] == host.action_prompt("continue")
         assert submitted[0][1] == {"queued_prompt_generation": session.get("_queued_prompt_generation", 0)}
         assert host.lifecycle.mode == "assisted" and host.lifecycle._grant is None
-        with getattr(server, "_session_db")(session) as db:
+        with server._session_db(session) as db:
             rows = [json.loads(value) for _, value in db.list_meta_prefix("interaction:modal:")]
         assert any(row["actor"] == "user" and row["event"] == "delegated" for row in rows)
         assert any(row["actor"] == "agent" and row["event"] == "decision" for row in rows)

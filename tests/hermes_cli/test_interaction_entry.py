@@ -19,6 +19,9 @@ def test_constructor_running_application_after_turn_drains_before_exactly_one_na
     monkeypatch.setenv("HERMES_DEFER_AGENT_STARTUP", "1")
     shell = HermesCLI(model="fixture", provider="openai-compat", api_key="synthetic",
                       base_url="http://127.0.0.1:1/v1")
+    # The fixture exercises the shadow/local CLI; canonical attachment has separate tests.
+    from hermes_state import SessionDB
+    shell._session_db = SessionDB()
     shell._tui_init_run_state()
     shell._input_area = shell._tui_build_input_area()
     shell.agent = SimpleNamespace(session_id=shell.session_id, _cached_system_prompt="stable", tool_schemas=[{"name": "fixture"}])

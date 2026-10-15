@@ -20,7 +20,7 @@ def test_late_response_cannot_win_expired_human_wait(monkeypatch, batch):
     result = requests.send("clarify", "s", {"question": "choose", "choices": ["first"]},
                            timeout=1, qids=["a", "b"] if batch else None)
     assert rejected == [False]
-    assert result == ({"answers": {"a": "first"}, "timed_out": True} if batch else None)
+    assert result == ({"answers": {"a": "first"}, "outcome": "timed_out"} if batch else None)
     assert requests.open_requests("s") == []
 
 

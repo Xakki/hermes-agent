@@ -60,10 +60,10 @@ def decide(session: InteractionSession, token: DecisionToken) -> bool:
             try:
                 # model_switch bodies are installed against the server's runtime globals.
                 from tui_gateway import server
-                import fcntl  # noqa: F401 — unsupported hosts fail closed, not a no-op lease
+                import fcntl
                 from tools.bot_relay import acquire_turn_lock
                 with (acquire_turn_lock(home, "interaction-decision", timeout_seconds=0),
-                      getattr(server, "_session_profile_runtime_scope")({"profile_home": str(home)})):
+                      server._session_profile_runtime_scope({"profile_home": str(home)})):
                     from hermes_cli.config_effective import load_user_config_effective
 
                     from agent.auxiliary_client import call_llm, aux_stream_deadline
@@ -74,7 +74,7 @@ def decide(session: InteractionSession, token: DecisionToken) -> bool:
                     provider = model_cfg.get("provider") if isinstance(model_cfg, dict) else None
                     if not model:
                         return
-                    resolution = getattr(server, "_resolve_runtime_with_fallback")({"requested": provider, "target_model": model})
+                    resolution = server._resolve_runtime_with_fallback({"requested": provider, "target_model": model})
                     runtime = resolution.runtime
                     model = resolution.selected_model or model
                     # External runtimes own their own tools; a no-tool schema is insufficient there.

@@ -2,6 +2,8 @@
 import time
 
 import httpx
+from itertools import pairwise
+
 import pytest
 from openai import OpenAI
 
@@ -255,7 +257,7 @@ def test_codex_native_adapter_allows_uncapped_wire_and_reports_usage(used_capped
                               stream=httpx.ByteStream(wire.encode()))
     client = OpenAI(api_key="synthetic", base_url="https://chatgpt.com/backend-api/codex", http_client=httpx.Client(
         transport=httpx.MockTransport(transport)))
-    setattr(client, "_hermes_aux_effective_provider", "openai-codex")
+    client._hermes_aux_effective_provider = "openai-codex"
     adapter = SimpleNamespace(_real_client=client, chat=SimpleNamespace(completions=_CodexCompletionsAdapter(client, "fixture")))
     budget = DecisionBudget(time.monotonic() + 600, lambda: False,
                             max_output_tokens=150000 if used_capped_budget else 256)
@@ -386,7 +388,7 @@ def test_real_sdk_multiline_usage_framing_is_accepted_but_cannot_evade_wire_cap(
             break
     assert b"".join(fragments) == wire
     if ending == b"\r\n":
-        assert any(left.endswith(b"\r") and right.startswith(b"\n") for left, right in zip(fragments, fragments[1:]))
+        assert any(left.endswith(b"\r") and right.startswith(b"\n") for left, right in pairwise(fragments))
 
     seen, closed = [], []
     class FixtureStream(httpx.SyncByteStream):

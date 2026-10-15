@@ -62,7 +62,7 @@ def _probe(env):
         "'OPENAI_API_KEY' in os.environ,'HERMES_MODEL' in os.environ]))"
     )
     result = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=env,
-                            capture_output=True, text=True, timeout=30)
+                            capture_output=True, text=True, timeout=30, check=False)
     assert result.returncode == 0, result.stderr.splitlines()[-12:]
     return json.loads(result.stdout)
 

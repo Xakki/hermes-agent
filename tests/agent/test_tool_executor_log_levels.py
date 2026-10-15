@@ -59,7 +59,7 @@ def test_search_files_observed_error_logs_at_info(caplog):
 def test_other_tool_observed_error_stays_warning(caplog):
     """An observed error from any other tool keeps its WARNING."""
     with caplog.at_level(logging.INFO, logger="agent.tool_executor"):
-        committed, messages = _commit_error_result("terminal")
+        committed, _messages = _commit_error_result("terminal")
 
     assert committed is not None
     records = [r for r in caplog.records if "returned error" in r.getMessage()]

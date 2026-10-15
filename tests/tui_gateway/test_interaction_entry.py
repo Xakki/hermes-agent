@@ -45,7 +45,7 @@ def test_created_session_post_turn_waits_for_actual_goal_loop_and_native_depende
     from hermes_cli.goals import GoalManager
     from hermes_cli.loops import LoopManager
     from hermes_cli import goals
-    sid, session, owner = native_session
+    sid, session, _owner = native_session
     background = []
     delegated = [True]
     monkeypatch.setattr(server, "_session_has_active_delegations", lambda *args: delegated[0])
@@ -157,10 +157,10 @@ def test_created_session_native_once_authenticates_owner_and_cancels_stale_reque
 def test_created_session_new_task_uses_native_auto_and_preserves_discovery_governance(native_session, monkeypatch, computed):
     from hermes_cli.goals import GoalManager
     from hermes_cli import goals, interaction_decider
-    sid, session, owner = native_session
+    sid, session, _owner = native_session
     monkeypatch.setattr(server, "_session_has_active_delegations", lambda *args: False)
     monkeypatch.setattr(goals, "gather_background_processes", lambda **kwargs: [])
-    with getattr(server, "_session_profile_runtime_scope")(session, hydrate_secrets=False):
+    with server._session_profile_runtime_scope(session, hydrate_secrets=False):
         manager = GoalManager(session_id=session["session_key"])
         manager.set("accepted")
         manager.pause(reason="fixture human pause")

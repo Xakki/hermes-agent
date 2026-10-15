@@ -127,7 +127,7 @@ def test_native_synthetic_secrets_and_configured_fallback_a_b_a(tmp_path, monkey
                 settings=resolve_interaction({'interaction': {'max_output_tokens': 256}}))
             from tui_gateway import server
             from hermes_cli.config import load_config_readonly
-            with getattr(server, '_session_profile_runtime_scope')({'profile_home': str(root / 'profiles' / name)}):
+            with server._session_profile_runtime_scope({'profile_home': str(root / 'profiles' / name)}):
                 entries = load_config_readonly()['fallback_providers']
                 assert entries[0]['model'] == f'reserve-{name}'
                 assert Path(auxiliary_client.__file__).resolve().is_relative_to(Path(__file__).resolve().parents[2]), auxiliary_client.__file__
