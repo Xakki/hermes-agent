@@ -205,7 +205,9 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
         return null
       }
 
-      const previousSid = getUiState().sid
+      const previousState = getUiState()
+      const previousSid = previousState.sid
+      const cwd = previousState.info?.cwd || STARTUP_WORKSPACE_CWD
 
       if (!keepCurrent) {
         await closeSession(previousSid)
@@ -213,7 +215,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
       const r = await rpc<SessionCreateResponse>('session.create', {
         cols: colsRef.current,
-        ...(STARTUP_WORKSPACE_CWD ? { cwd: STARTUP_WORKSPACE_CWD } : {})
+        ...(cwd ? { cwd } : {})
       })
 
       if (!r) {

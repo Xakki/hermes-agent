@@ -77,7 +77,9 @@ def test_observer_failure_never_wedges_native_delivery_or_settlement(monkeypatch
         elif settlement == "cancel":
             requests.cancel("observer")
         else:
-            now[0] = 600
+            deadline = requests._open[frame["id"]].deadline
+            assert deadline is not None
+            now[0] = deadline
     requests.bind_sinks(deliver, lambda *args: None, lambda sid: True, broken_observer)
     try:
         result = requests.send(method, "observer", params, timeout=None)

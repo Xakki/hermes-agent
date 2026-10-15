@@ -1394,9 +1394,10 @@ def _enable_gateway_prompts() -> None:
 def _ask(method: str, sid: str, params: dict, timeout: float | None = 300) -> str:
     """Server→client request whose answer is one string under ``value`` (sudo, secret, vault prompts, GUI reads,
     MCP setup). Empty string when the renderer skipped, timed out, or was cancelled."""
+    from hermes_constants import SUDO_PASSWORD_TIMEOUT_SECONDS
     from tui_gateway import server_requests
     if method in server_requests._HUMAN_METHODS:
-        timeout = 600
+        timeout = SUDO_PASSWORD_TIMEOUT_SECONDS if method == "sudo" else 600
     result = server_requests.send(method, sid, params, timeout=timeout)
     value = (result or {}).get("value", "")
     return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)

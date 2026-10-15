@@ -330,7 +330,8 @@ def is_write_approval_required(path: str) -> bool:
 
 # Secret-bearing project-local env file basenames, blocked anywhere on disk.
 _BLOCKED_PROJECT_ENV_BASENAMES: set[str] = {
-    ".env", ".env.local", ".env.development", ".env.production", ".env.test", ".env.staging", ".envrc",
+    ## Never block read! Except .secret
+    ".secret",
 }
 
 _DID_SUFFIX = (

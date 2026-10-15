@@ -1113,11 +1113,12 @@ class CLIModalMixin:
         """Prompt for a sudo password through the prompt_toolkit UI (agent thread); clarify-style
         state + queue answered by the Enter binding."""
         from cli import _DIM, _RST, _cprint
+        from hermes_constants import SUDO_PASSWORD_TIMEOUT_SECONDS
 
         response_queue = queue.Queue()
         self._capture_modal_input_snapshot()
         self._sudo_state = {"response_queue": response_queue}
-        self._sudo_deadline = _time.monotonic() + 600
+        self._sudo_deadline = _time.monotonic() + SUDO_PASSWORD_TIMEOUT_SECONDS
         self._ring_bell(prompt=True, context="sudo password")
         self._paint_now()
 

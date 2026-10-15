@@ -2,6 +2,7 @@ import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 
 import type { ClarifyBatchQuestion, ClarifyReq } from '../types.js'
 
+import { refreshApprovalPrompt } from './approvalRequestQueue.js'
 import { patchOverlayState } from './overlayStore.js'
 import { rememberServerRequest } from './serverRequestStore.js'
 
@@ -80,18 +81,8 @@ export function createServerRequestHandler(ctx: ServerRequestHandlerContext): (r
       }
 
       case 'approval': {
-        patchOverlayState({
-          approval: {
-            // Only an explicit false (tirith warning) drops the permanent-allow option.
-            allowPermanent: p.allow_permanent !== false,
-            choices: strList(p.choices) ?? undefined,
-            command: str(p.command),
-            description: str(p.description) || 'dangerous command',
-            requestId: request.id,
-            smartDenied: p.smart_denied === true
-          }
-        })
         open(request, 'approval needed')
+        refreshApprovalPrompt()
 
         return true
       }

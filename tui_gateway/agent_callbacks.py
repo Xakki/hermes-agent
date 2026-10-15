@@ -209,6 +209,7 @@ def _apply_project_workspace(task_id: str, path: str, _name: str = "") -> None:
 
 
 def _wire_callbacks(sid: str):
+    from hermes_constants import SUDO_PASSWORD_TIMEOUT_SECONDS
     from tools.terminal_tool import set_sudo_password_callback
     from tools.terminal_tool_sudo import get_sudo_prompt_command
     from gateway.run import _redact_approval_command
@@ -241,7 +242,8 @@ def _wire_callbacks(sid: str):
         return {**save_env_value_secure(env_var, val), "skipped": False, "message": "ok"}
 
     set_sudo_password_callback(lambda: _ask(
-        "sudo", sid, {"command": _redact_approval_command(get_sudo_prompt_command())}, timeout=600))
+        "sudo", sid, {"command": _redact_approval_command(get_sudo_prompt_command())},
+        timeout=SUDO_PASSWORD_TIMEOUT_SECONDS))
     set_project_workspace_callback(_apply_project_workspace)
     set_secret_capture_callback(secret_cb)
     # External password-manager unlock: the renderer shows a masked master-password card; the

@@ -12,6 +12,7 @@ import { computeWheelStep, initWheelAccelForHost } from '../lib/wheelAccel.js'
 import { closeWidget, dispatchWidgetInput } from '../sdk/host.js'
 
 import { $agentDockCollapsed } from './agentRoster.js'
+import { answerApprovalRequest } from './approvalRequestQueue.js'
 import { getInputSelection } from './inputSelectionStore.js'
 import {
   type GatewayRpc,
@@ -23,7 +24,6 @@ import {
 import { $isBlocked, $overlayState, patchOverlayState } from './overlayStore.js'
 import { respondToServerRequest } from './serverRequestStore.js'
 import { turnController } from './turnController.js'
-import { patchTurnState } from './turnStore.js'
 import { getUiState } from './uiStore.js'
 
 const isCtrl = (key: { ctrl: boolean }, ch: string, target: string) => key.ctrl && ch.toLowerCase() === target
@@ -255,9 +255,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     }
 
     if (overlay.approval) {
-      respondToServerRequest(overlay.approval.requestId, { choice: 'deny' })
-      patchOverlayState({ approval: null })
-      patchTurnState({ outcome: 'denied' })
+      answerApprovalRequest(overlay.approval.requestId, 'deny')
 
       return
     }

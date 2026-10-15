@@ -27,6 +27,7 @@ import { bootSeededPin, invalidateBootBackground, writeBootTheme } from '../lib/
 import { defaultThemeForCurrentBackground, fromSkin, skinIsLight, type Theme, themeToneHex } from '../theme.js'
 import type { Msg, SessionInfo, SubagentProgress } from '../types.js'
 
+import { refreshApprovalPrompt } from './approvalRequestQueue.js'
 import { applyConnectionRequest, applyConnectionUpdate } from './connectionOperationStore.js'
 import { applyDelegationStatus, getDelegationState } from './delegationStore.js'
 import { applyGoalSnapshot } from './goalStatus.js'
@@ -1350,7 +1351,13 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           sys(timeoutNotice)
         }
 
+        const approvalCancelled = ev.payload?.method === 'approval' || getOverlayState().approval?.requestId === id
         forgetServerRequest(id)
+
+        if (approvalCancelled) {
+          refreshApprovalPrompt()
+        }
+
         patchOverlayState(prev => {
           const next = { ...prev }
           let changed = false

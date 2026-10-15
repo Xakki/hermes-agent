@@ -36,6 +36,8 @@ import time
 import uuid
 from typing import Any, Callable
 
+from hermes_constants import SUDO_PASSWORD_TIMEOUT_SECONDS
+
 logger = logging.getLogger(__name__)
 
 
@@ -61,7 +63,8 @@ class ServerRequest:
         self.on_result = on_result
         now = time.monotonic()
         if method in _HUMAN_METHODS:
-            timeout = 600 if timeout is None else min(600, timeout)
+            limit = SUDO_PASSWORD_TIMEOUT_SECONDS if method == "sudo" else 600
+            timeout = limit if timeout is None else min(limit, timeout)
         self.deadline = None if timeout is None else now + max(0, timeout)
         self.reminder_at = now + 300
         self.reminded = False
@@ -277,8 +280,7 @@ def send_async(method: str, sid: str, params: dict, on_result: Callable[[dict | 
     if _unanswerable(method, sid):
         on_result(None)
         return lambda reason: None
-    req = ServerRequest(sid, method, params, on_result=on_result,
-                        timeout=600 if method in _HUMAN_METHODS else None)
+    req = ServerRequest(sid, method, params, on_result=on_result)
     _register(req)
 
     def settle(reason: str) -> None:

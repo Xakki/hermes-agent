@@ -138,7 +138,7 @@ cd ui-tui
 npm install       # first time
 npm run dev       # watch mode (rebuilds hermes-ink + tsx --watch)
 npm start         # production
-npm run build     # full build (hermes-ink + tsc)
+npm run build     # esbuild TUI bundle; Ink build and typecheck are separate
 npm run typecheck # tsc --noEmit
 npm run lint      # eslint
 npm run fmt       # prettier

@@ -50,6 +50,7 @@ import { onUserWidgets } from '../sdk/userWidgets.js'
 import type { Msg, PanelSection, SlashCatalog } from '../types.js'
 
 import { applyAgentSnapshot } from './agentRoster.js'
+import { answerApprovalRequest } from './approvalRequestQueue.js'
 import { createGatewayEventHandler } from './createGatewayEventHandler.js'
 import { createServerRequestHandler } from './createServerRequestHandler.js'
 import { createSlashHandler } from './createSlashHandler.js'
@@ -1133,13 +1134,9 @@ export function useMainApp(gw: GatewayClient) {
         return
       }
 
-      respondWith(overlay.approval.requestId, { choice }, () => {
-        patchOverlayState({ approval: null })
-        patchTurnState({ outcome: choice === 'deny' ? 'denied' : `approved (${choice})` })
-        patchUiState({ status: 'running…' })
-      })
+      answerApprovalRequest(overlay.approval.requestId, choice)
     },
-    [overlay.approval, respondWith]
+    [overlay.approval]
   )
 
   const answerSudo = useCallback(
