@@ -145,6 +145,7 @@ class CanonicalListParams(ProfileParams):
 
 class CanonicalSessionListRow(Result):
     session_id: str
+    cwd: str | None = None
     id: str
     title: str
     source: str | None

@@ -29,7 +29,9 @@ test('the real bootstrap supplies ruamel-only dependencies and rejects foreign-p
     HERMES_HOME: home,
     HERMES_RUNTIME_DIR: path.join(temp, 'tools'),
     HERMES_DISABLE_LAZY_INSTALLS: '1',
-    UV_CACHE_DIR: path.join(temp, 'cache'),
+    // Reuse an explicitly prepared acquisition cache in offline CI. The seed,
+    // selected environment and dependency target below remain fixture-local.
+    UV_CACHE_DIR: process.env.UV_CACHE_DIR || path.join(temp, 'cache'),
     UV_NO_CONFIG: '1',
     PYTHONPATH: '',
     PYTHONHOME: '',

@@ -3371,6 +3371,7 @@ export interface SessionListResult {
 export interface SessionListRow {
   id: string
   resolved_id?: string | null
+  cwd?: string | null
   title?: string
   preview?: string
   started_at?: number
@@ -3401,6 +3402,7 @@ export interface SessionActiveListResult {
 export interface SessionActiveItem {
   current: boolean
   id: string
+  cwd?: string | null
   last_active: number
   message_count: number
   model: string
@@ -5152,6 +5154,7 @@ export interface CanonicalListResult {
 }
 export interface CanonicalSessionListRow {
   session_id: string
+  cwd?: string | null
   id: string
   title: string
   source: string | null

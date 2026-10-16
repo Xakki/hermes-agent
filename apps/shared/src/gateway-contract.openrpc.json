@@ -10465,6 +10465,18 @@
             "title": "Session Id",
             "type": "string"
           },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cwd"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -35588,6 +35600,18 @@
             "title": "Id",
             "type": "string"
           },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cwd"
+          },
           "last_active": {
             "title": "Last Active",
             "type": "number"
@@ -38258,6 +38282,18 @@
             ],
             "default": null,
             "title": "Resolved Id"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cwd"
           },
           "title": {
             "default": "",

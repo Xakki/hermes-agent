@@ -16,10 +16,15 @@ async def test_stored_picker_survives_upgrade_and_resumes_without_copying(tmp_pa
     monkeypatch.setattr(run, '_load_gateway_config', lambda: {'platform_toolsets': {'cli': []}})
     store = SessionStore(tmp_path / 'sessions', GatewayConfig())
     db = store._db
+    # Resume validates the recorded local workspace, so distinct fixture paths
+    # must be real directories rather than invalid launch destinations.
     for sid, source in [('old-cli', 'cli'), ('old-tui', 'tui'), ('old-gui', 'gui'),
                         ('internal', 'tool'), ('bot', 'telegram'), ('hidden', 'cli'),
                         ('archived', 'tui'), ('foreign', 'cli'), ('imported-other', 'cli')]:
-        db.create_session(sid, source=source, model='old-model', cwd=str(tmp_path),
+        cwd = None if sid == 'old-gui' else str(tmp_path / sid)
+        if cwd is not None:
+            (tmp_path / sid).mkdir()
+        db.create_session(sid, source=source, model='old-model', cwd=cwd,
                           profile_name='other' if sid == 'foreign' else None)
         db.append_message(sid, 'user', sid + ' question')
         db.append_message(sid, 'assistant', sid + ' answer')
@@ -33,6 +38,8 @@ async def test_stored_picker_survives_upgrade_and_resumes_without_copying(tmp_pa
             compression_lock_holder='fixture')
     finally:
         db.release_compression_lock('old-tui', 'fixture')
+    (tmp_path / 'tip-workspace').mkdir()
+    db.update_session_cwd('tui-tip', str(tmp_path / 'tip-workspace'))
     db.set_session_hidden('hidden', True)
     db.set_session_archived('archived', True)
     from hermes_state_mutation_binding import BINDING_PREFIX
@@ -53,6 +60,12 @@ async def test_stored_picker_survives_upgrade_and_resumes_without_copying(tmp_pa
     assert 'result' in result, result
     assert result['result']['scope'] == 'stored'
     assert {r['id'] for r in result['result']['sessions']} == {'old-cli', 'tui-tip', 'old-gui'}
+    assert {r['id']: r['cwd'] for r in result['result']['sessions']} == {
+        'old-cli': str(tmp_path / 'old-cli'),
+        'tui-tip': str(tmp_path / 'tip-workspace'),
+        'old-gui': None,
+    }
+    assert db.get_session('old-tui')['cwd'] == str(tmp_path / 'old-tui')
     assert db._conn.total_changes == before
     assert authority.sessions == {}
     assert (await listing(native))['result'] == {'scope': 'live', 'sessions': []}
@@ -70,6 +83,8 @@ async def test_stored_picker_survives_upgrade_and_resumes_without_copying(tmp_pa
     assert db._conn.execute('SELECT COUNT(*) FROM messages WHERE session_id=?', ('old-cli',)).fetchone()[0] == 2
     assert 'old-cli' not in {r['id'] for r in (await listing(native, scope='stored'))['result']['sessions']}
     assert 'old-cli' in {r['id'] for r in (await listing(native))['result']['sessions']}
+    live_rows = (await listing(native))['result']['sessions']
+    assert next(r for r in live_rows if r['id'] == 'old-cli')['cwd'] == str(tmp_path / 'old-cli')
     compressed = await native.dispatch({'id': 3, 'method': 'session.resume', 'params': {'session_id': 'tui-tip'}})
     assert 'result' in compressed, compressed
     assert [m['content'] for m in compressed['result']['messages']] == ['compressed question', 'compressed answer']

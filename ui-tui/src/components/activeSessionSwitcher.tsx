@@ -16,14 +16,13 @@ import { useT } from '../i18n/useT.js'
 import { asRpcResult, rpcErrorMessage } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
 
+import { sessionColumnLayout, SessionDirectoryColumn } from './activeSessionColumns.js'
 import { ModelPicker } from './modelPicker.js'
 import { windowOffset } from './overlayControls.js'
-import { clampOverlayWidth, listRowStyle } from './overlayPrimitives.js'
+import { listRowStyle } from './overlayPrimitives.js'
 import { TextInput } from './textInput.js'
 
 const VISIBLE = 12
-const MIN_WIDTH = 64
-const MAX_WIDTH = 128
 const TITLE_MAX = 64
 
 const STATUS_GLYPH: Record<string, string> = {
@@ -348,8 +347,7 @@ export function ActiveSessionSwitcher({
   const historyDisplayRef = useRef<SessionListRow[]>([])
   const { stdout } = useStdout()
   // Optional maxWidth lets grid layouts hand the switcher its cell budget.
-  const preferredWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, (stdout?.columns ?? 80) - 6))
-  const width = clampOverlayWidth(preferredWidth, maxWidth)
+  const { width, idWidth, statusWidth, modelWidth, cwdWidth, statusColumn, modelColumn } = sessionColumnLayout(stdout, maxWidth)
   const promptColumns = Math.max(20, width - 11)
 
   // Rows are [new][live…][history…]: the "+ new" row is pinned first (index 0,
@@ -747,35 +745,46 @@ export function ActiveSessionSwitcher({
 
       {(actionErr || err) && <Text color={t.color.label}>{C.error(actionErr || err)}</Text>}
 
+      <Box>
+        <Box flexShrink={0} width={5 + idWidth + statusWidth + modelWidth} />
+        <Box flexShrink={0} width={cwdWidth + 1}>
+          <Text color={t.color.muted} wrap="truncate-end">
+            {S.directory}
+          </Text>
+        </Box>
+      </Box>
       <Box backgroundColor={newRowStyle?.backgroundColor} flexDirection="row" onClick={handleRowClick(0)} width="100%">
-        <Text bold={newSelectedRow} color={newRowTextColor ?? t.color.muted}>
-          {newSelectedRow ? '▸ ' : '  '}
-        </Text>
+        <Box flexShrink={0} width={2}>
+          <Text bold={newSelectedRow} color={newRowTextColor ?? t.color.muted}>
+            {newSelectedRow ? '▸ ' : '  '}
+          </Text>
+        </Box>
 
-        <Box {...fixedSessionColumnStyle()} width={5}>
+        <Box {...fixedSessionColumnStyle()} width={3}>
           <Text bold={newSelectedRow} color={newRowMarkerColor}>
             {'+'.padStart(2)}
           </Text>
         </Box>
 
-        <Box {...fixedSessionColumnStyle()} width={11}>
+        <Box {...fixedSessionColumnStyle()} width={idWidth}>
           <Text bold={newSelectedRow} color={newRowMarkerColor} wrap="truncate-end">
             {S.row.new}
           </Text>
         </Box>
 
-        <Box {...fixedSessionColumnStyle()} width={11}>
+        <Box {...fixedSessionColumnStyle()} {...statusColumn}>
           <Text color={newRowTextColor ?? t.color.muted} wrap="truncate-end">
             {S.row.draft}
           </Text>
         </Box>
 
-        <Box {...fixedSessionColumnStyle()} width={18}>
+        <Box {...fixedSessionColumnStyle()} {...modelColumn}>
           <Text color={newRowTextColor ?? t.color.muted} wrap="truncate-end">
             {draftModelDisplayLabel(draftModel)}
           </Text>
         </Box>
 
+        <SessionDirectoryColumn color={newRowTextColor} t={t} width={cwdWidth} />
         <Box flexGrow={1} flexShrink={1} minWidth={0}>
           <Text bold={newSelectedRow} color={newRowTextColor ?? t.color.muted} wrap="truncate-end">
             {promptTitle}
@@ -814,30 +823,31 @@ export function ActiveSessionSwitcher({
                 {selected ? '▸ ' : '  '}
               </Text>
 
-              <Box {...fixedSessionColumnStyle()} width={5}>
+              <Box {...fixedSessionColumnStyle()} width={3}>
                 <Text bold={selected} color={rowTextColor ?? t.color.muted}>
                   {String(i).padStart(2)}.
                 </Text>
               </Box>
 
-              <Box {...fixedSessionColumnStyle()} width={11}>
+              <Box {...fixedSessionColumnStyle()} width={idWidth}>
                 <Text bold={selected} color={rowTextColor ?? t.color.muted} wrap="truncate-end">
                   {h.id}
                 </Text>
               </Box>
 
-              <Box {...fixedSessionColumnStyle()} width={11}>
+              <Box {...fixedSessionColumnStyle()} {...statusColumn}>
                 <Text color={rowTextColor ?? t.color.muted} wrap="truncate-end">
                   {relativeSessionAge(h.started_at)}
                 </Text>
               </Box>
 
-              <Box {...fixedSessionColumnStyle()} width={18}>
+              <Box {...fixedSessionColumnStyle()} {...modelColumn}>
                 <Text color={rowTextColor ?? t.color.muted} wrap="truncate-end">
                   {S.row.messageCount(h.message_count ?? 0)}
                 </Text>
               </Box>
 
+              <SessionDirectoryColumn color={rowTextColor} cwd={h.cwd} t={t} width={cwdWidth} />
               <Box flexGrow={1} flexShrink={1} minWidth={0}>
                 <Text
                   bold={selected}
@@ -868,13 +878,13 @@ export function ActiveSessionSwitcher({
               {selected ? '▸ ' : '  '}
             </Text>
 
-            <Box {...fixedSessionColumnStyle()} width={5}>
+            <Box {...fixedSessionColumnStyle()} width={3}>
               <Text bold={selected} color={rowTextColor ?? t.color.muted}>
                 {String(i).padStart(2)}.
               </Text>
             </Box>
 
-            <Box {...fixedSessionColumnStyle()} width={11}>
+            <Box {...fixedSessionColumnStyle()} width={idWidth}>
               <Text
                 bold={selected}
                 color={rowTextColor ?? (current ? t.color.label : t.color.muted)}
@@ -884,7 +894,7 @@ export function ActiveSessionSwitcher({
               </Text>
             </Box>
 
-            <Box {...fixedSessionColumnStyle()} width={11}>
+            <Box {...fixedSessionColumnStyle()} {...statusColumn}>
               <Text
                 color={
                   rowTextColor ??
@@ -896,12 +906,13 @@ export function ActiveSessionSwitcher({
               </Text>
             </Box>
 
-            <Box {...fixedSessionColumnStyle()} width={18}>
+            <Box {...fixedSessionColumnStyle()} {...modelColumn}>
               <Text color={rowTextColor ?? t.color.muted} wrap="truncate-end">
                 {shortModel(s.model)}
               </Text>
             </Box>
 
+            <SessionDirectoryColumn color={rowTextColor} cwd={s.cwd} t={t} width={cwdWidth} />
             <Box flexGrow={1} flexShrink={1} minWidth={0}>
               <Text bold={selected} color={rowTextColor ?? t.color.muted} wrap="truncate-end">
                 {title}

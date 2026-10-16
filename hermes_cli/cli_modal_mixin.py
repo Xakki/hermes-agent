@@ -1047,45 +1047,18 @@ class CLIModalMixin:
         self._clarify_prefill = meta.get("other_text") or "" if meta.get("kind") == "other" else ""
 
     def _interaction_clarify_callback(self, question, choices, multi_select=False, questions=None, *, deadline=None):
-        """Clarify-tool platform callback (agent thread): show the selection UI (or freetext for
-        open-ended questions) and block until the key bindings answer or the timeout dismisses it
-        (the agent is then told to decide). ``multi_select`` shows checkboxes (Space toggles).
-        A non-empty ``questions`` list switches to the batch panel and returns
-        ``{"answers": {qid: raw}}`` (plus ``"timed_out": True`` on a partial deadline expiry).
-
-        The single-question path below is unchanged. See #18450.
-        """
-        from cli import CLI_CONFIG, _DIM, _RST, _cprint
-        from tools.clarify_gateway import resolve_clarify_timeout
-
+        """Adapt scalar interaction prompts to the batch state expected by every input binding."""
         if questions:
             return self._clarify_callback(questions, deadline=deadline)
-
-        timeout = 600
-        response_queue = queue.Queue()
-        is_open_ended = not choices
-        effective_multi = multi_select and not is_open_ended
-        self._clarify_state = {
+        result = self._clarify_callback([{
+            "qid": "q0",
             "question": question,
-            "choices": choices if not is_open_ended else [],
-            "selected": 0,
-            "multi_select": effective_multi,
-            "selected_indices": set() if effective_multi else None,
-            "response_queue": response_queue}
-        self._clarify_deadline = min(_time.monotonic() + timeout, deadline) if deadline is not None else _time.monotonic() + timeout
-        self._clarify_freetext = is_open_ended  # open-ended → straight to freetext
-        self._clarify_multi_base = None
-        self._ring_bell(prompt=True, context="clarify")
-        self._paint_now()
-
-        result = self._poll_modal_queue(response_queue, "_clarify_deadline")
-        if result is not _TIMED_OUT:
-            self._clarify_deadline = None
-            self._persist_prompt_summary("?", "Clarify", question, str(result))
-            return result
-        self._clarify_teardown()
-        _cprint(f"\n{_DIM}(clarify timed out after {timeout}s — no new scope or permission granted){_RST}")
-        return "No human answer. Pause any action requiring this clarification; no new scope or permission is granted."
+            "choices": list(choices) if choices else None,
+            "multi_select": bool(multi_select and choices),
+        }], deadline=deadline)
+        if result["outcome"] == "timed_out":
+            return "No human answer. Pause any action requiring this clarification; no new scope or permission is granted."
+        return result["answers"].get("q0")
 
     def _clarify_callback(self, questions, choices=None, multi_select=False, *, deadline=None):
         """Clarify-tool platform callback (agent thread, #18450): the batch panel (A-compact) shows

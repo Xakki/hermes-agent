@@ -40,12 +40,12 @@ def _q(index, question, choices=None, multi_select=False):
     }
 
 
-def _start_batch(cli, questions):
+def _start_batch(cli, questions, *, deadline=None):
     """Run the batch callback on a thread; wait for the panel state."""
     result = {}
 
     def _run():
-        result["value"] = cli._clarify_callback(questions)
+        result["value"] = cli._clarify_callback(questions, deadline=deadline)
 
     thread = threading.Thread(target=_run, daemon=True)
     thread.start()
@@ -147,13 +147,10 @@ class TestClarifyBatchPanel:
             _q(0, "Answered?", ["yes", "no"]),
             _q(1, "Never answered?", ["x", "y"]),
         ]
-        with patch(
-            "tools.clarify_gateway.resolve_clarify_timeout", return_value=1
-        ):
-            thread, result = _start_batch(cli, questions)
-            state = cli._clarify_state
-            cli._clarify_batch_enter(state)  # lock q0 only
-            thread.join(timeout=5)
+        thread, result = _start_batch(cli, questions, deadline=time.monotonic() + 2)
+        state = cli._clarify_state
+        cli._clarify_batch_enter(state)  # lock q0 only
+        thread.join(timeout=5)
 
         assert not thread.is_alive()
         assert result["value"] == {"answers": {"q0": "yes"}, "outcome": "timed_out"}

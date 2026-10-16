@@ -672,6 +672,7 @@
   "pickers.session.age.yesterday",
   "pickers.session.counts",
   "pickers.session.currentOrDefault",
+  "pickers.session.directory",
   "pickers.session.draftModel",
   "pickers.session.errors.alreadyClosed",
   "pickers.session.errors.couldNotLoadResumable",

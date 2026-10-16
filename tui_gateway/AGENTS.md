@@ -8,17 +8,21 @@ and the dashboard `/chat` talk to — changes here have three consumers.
 
 ```
 hermes --tui
-  └─ Node (Ink)  ──stdio JSON-RPC──  Python (tui_gateway)
-       │                                  └─ AIAgent + tools + sessions
+  └─ Node (Ink)  ──WebSocket JSON-RPC──  shared Python gateway owner
+       │                                      └─ AIAgent + tools + sessions
        └─ renders transcript, composer, prompts, activity
 ```
+
+Local native clients use `ui-tui/src/gatewayClient.ts` and its private bootstrap. Reopening the
+TUI does not reload Python modules in an already-running owner. Source updates need a fresh
+owner before live acceptance; never restart the user's owner merely to make a smoke test pass.
 
 TypeScript owns the screen. Python owns sessions, tools, model calls, and slash-command logic.
 Never move agent behaviour into the renderer.
 
 ## Transport
 
-Newline-delimited JSON-RPC over stdio, peer-to-peer: client→server method calls, server→client
+The legacy `tui_gateway` sidecar uses newline-delimited JSON-RPC over stdio: client→server method calls, server→client
 **requests** (the agent asking the user something: `approval`, `clarify`, `sudo`, `secret`, `vault.*`,
 `connection`, the desktop read/act bridges) and server→client `event` notifications. `tui_gateway/server.py`
 is the facade with the method/event catalog; methods live in `methods_*.py` siblings (`methods_config`,

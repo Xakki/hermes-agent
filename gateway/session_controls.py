@@ -388,6 +388,7 @@ class AuthorityConnection:
             return {'sessions': [{'session_id': found.session_id, 'id': root.get('id') or found.session_id,
                                   'resolved_id': found.session_id, 'title': row.get('title') or '',
                                   'root_title': root.get('title') or '', 'source': row.get('source'),
+                                  'cwd': row.get('cwd'),
                                   'started_at': row.get('started_at'),
                                   'message_count': row.get('message_count', 0),
                                   'running': found.session_id in self.authority.sessions}],
@@ -416,6 +417,7 @@ class AuthorityConnection:
             sessions.append({'session_id': sid, 'id': sid, 'title': row.get('title') or '',
                              'source': row.get('source'), 'started_at': row.get('started_at'),
                              'message_count': row.get('message_count', 0), 'model': row.get('model'),
+                             'cwd': row.get('cwd'),
                              'running': handle.execution_state == 'running'})
         sessions.sort(key=lambda row: row['started_at'] or 0, reverse=True)
         return {'sessions': sessions[:limit], 'scope': 'live'}

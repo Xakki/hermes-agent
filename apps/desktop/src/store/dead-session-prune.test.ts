@@ -301,6 +301,9 @@ describe('watchDeadSessionPrune', () => {
       $sessions.set([row('a')])
       vi.advanceTimersByTime(1_000)
       $sessions.set([row('a'), row('b')])
+      // Persistence also queues a zero-delay jsdom storage event. Deliver it
+      // without advancing the prune deadline before counting debounce timers.
+      vi.advanceTimersByTime(0)
       expect(vi.getTimerCount()).toBe(1)
 
       vi.advanceTimersByTime(1_000)

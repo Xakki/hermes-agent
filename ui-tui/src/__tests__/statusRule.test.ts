@@ -1,8 +1,7 @@
 import { stringWidth } from '@hermes/ink'
 import { describe, expect, it } from 'vitest'
 
-import type { StatusBarSegments } from '../components/appChrome.js'
-import { busyIndicatorWidth, statusBarSegments, statusHudFits, statusRuleWidths } from '../components/appChrome.js' 
+import { busyIndicatorWidth, statusBarSegments, statusHudFits, statusRuleWidths } from '../components/appChrome.js'
 
 describe('statusRuleWidths', () => {
   it('keeps the status rule within the terminal width', () => {

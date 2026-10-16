@@ -232,6 +232,7 @@ class SessionListRow(Result):
 
     id: str
     resolved_id: str | None = None
+    cwd: str | None = None
     title: str = ""
     preview: str = ""
     started_at: float = 0
@@ -275,6 +276,7 @@ class SessionActiveItem(Result):
 
     current: bool
     id: str
+    cwd: str | None = None
     last_active: float
     message_count: int
     model: str

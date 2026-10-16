@@ -89,6 +89,22 @@ it('projects host metadata to the real Ink card, refreshes replay timing without
   } finally { view.close() }
 })
 
+it('checks the deadline at input time before the next countdown tick', async () => {
+  const respond = vi.fn()
+  createServerRequestHandler({ ringPromptBell: vi.fn(), setStatus: vi.fn() })({ id: 'srq-deadline', method: 'clarify', params, respond, fail: vi.fn() })
+  const view = mount()
+
+  try {
+    await vi.waitFor(() => expect(view.text()).toContain('600s remaining'))
+    vi.setSystemTime(600001)
+    view.stdin.write('2')
+    await new Promise(resolve => setImmediate(resolve))
+    expect(respond).not.toHaveBeenCalled()
+    view.stdin.write('s')
+    await vi.waitFor(() => expect(respond).toHaveBeenCalledExactlyOnceWith({ answer: 'stop' }))
+  } finally { view.close() }
+})
+
 function stdinWrite(stdin: PassThrough, text: string) { stdin.write(text) }
 
 it.each([['2', 'review_changes'], ['1', 'audit'], ['o', 'Once'], ['a', 'Always (YOLO; all commands auto-approved)'], ['s', 'stop']])('dispatches %s as the host-owned stable answer %s immediately', async (key, answer) => {

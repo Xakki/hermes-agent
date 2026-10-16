@@ -14,6 +14,10 @@ interface InteractionPromptProps {
   onCancel: () => void
 }
 
+function interactionInputLocked(typing: boolean, timing: ClarifyReq['interaction'], remaining: number, receivedAt: number | undefined, now: number) {
+  return typing || Boolean(timing && (remaining === 0 || now >= (receivedAt ?? now) + timing.remaining_seconds * 1000))
+}
+
 /** Host-owned native interaction; this renderer never chooses on deadline expiry. */
 export function InteractionPrompt({ req, t, onAnswer, onCancel }: InteractionPromptProps) {
   const [sel, setSel] = useState(0)
@@ -38,7 +42,7 @@ export function InteractionPrompt({ req, t, onAnswer, onCancel }: InteractionPro
 
     if (timing && (ch.toLowerCase() === 's' || (key.ctrl && ch === 'c'))) {return onAnswer('stop')}
 
-    if (typing || (timing && remaining === 0)) {return}
+    if (interactionInputLocked(typing, timing, remaining, req.receivedAt, Date.now())) {return}
 
     if (timing && (ch.toLowerCase() === 'o' || ch.toLowerCase() === 'a')) {
       const value = ch.toLowerCase() === 'o' ? 'Once' : 'Always (YOLO; all commands auto-approved)'

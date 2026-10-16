@@ -1702,10 +1702,10 @@ _CODEX_OAUTH_CONTEXT_FALLBACK: dict[str, int] = {
 # Codex OAuth advertises 272K for these families but ACCEPTS ~900K+ (verified live; gpt-5.5 and
 # gpt-5.4-mini genuinely reject >272K). 900K keeps ≥11K margin. OPT-IN ONLY via explicit ``-900k``
 # picker variants (a 900K default burned subscription usage); the suffix is stripped before the wire.
-# The bump fires ONLY when the resolved value is exactly the stale 272,000. ``gpt-5.6`` and the gpt-6
-# tiers are FAMILY PREFIXES so dated snapshots (``gpt-6-sol-2026-09-22``) inherit the bump (``-pro`` slugs
-# aren't routable on Codex); ``gpt-5.4`` is EXACT because gpt-5.4-mini enforces 272K. The gpt-6 tiers
-# carry the 5.6 verdict forward: they replace Sol/Terra/Luna on the same Codex route, and the live
+# Without an explicit catalog maximum, only the stale 272,000 advertisement may be overridden.
+# With a published maximum, opted-in variants use the verified window within that ceiling.
+# Tier FAMILY PREFIXES include dated snapshots; ``gpt-5.4`` is EXACT because its mini enforces 272K.
+# The gpt-6 tiers carry the 5.6 verdict forward on the same Codex route; the live
 # catalog's ``max_context_window`` still caps the bump (#105443) if it publishes a lower ceiling.
 _CODEX_OAUTH_VERIFIED_ABOVE_ADVERTISED_PREFIXES: dict[str, int] = {
     "gpt-5.6": 900_000, "gpt-6-sol": 900_000, "gpt-6-luna": 900_000,
@@ -1934,12 +1934,12 @@ def _resolve_codex_oauth_context_length_with_source(model: str, access_token: st
     if not model_bare:
         return None, ""
     def _apply_verified_bump(ctx: int, source: str, catalog_max: Optional[int] = None) -> tuple[int, str]:
-        """Lift an EXACT stale 272K advertisement to the verified cap for opted-in ``-900k`` variants only,
-        never above the catalog's own ``max_context_window`` when it publishes one (#105443)."""
+        """Use verified opt-in windows within the published maximum; without one, only the known-stale
+        272K advertisement may be overridden. A newer advertised window is not reduced solely to 900K."""
         bumped = _verified_codex_ctx_for_slug(model_bare)
-        if bumped is not None and ctx == _CODEX_OAUTH_STALE_ADVERTISED_CTX:
-            bumped = min(bumped, catalog_max) if catalog_max else bumped
-            logger.debug("Codex OAuth context for %s: advertised %d raised to live-verified %d", model_bare, ctx, bumped)
+        if bumped is not None and (ctx == _CODEX_OAUTH_STALE_ADVERTISED_CTX or catalog_max is not None):
+            bumped = min(max(ctx, bumped), catalog_max) if catalog_max else bumped
+            logger.debug("Codex OAuth context for %s: advertised %d resolved to opted-in window %d", model_bare, ctx, bumped)
             return bumped, source
         return ctx, source
     # The Codex catalog only knows the base slug (no -900k, no vendor/).
