@@ -16,7 +16,12 @@ import { useT } from '../i18n/useT.js'
 import { asRpcResult, rpcErrorMessage } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
 
-import { sessionColumnLayout, SessionDirectoryColumn } from './activeSessionColumns.js'
+import {
+  SESSION_COLUMN_GAP,
+  sessionColumnLayout,
+  SessionDirectoryColumn,
+  shortSessionId
+} from './activeSessionColumns.js'
 import { ModelPicker } from './modelPicker.js'
 import { windowOffset } from './overlayControls.js'
 import { listRowStyle } from './overlayPrimitives.js'
@@ -45,7 +50,7 @@ const CTRL_OFFSET = 96
 const shortModel = (model = '') => model.replace(/^.*\//, '') || messages().pickers.session.modelUnknown
 const ctrlChar = (letter: string) => String.fromCharCode(letter.charCodeAt(0) - CTRL_OFFSET)
 
-export const fixedSessionColumnStyle = () => ({ flexShrink: 0 })
+export const fixedSessionColumnStyle = () => ({ flexShrink: 0, marginRight: SESSION_COLUMN_GAP })
 
 export const activeSessionCountLabel = (count: number) =>
   count === 1 ? messages().pickers.session.liveSessionsOne(1) : messages().pickers.session.liveSessionsOther(count)
@@ -347,7 +352,7 @@ export function ActiveSessionSwitcher({
   const historyDisplayRef = useRef<SessionListRow[]>([])
   const { stdout } = useStdout()
   // Optional maxWidth lets grid layouts hand the switcher its cell budget.
-  const { width, idWidth, statusWidth, modelWidth, cwdWidth, statusColumn, modelColumn } = sessionColumnLayout(stdout, maxWidth)
+  const { width, idWidth, prefixWidth, cwdWidth, statusColumn, modelColumn } = sessionColumnLayout(stdout, maxWidth)
   const promptColumns = Math.max(20, width - 11)
 
   // Rows are [new][live…][history…]: the "+ new" row is pinned first (index 0,
@@ -746,8 +751,8 @@ export function ActiveSessionSwitcher({
       {(actionErr || err) && <Text color={t.color.label}>{C.error(actionErr || err)}</Text>}
 
       <Box>
-        <Box flexShrink={0} width={5 + idWidth + statusWidth + modelWidth} />
-        <Box flexShrink={0} width={cwdWidth + 1}>
+        <Box flexShrink={0} width={prefixWidth} />
+        <Box flexGrow={1} minWidth={0}>
           <Text color={t.color.muted} wrap="truncate-end">
             {S.directory}
           </Text>
@@ -831,7 +836,7 @@ export function ActiveSessionSwitcher({
 
               <Box {...fixedSessionColumnStyle()} width={idWidth}>
                 <Text bold={selected} color={rowTextColor ?? t.color.muted} wrap="truncate-end">
-                  {h.id}
+                  {shortSessionId(h.id)}
                 </Text>
               </Box>
 
@@ -890,7 +895,7 @@ export function ActiveSessionSwitcher({
                 color={rowTextColor ?? (current ? t.color.label : t.color.muted)}
                 wrap="truncate-end"
               >
-                {current ? S.row.current : s.id}
+                {current ? S.row.current : shortSessionId(s.id)}
               </Text>
             </Box>
 

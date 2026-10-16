@@ -3,23 +3,45 @@ import { stripVTControlCharacters } from 'node:util'
 
 import { renderSync } from '@hermes/ink'
 import React from 'react'
-import { expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 
+import { sessionColumnLayout } from '../components/activeSessionColumns.js'
 import { ActiveSessionSwitcher } from '../components/activeSessionSwitcher.js'
 import { shortCwd } from '../domain/paths.js'
 import { DEFAULT_THEME } from '../theme.js'
 
+const originalColumns = Object.getOwnPropertyDescriptor(process.stdout, 'columns')
+
+afterEach(() => {
+  if (originalColumns) {
+    Object.defineProperty(process.stdout, 'columns', originalColumns)
+  } else {
+    Reflect.deleteProperty(process.stdout, 'columns')
+  }
+})
+
 it.each([80, 120, 44])('renders recorded directories in aligned columns at %s columns', async columns => {
+  Object.defineProperty(process.stdout, 'columns', { configurable: true, value: columns, writable: true })
+
   const live = [
-    { id: 'live', title: 'Live title', cwd: '/live/work', running: true },
+    {
+      id: 'live-abcdefghij-12345',
+      title: 'Live title',
+      cwd: '/live/work',
+      running: true,
+      status: 'working',
+      model: 'gpt-1234'
+    },
     { id: 'missing', title: 'Missing title' }
   ]
 
   const stored = [
-    { id: 'stored', title: 'Stored title', cwd: '/stored/work' },
+    { id: 'store-abcdefghij-abcde', title: 'Stored title', cwd: '/stored/work' },
     { id: 'empty', title: 'Empty title', cwd: '' },
     { id: 'posix', title: 'POSIX title', cwd: '/very/long/nested/path/to/a/project/workspace' },
-    { id: 'windows', title: 'Windows title', cwd: 'C:\\Users\\developer\\projects\\nested\\workspace' }
+    { id: 'windows', title: 'Windows title', cwd: 'C:\\Users\\developer\\projects\\nested\\workspace' },
+    { id: 'short-key12', title: 'Short title', cwd: '/short/work' },
+    { id: 'short-key123', title: 'Edge title', cwd: '/edge/work' }
   ]
 
   for (const canonical of [true, false]) {
@@ -34,9 +56,11 @@ it.each([80, 120, 44])('renders recorded directories in aligned columns at %s co
       output += chunk.toString()
     })
 
+    const onSelect = vi.fn()
+
     const element = (
       <ActiveSessionSwitcher
-        currentSessionId="live"
+        currentSessionId="another-current-session"
         gw={{ isCanonical: canonical, request } as any}
         maxWidth={columns - 6}
         onCancel={vi.fn()}
@@ -44,7 +68,7 @@ it.each([80, 120, 44])('renders recorded directories in aligned columns at %s co
         onNew={vi.fn()}
         onNewPrompt={vi.fn()}
         onResume={vi.fn()}
-        onSelect={vi.fn()}
+        onSelect={onSelect}
         t={DEFAULT_THEME}
       />
     )
@@ -65,19 +89,35 @@ it.each([80, 120, 44])('renders recorded directories in aligned columns at %s co
       const row = (title: string) => lines.findLast(line => line.includes(title))!
       expect(output).toContain('Directory')
       const liveLine = row('Live title')
-      const start = liveLine.indexOf('/live/work')
+      const { cwdWidth, modelWidth } = sessionColumnLayout({ columns }, columns - 6)
+      const start = liveLine.indexOf(shortCwd('/live/work', cwdWidth))
       expect(start).toBeGreaterThan(0)
-      expect(row('Stored title').indexOf('/stored/work')).toBe(start)
+      expect(row('Stored title').indexOf(shortCwd('/stored/work', cwdWidth))).toBe(start)
       expect(row('Missing title').indexOf('—')).toBe(start)
       expect(row('Empty title').indexOf('—')).toBe(start)
-      const cwdWidth = row('Stored title').indexOf('Stored title') - start - 1
+
+      expect.soft(liveLine).toContain('live-…12345  ')
+      expect.soft(row('Stored title')).toContain('store…abcde  ')
+      expect.soft(row('Short title')).toContain('short-key12  ')
+      expect.soft(row('Edge title')).toContain('short…ey123  ')
+
+      if (modelWidth > 0) {
+        expect.soft(liveLine).toContain('▶ working  ')
+        expect.soft(liveLine).toContain('gpt-1234  ')
+      }
 
       for (const item of stored.slice(2)) {
         expect(row(item.title).indexOf(shortCwd(item.cwd!, cwdWidth))).toBe(start)
+        expect.soft(row(item.title).slice(start + cwdWidth, row(item.title).indexOf(item.title))).toBe('  ')
         expect(row(item.title).length).toBeLessThanOrEqual(columns - 6)
       }
 
       expect(row('Live title').indexOf('Live title')).toBe(row('Stored title').indexOf('Stored title'))
+      expect(lines.findLast(line => line.includes('Directory'))!.indexOf('Directory')).toBe(start)
+
+      stdin.write('\r')
+      await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith(live[0].id))
+
       const newLine = lines.findLast(line => /\+\s+new/.test(line))!
       expect(newLine.slice(start, start + cwdWidth).trim(), newLine).toBe('—')
     } finally {
