@@ -514,7 +514,7 @@ class _LifecycleScanBudget:
         return True
 
     def charge_path(self) -> bool:
-        """Charge one unique referenced path before any local/remote read."""
+        """Charge one referenced path/interpretation before any local/remote read."""
         if self.paths_remaining <= 0:
             return False
         self.paths_remaining -= 1
@@ -879,8 +879,10 @@ def _iter_option_values(segment: list[str], start: int, option: str) -> Iterator
             yield token[len(prefix):]
 
 
-def _references_at(segment: list[str], index: int, cwd: Optional[str]) -> Iterator[Path]:
-    """Yield the scripts the token at *index* executes, if any."""
+def _references_at(
+    segment: list[str], index: int, cwd: Optional[str], *, documentation: bool = False,
+) -> Iterator[tuple[Path, bool]]:
+    """Yield (path, explicit-shell) edges; documentation URIs are not executable paths."""
     if index >= len(segment):
         return
     executable = segment[index]
@@ -888,7 +890,7 @@ def _references_at(segment: list[str], index: int, cwd: Optional[str]) -> Iterat
 
     if executable_name in {".", "source"}:
         if len(segment) > index + 1:
-            yield from _resolved_or_nothing(segment[index + 1], cwd)
+            yield from ((path, True) for path in _resolved_or_nothing(segment[index + 1], cwd))
         return
 
     if executable_name in _SHELL_EXECUTABLES:
@@ -909,16 +911,22 @@ def _references_at(segment: list[str], index: int, cwd: Optional[str]) -> Iterat
                 continue
             break
         if arg_index < len(arguments) and arguments[arg_index] not in _SHELL_COMMAND_FLAGS:
-            yield from _resolved_or_nothing(arguments[arg_index], cwd)
+            yield from ((path, True) for path in _resolved_or_nothing(arguments[arg_index], cwd))
         return
 
     # A bare "/" is pathlib's division operator in Python sources, not an executable; resolving it
     # hits the filesystem root and fails the regular-file check, hard-blocking innocent .py scripts.
+    # Only lexical source comments get this exemption. Shell operands (including `bash URL`)
+    # and the root shell view still retain their original path semantics.
+    if documentation and re.match(r"[A-Za-z][A-Za-z0-9+.-]*://", executable):
+        return
     if executable.strip("/") and ("/" in executable or executable.endswith((".sh", ".bash", ".zsh"))):
-        yield from _resolved_or_nothing(executable, cwd)
+        yield from ((path, False) for path in _resolved_or_nothing(executable, cwd))
 
 
-def _iter_referenced_shell_scripts(command: str, *, cwd: Optional[str] = None) -> Iterator[Path]:
+def _iter_referenced_shell_scripts(
+    command: str, *, cwd: Optional[str] = None, documentation: bool = False,
+) -> Iterator[tuple[Path, bool]]:
     """Yield scripts executed directly or through a POSIX shell. Each segment is read at the
     original token AND at the peeled wrapper target — additive on purpose: peeling must never REMOVE
     a reference (a local ``./timeout`` is a script, not the coreutils wrapper)."""
@@ -926,10 +934,68 @@ def _iter_referenced_shell_scripts(command: str, *, cwd: Optional[str] = None) -
         index = _command_token_index(segment)
         if index is None:
             continue
-        yield from _references_at(segment, index, cwd)
+        yield from _references_at(segment, index, cwd, documentation=documentation)
         peeled = _peel_transparent_prefixes(segment, index)
         if peeled != index:
-            yield from _references_at(segment, peeled, cwd)
+            yield from _references_at(segment, peeled, cwd, documentation=documentation)
+
+
+def _reference_source_kind(text: str, interpretation: tuple[str, str]) -> str:
+    """SOURCE retains its language; AUTO uses only this file; FORCED_SHELL ignores shebangs."""
+    role, kind = interpretation
+    if role == "source":
+        return kind
+    if role == "forced-shell":
+        return "shell"
+    if text.startswith("#!"):
+        try:
+            tokens = _shlex_tokens(text.split("\n", 1)[0][2:])
+        except ValueError:
+            return "shell"
+        index = _executed_command_index(tokens)
+        name = _executable_name(tokens[index]) if index is not None else ""
+        if name in _SHELL_EXECUTABLES:
+            return "shell"
+        return "javascript" if name in {"node", "nodejs"} else "interpreter"
+    return "shell"
+
+
+def _reference_candidates(text, cwd, executed, interpretation, *, documentation=False):
+    return [(path, executed, ("forced-shell", "") if shell else interpretation)
+            for path, shell in _iter_referenced_shell_scripts(text, cwd=cwd, documentation=documentation)]
+
+
+def _reference_walk_inputs(command: str, cwd: Optional[str], executed: bool, source_kind: str):
+    """Combine original path edges with additive, structurally justified interpretations."""
+    from cron.lifecycle_source import AUTO_EXEC, FORCED_SHELL, reference_view, source
+    from tools.shell_heredoc import strip_inert_heredoc_bodies
+
+    source_command, actions, comments = command, [], []
+    if source_kind != "shell":
+        source_command, actions, comments = reference_view(command, javascript=source_kind == "javascript")
+    walk_command = strip_inert_heredoc_bodies(source_command)
+    generic = AUTO_EXEC if source_kind == "shell" else source(source_kind)
+    payloads: list[tuple[str, tuple[str, str]]] = [(text, FORCED_SHELL) for text in _iter_shell_command_payloads(walk_command)]
+    candidates = _reference_candidates(walk_command, cwd, executed, generic)
+    for text, interpretation in actions:
+        if interpretation == FORCED_SHELL:
+            payloads.append((text, interpretation))
+        else:
+            candidates += _reference_candidates(text, cwd, executed, interpretation)
+    # Keep real helper paths even in comment-shaped data. Only delimiters and URI documentation
+    # links are discarded, not the read/scan refusal behavior of any retained edge.
+    for comment in comments:
+        payloads.extend((text, FORCED_SHELL) for text in _iter_shell_command_payloads(comment))
+        candidates += _reference_candidates(comment, cwd, executed, AUTO_EXEC, documentation=True)
+    # Real executed obligations precede lenient inert-heredoc mentions.
+    if walk_command != source_command:
+        candidates += _reference_candidates(source_command, cwd, False, generic)
+    return payloads, candidates
+
+
+def _already_scanned(visited, visit) -> bool:
+    path, interpretation, _ = visit
+    return visit in visited or (path, interpretation, True) in visited
 
 
 def _iter_shell_command_payloads(command: str) -> Iterator[str]:
@@ -1091,8 +1157,9 @@ def _read_script_for_scanning(script_path: str) -> tuple[str, Optional[str]]:
 # --- recursive walk ---------------------------------------------------------------------------
 
 def _contains_unsafe_gateway_action(
-    command: str, *, cwd: Optional[str], depth: int, visited: set[Path], budget: _LifecycleScanBudget,
+    command: str, *, cwd: Optional[str], depth: int, visited: set[tuple[Path, tuple[str, str], bool]], budget: _LifecycleScanBudget,
     read_remote_script: Optional[_ReadRemoteScriptFn] = None, executed: bool = True,
+    interpretation: tuple[str, str] = ("forced-shell", ""),
 ) -> bool:
     """``executed=False`` means *command* is the content of a file that is only MENTIONED in inert
     (masked) text: it is still scanned for a literal lifecycle command, but "could not scan" (budget,
@@ -1105,32 +1172,24 @@ def _contains_unsafe_gateway_action(
     if depth >= _MAX_REFERENCED_SCRIPT_DEPTH:
         return executed
 
-    def recurse(text: str, cwd: Optional[str], executed: bool) -> bool:
+    source_kind = _reference_source_kind(command, interpretation)
+
+    def recurse(text: str, cwd: Optional[str], executed: bool, interpretation: tuple[str, str]) -> bool:
         return _contains_unsafe_gateway_action(
             text, cwd=cwd, depth=depth + 1, visited=visited, budget=budget,
             read_remote_script=read_remote_script, executed=executed,
+            interpretation=interpretation,
         )
 
-    # The walks below must see the same masked view `_direct_lifecycle_scan` sees (#110422): a
-    # path or `sh -c` payload inside a provably-inert heredoc body is never shell-executed, and an
-    # oversized data file mentioned there otherwise fails closed as a "script".
-    from tools.shell_heredoc import strip_inert_heredoc_bodies
-
-    walk_command = strip_inert_heredoc_bodies(command)
-
-    for payload in _iter_shell_command_payloads(walk_command):
-        if recurse(payload, cwd, executed):
+    # The executed view must match the direct scan's inert-heredoc masking (#110422).
+    # Mentions still get read for real lifecycle commands, but not fail-closed read verdicts
+    # (#113944). Source comments additionally distinguish documentation URIs from helper paths.
+    payloads, candidates = _reference_walk_inputs(command, cwd, executed, source_kind)
+    for payload, obligation in payloads:
+        if recurse(payload, cwd, executed, obligation):
             return True
 
-    # Paths named only inside a masked body are still READ: an interpreter body that hands
-    # `/x/restart.sh` to os.system() executes it. Only the fail-closed verdicts (cloud placeholder,
-    # oversized/binary, budget) stay restricted to the executed view — a mere data mention must not
-    # trip them. Executed candidates come first so a mention never starves a real script's budget.
-    candidates = [(path, executed) for path in _iter_referenced_shell_scripts(walk_command, cwd=cwd)]
-    if walk_command != command:
-        candidates += [(path, False) for path in _iter_referenced_shell_scripts(command, cwd=cwd)]
-
-    for script_path, candidate_executed in candidates:
+    for script_path, candidate_executed, obligation in candidates:
         # Do not touch a FileProvider path even to discover whether the file is hydrated.
         if _on_cloud_path(script_path):
             if candidate_executed:
@@ -1141,13 +1200,15 @@ def _contains_unsafe_gateway_action(
                 )
             continue
         resolved = _resolve_lenient(script_path)
-        if resolved in visited:
+        # Neither language provenance nor a lenient mention can consume a stricter obligation.
+        visit = (resolved, obligation, candidate_executed)
+        if _already_scanned(visited, visit):
             continue
         if not budget.charge_path():
             if candidate_executed:
                 return _budget_exhausted(budget, "paths", depth)
             break  # remaining candidates are all mentions
-        visited.add(resolved)
+        visited.add(visit)
         # Never read more than the walk can still afford to tokenize; a file larger than the
         # remainder fails closed exactly like an oversized one.
         script_text, unsafe = _read_referenced_script(script_path, max_bytes=budget.bytes_remaining)
@@ -1176,7 +1237,7 @@ def _contains_unsafe_gateway_action(
         if not script_text:
             continue
         # Relative references inside a script resolve against that script's directory, not the cwd.
-        if recurse(script_text, _resolve_script_directory(str(resolved)) or cwd, candidate_executed):
+        if recurse(script_text, _resolve_script_directory(str(resolved)) or cwd, candidate_executed, obligation):
             return True
     return False
 
