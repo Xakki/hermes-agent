@@ -15,6 +15,7 @@ Tests cover:
 import asyncio
 import hashlib
 import json
+import os
 import time
 import types
 import uuid
@@ -439,7 +440,9 @@ def adapter():
 
 
 @pytest.fixture
-def auth_adapter():
+def auth_adapter(tmp_path, monkeypatch):
+    # Bind the synthetic API to a fixture project, not the invoking checkout/worktree.
+    monkeypatch.chdir(tmp_path)
     return _make_adapter(api_key="sk-secret")
 
 

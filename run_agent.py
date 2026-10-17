@@ -67,7 +67,6 @@ def _launch_project_root_for_session(source: str, cwd: Optional[str]) -> Optiona
 # Sources that label interactive UI transport sessions; one-shot child runs get their own source.
 _UI_TRANSPORT_SOURCES = frozenset({"tui", "desktop"})
 ONESHOT_SOURCE = "oneshot"
-CLI_FAMILY_SOURCES = frozenset({"cli", ONESHOT_SOURCE})
 
 
 def _session_source_for_agent(platform: Optional[str]) -> str:
