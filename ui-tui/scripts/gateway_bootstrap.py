@@ -30,6 +30,12 @@ def failure_message(receipt) -> str:
 
 
 def bootstrap(start: bool, recover: bool = False) -> dict:
+    from pm.environments import activate_dependencies
+
+    # Ink can launch PM's bare tool Python with only the source root on PYTHONPATH.
+    # Select the install's dependencies without running CLI update/repair preparation.
+    activate_dependencies(Path(__file__).resolve().parents[2])
+
     from hermes_constants import get_hermes_home
     from hermes_cli.gateway_runtime import control_home_for, discover_gateway_endpoint, ensure_gateway_runtime
     from hermes_cli.gateway_runtime_discovery import connect_private
