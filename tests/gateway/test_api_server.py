@@ -41,6 +41,14 @@ from gateway.platforms.api_server import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _isolated_update_metadata(tmp_path, monkeypatch):
+    from hermes_cli import _early_recovery
+
+    # Importing the agent must never inspect the real linked-worktree update markers.
+    monkeypatch.setattr(_early_recovery, "_git_dir", lambda root: tmp_path / ".git")
+
+
 # ---------------------------------------------------------------------------
 # check_api_server_requirements
 # ---------------------------------------------------------------------------
