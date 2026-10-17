@@ -36,6 +36,26 @@ def test_parent_session_inherits_project_root(tmp_path, monkeypatch):
         db.close()
 
 
+def test_project_and_local_creation_filters_are_composed(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    from hermes_state import SessionDB
+
+    db = SessionDB(db_path=tmp_path / "state.db")
+    try:
+        db.create_session("chat", source="local", project_root="/work/a")
+        db.create_session("script", source="local", project_root="/work/a")
+        db.create_session("foreign", source="local", project_root="/work/b")
+        with db._lock:
+            db._conn.executemany("UPDATE sessions SET created_source = ? WHERE id = ?",
+                                 [("cli", "chat"), ("oneshot", "script"), ("cli", "foreign")])
+            db._conn.commit()
+        filters = {"source": "local", "project_root": "/work/a", "local_created_sources": ["cli"]}
+        assert [row["id"] for row in db.list_sessions_rich(**filters)] == ["chat"]
+        assert [row["id"] for row in db.search_sessions(**filters)] == ["chat"]
+    finally:
+        db.close()
+
+
 def test_existing_session_project_root_cannot_be_overridden(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     from hermes_state import SessionDB

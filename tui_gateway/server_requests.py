@@ -71,6 +71,8 @@ class ServerRequest:
         "result",
         "settled_at",
         "sid",
+        "withdrawn",
+        "writing",
     )
 
     def __init__(self, sid: str, method: str, params: dict, *, qids: list[str] | None = None,
@@ -103,6 +105,9 @@ class ServerRequest:
         self.settled_at: float | None = None
         # Client transports that answered NOT_SHOWN_CODE (no window there shows this session).
         self.declined: set = set()
+        # Published but frame not yet written; a cancel in that gap parks its reason in ``withdrawn`` for _register.
+        self.writing = False
+        self.withdrawn: str | None = None
 
     def frame(self) -> dict:
         return {"jsonrpc": "2.0", "id": self.id, "method": self.method,
@@ -238,20 +243,27 @@ def _register(req: ServerRequest) -> bool:
     if req.admit is not None and not req.admit():
         return False
     with _lock:
+        req.writing = True
         _open[req.id] = req
-    # Admission may acquire host/history locks or withdraw this request. Never
-    # invoke it with the registry locked; recheck after publication closes the
-    # invalidation-before-registration window.
-    if req.admit is not None and not req.admit():
-        cancel_request(req.id, reason="revoked")
-        return False
-    _observe_event(req, "host", "opened")
     try:
+        # Admission may acquire host/history locks or withdraw this request.
+        # Recheck outside the registry lock after publication.
+        if req.admit is not None and not req.admit():
+            cancel_request(req.id, reason="revoked")
+            return False
+        _observe_event(req, "host", "opened")
         _write(req.frame())
     except BaseException:
         with _lock:
             _open.pop(req.id, None)
         raise
+    finally:
+        with _lock:
+            req.writing = False
+            withdrawn = req.withdrawn
+    if withdrawn is not None:
+        # A cancellation during publication must follow the request frame.
+        _emit_cancel(req, withdrawn)
     with _lock:
         if (req.method in _HUMAN_METHODS and _open.get(req.id) is req
                 and (req.deadline is None or req.deadline > req.reminder_at)):
@@ -454,11 +466,15 @@ def cancel_request(request_id: str, reason: str = "interrupted") -> bool:
         if req is None:
             return False
         req.result, req.answered = None, False
+        writing = req.writing
+        if writing:
+            req.withdrawn = reason
     _cancel_reminder(req)
     if req.on_result is not None:
         req.on_result(None)
     req.event.set()
-    _emit_cancel(req, reason)
+    if not writing:
+        _emit_cancel(req, reason)
     return True
 
 
@@ -476,11 +492,15 @@ def cancel(sid: str | None = None, reason: str = "interrupted", *, method: str |
                 req.result, req.answered = {"answers": dict(req.locked), "outcome": "cancelled"}, True
             else:
                 req.result, req.answered = None, False
+            if req.writing:
+                req.withdrawn = reason
+        announced = {req.id for req in targets if not req.writing}
     for req in targets:
         if req.on_result is not None:
             req.on_result(None)
         req.event.set()
-        _emit_cancel(req, reason)
+        if req.id in announced:
+            _emit_cancel(req, reason)
     return len(targets)
 
 

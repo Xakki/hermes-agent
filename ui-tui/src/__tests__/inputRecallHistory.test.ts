@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import type * as React from 'react'
@@ -16,6 +16,7 @@ const notification = `[IMPORTANT: Background process proc_synthetic completed no
 const encode = (text: string) => `\n# synthetic timestamp\n${text.split('\n').map(line => `+${line}`).join('\n')}\n`
 
 async function fixture(entries: string[]) {
+  mkdirSync(resolve('../tmp/input-history-repair'), { recursive: true, mode: 0o700 })
   const home = mkdtempSync(resolve('../tmp/input-history-repair/recall-'))
   vi.stubEnv('HERMES_HOME', home)
   vi.resetModules()
