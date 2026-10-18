@@ -49,7 +49,7 @@ import { flashGoodVibes, flashPet } from './petFlashStore.js'
 import { forgetServerRequest } from './serverRequestStore.js'
 import { noteCanonicalCompletion } from './slash/canonicalSessionCommands.js'
 import { mutateCanonicalSession, openModelConfirmation } from './slash/canonicalSessionControls.js'
-import { loadSlashCatalog } from './slashCatalog.js'
+import { loadSlashCatalog, refreshSlashCatalogOnSkillsChange } from './slashCatalog.js'
 import { reportStartupLatency } from './startupLatency.js'
 import { markNextSubmitVoice } from './submissionCore.js'
 import { captureDestination, isCurrentDestination } from './submissionDestination.js'
@@ -1069,6 +1069,10 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     })
   }
 
+  // Shared-control settles and the skills.changed catalog refetch need no per-event state.
+  const handledBeforeSwitch = (ev: AnyGatewayEvent) =>
+    settleSharedPrompt(ev) || refreshSlashCatalogOnSkillsChange(ev, rpc, setCatalog)
+
   return (ev: AnyGatewayEvent) => {
     const sid = getUiState().sid
 
@@ -1083,7 +1087,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       return
     }
 
-    if (settleSharedPrompt(ev)) {
+    if (handledBeforeSwitch(ev)) {
       return
     }
 
