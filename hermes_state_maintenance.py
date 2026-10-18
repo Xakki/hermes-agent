@@ -409,6 +409,20 @@ class SessionMaintenanceMixin:
             deleted_ids.extend(removed_ids)
         return count
 
+    def archive_sessions(
+        self, older_than_days: Optional[float] = None, source: str | None = None, **filters,
+    ) -> int:
+        """Bulk soft-hide with prune_sessions' filter surface, via set_session_archived so each lineage
+        flips as a unit; idempotent. Returns matches. A lineage is matched through its TIP only: an
+        old compression ancestor never qualifies on its own age, or the fan-out would hide an open,
+        recently active continuation (#115489)."""
+        filters.setdefault("archived", False)
+        filters["lineage_tips_only"] = True
+        rows = self.list_prune_candidates(older_than_days=older_than_days, source=source, **filters)
+        for row in rows:
+            self.set_session_archived(row["id"], True)
+        return len(rows)
+
     def _page_pragmas(self, names: tuple[str, ...], fail_msg: str) -> Optional[list]:
         """Integer PRAGMAs over the existing connection (never a byte probe); None + debug log on failure."""
         try:
