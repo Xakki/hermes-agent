@@ -1073,6 +1073,27 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   const handledBeforeSwitch = (ev: AnyGatewayEvent) =>
     settleSharedPrompt(ev) || refreshSlashCatalogOnSkillsChange(ev, rpc, setCatalog)
 
+  const handleConnectionAndSkin = (ev: AnyGatewayEvent): boolean => {
+    switch (ev.type) {
+      case 'connection.request':
+        if (ev.payload) { applyConnectionRequest(ev.payload) }
+
+        return true
+      case 'connection.update':
+        if (ev.payload) {
+          for (const line of applyConnectionUpdate(ev.payload)) { sys(line) }
+        }
+
+        return true
+      case 'skin.changed':
+        if (ev.payload) { applySkin(ev.payload) }
+
+        return true
+      default:
+        return false
+    }
+  }
+
   return (ev: AnyGatewayEvent) => {
     const sid = getUiState().sid
 
@@ -1095,35 +1116,16 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       return
     }
 
+    if (handleConnectionAndSkin(ev)) {
+      return
+    }
+
     switch (ev.type) {
-      case 'connection.request':
-        if (ev.payload) {
-          applyConnectionRequest(ev.payload)
-        }
-
-        return
-
-      case 'connection.update':
-        if (ev.payload) {
-          // The settling frame is the only record of how each app ended; the card is gone by then.
-          for (const line of applyConnectionUpdate(ev.payload)) {
-            sys(line)
-          }
-        }
-
-        return
-
       case 'gateway.ready':
         handleReady(ev.payload?.skin)
 
         return
 
-      case 'skin.changed':
-        if (ev.payload) {
-          applySkin(ev.payload)
-        }
-
-        return
 
       case 'free_tier.challenge':
         showChallenge(ev.payload)

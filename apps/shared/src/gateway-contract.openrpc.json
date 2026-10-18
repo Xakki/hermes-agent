@@ -9685,6 +9685,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "session_id": {
             "title": "Session Id",
             "type": "string"
@@ -11400,6 +11412,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "session_id": {
             "title": "Session Id",

@@ -1145,11 +1145,11 @@ def _ask(method: str, sid: str, params: dict, timeout: float | None = 300) -> st
     return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 
 
-
 def _clarify_timeout_seconds() -> float | None:
-    """Clarify wait for the TUI/desktop bridge from the canonical config (gateway/CLI parity); 300s
-    historical default if config can't be read; ``<= 0`` = unlimited → None (never auto-skip)."""
-    return 600
+    """Legacy configured lower wait; None leaves the native human cap in force."""
+    from tools.clarify_gateway import get_clarify_timeout
+    timeout = get_clarify_timeout()
+    return timeout if timeout > 0 else None
 
 
 def _clarify_block(sid: str, questions: list[dict]) -> dict:

@@ -140,6 +140,7 @@ from gateway.platforms import api_server_room_dispatch as _room_dispatch
 from gateway.platforms import api_server_room_grants as _room_grants
 from gateway.platforms import api_server_runs as _api_runs
 from gateway.platforms.api_server_openai_routes import OpenAICompatRoutesMixin
+from gateway.platforms.api_server_request_policy import APIServerRequestPolicyMixin
 from gateway.platforms.api_server_memory_sessions import ApiServerMemorySessions
 from gateway.platforms.base import (
     MEDIA_TAG_CLEANUP_RE, BasePlatformAdapter, SendResult, _terminal_sentinel_start, is_network_accessible,
@@ -1096,7 +1097,7 @@ def _run_route_delegate(name: str):
     return _handler
 
 
-class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+class APIServerAdapter(APIServerRequestPolicyMixin, OpenAICompatRoutesMixin, BasePlatformAdapter):
     """aiohttp server routing OpenAI-format requests through hermes-agent's AIAgent."""
 
     # Stateless request/response (``send()`` is a stub): async-delivery tools must not promise
@@ -1197,28 +1198,6 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         self._metrics_last_request_at: Optional[float] = None
         self._metrics_last_heartbeat_at: Optional[float] = None
 
-    @staticmethod
-    def _resolve_trusted_project_root(configured: Any = None) -> Optional[str]:
-        try:
-            from tui_gateway.git_probe import canonical_project_root
-            return canonical_project_root(configured or os.getcwd())
-        except Exception:
-            return None
-
-    def _session_scope_error(self, session: dict[str, Any]) -> Optional["web.Response"]:
-        active_root = getattr(self, "_trusted_project_root", None)
-        if not active_root:
-            return web.json_response(_openai_error("project context required", code="project_context_required"), status=403)
-        try:
-            from tui_gateway.git_probe import canonical_project_root
-            session_root = canonical_project_root(
-                session.get("project_root") or session.get("cwd") or os.getcwd()
-            )
-        except Exception:
-            session_root = None
-        if session_root != active_root:
-            return web.json_response(_openai_error("Session is outside the active project", code="session_outside_project"), status=403)
-        return None
 
     def active_agent_work_count(self) -> int:
         """All live agent work: pending admissions + in-flight turns + live /v1/runs tasks
@@ -1265,13 +1244,6 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         except Exception:
             return False
 
-    def _draining_response(self) -> Optional[web.Response]:
-        """Return a retryable response while the gateway drains existing work."""
-        if not self._gateway_is_draining():
-            return None
-        return _error_response(
-            "Gateway is draining existing work; retry shortly.", 503, code="gateway_draining",
-            headers={"Retry-After": "1"})
 
     def _activate_admitted_request(self) -> None:
         """Transfer this request's drain reservation to agent bookkeeping."""
@@ -1301,15 +1273,6 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
             if status.get("status") in {"queued", "running", "waiting_for_approval", "stopping"}
         )
 
-    @staticmethod
-    def _parse_cors_origins(value: Any) -> tuple[str, ...]:
-        """Normalize configured CORS origins into a stable tuple."""
-        if not value:
-            return ()
-        items = (
-            value.split(",") if isinstance(value, str)
-            else value if isinstance(value, (list, tuple, set)) else [str(value)])
-        return tuple(str(item).strip() for item in items if str(item).strip())
 
     @staticmethod
     def _resolve_max_concurrent_runs() -> int:

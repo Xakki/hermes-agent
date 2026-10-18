@@ -40,6 +40,12 @@ export { refreshSessionView, scheduleResumeScrollToBottom } from './sessionResum
 
 const usageFrom = (info: null | SessionInfo): Usage => (info?.usage ? { ...ZERO, ...info.usage } : ZERO)
 
+const workspaceCreationOptions = (info: null | SessionInfo) => {
+  const cwd = info?.cwd || STARTUP_WORKSPACE_CWD
+
+  return cwd ? { cwd } : {}
+}
+
 const statusFromLiveSession = (status?: string, running = false) => {
   if (status === 'waiting') {
     return t('session.status.waitingForInput')
@@ -431,8 +437,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
         // HERMES_TUI_CWD is the dashboard-picked workspace: an explicit cwd on
         // session.create on both transports, so /new stays in that workspace.
-        const cwd = previousState.info?.cwd || STARTUP_WORKSPACE_CWD
-        const workspaceCwd = cwd ? { cwd } : {}
+        const workspaceCwd = workspaceCreationOptions(previousState.info)
 
         const r = await rpc<SessionCreateResponse>(
           'session.create',

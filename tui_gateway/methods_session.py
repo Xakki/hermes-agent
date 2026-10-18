@@ -209,29 +209,6 @@ def _active_pet():
     return None if not enabled or pet is None or not pet.exists else (pet, scale)
 
 
-def _billing_call(rid, fn, extra: dict | None = None) -> dict:
-    """Portal call → ok; BillingError → serialized envelope, else generic; ``extra`` rides both ERROR envelopes."""
-    from hermes_cli.nous_billing import BillingError
-    try:
-        return _ok(rid, fn())
-    except BillingError as exc:
-        return _ok(rid, {**_serialize_billing_error(exc), **(extra or {})})
-    except Exception as exc:
-        return _ok(rid, {"ok": False, "error": "error", "message": str(exc), **(extra or {})})
-
-
-def _billing_invalid(rid, message: str, error: str = "invalid_request") -> dict:
-    return _ok(rid, {"ok": False, "error": error, "message": message})
-
-
-def _billing_pick(result: dict, **fields) -> dict:
-    """``{"ok": True, <snake>: result[<camel>], ...}`` in ``fields`` order."""
-    return {"ok": True, **{key: result.get(src) for key, src in fields.items()}}
-
-
-def _billing_pending_change(result: dict) -> dict:
-    return {"ok": True, "message": result.get("message"), "payload": result}
-
 
 # ── session.create / list / most_recent / facts ──────────────────────
 def _persist_branch(db, new_key: str, parent_key: str, title: str, history: list, *, source, cwd, profile_name,
@@ -2371,6 +2348,8 @@ def _(rid, params: dict) -> dict:
 def register(server) -> None:
     """Publish this module's helpers onto ``server`` (rebound to its globals) and install handlers."""
     bind_module(globals(), server, skip=("_",))
+    from . import methods_session_billing
+    methods_session_billing.register(server)
     from . import methods_session_branch
     methods_session_branch.register(server)
     from . import methods_session_interrupt

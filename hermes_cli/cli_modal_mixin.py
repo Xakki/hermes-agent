@@ -1070,7 +1070,8 @@ class CLIModalMixin:
 
         if isinstance(questions, str):
             return self._interaction_clarify_callback(questions, choices, multi_select, deadline=deadline)
-        timeout = 600
+        configured = resolve_clarify_timeout(CLI_CONFIG)
+        timeout = min(600, configured) if configured > 0 else 600
         response_queue = queue.Queue()
         state = {
             "questions": list(questions),

@@ -852,19 +852,8 @@ class OpenAICompatRoutesMixin:
         # requires a configured API key or any client could read history by guessing ids.
         provided_session_id = request.headers.get("X-Hermes-Session-Id", "").strip()
         if provided_session_id:
-            if not self._api_key:
-                logger.warning(
-                    "Session continuation via X-Hermes-Session-Id rejected: "
-                    "no API key configured.  Set API_SERVER_KEY to enable "
-                    "session continuity.")
-                return _error_response("Session continuation requires API key authentication. "
-                        "Configure API_SERVER_KEY to enable this feature.", 403)
-            # Same guard as the native gateway: ids are interpolated into on-disk filenames.
-            from gateway.session import _is_path_unsafe
-            if re.search(r'[\r\n\x00]', provided_session_id) or _is_path_unsafe(provided_session_id):
-                return _invalid_request("Invalid session ID")
-            if len(provided_session_id) > self._MAX_SESSION_HEADER_LEN:
-                return _invalid_request("Session ID too long")
+            if (header_error := self._chat_session_header_error(provided_session_id)) is not None:
+                return header_error
             session_id = provided_session_id
             try:
                 db = await self._ensure_session_db_async()

@@ -13,9 +13,22 @@ afterEach((): void => {
 
 test.skipIf(process.platform === 'win32')('local SSH sockets use the suffixed default root', (): void => {
   vi.stubEnv('HERMES_DATA_DIR_SUFFIX', 'magic-test')
-  const socket: string = controlSocketPath('user', 'host', 22)
+  const home = vi.spyOn(os, 'homedir').mockReturnValue('/home/test')
 
-  assert.equal(path.dirname(socket), path.join(platformDefaultHermesHome(os.homedir()), 'desktop-ssh'))
+  try {
+    const socket: string = controlSocketPath('user', 'host', 22)
+
+    assert.equal(path.dirname(socket), path.join(platformDefaultHermesHome(os.homedir()), 'desktop-ssh'))
+
+    home.mockReturnValue(`/home/${'deep/'.repeat(32)}`)
+    const fallback: string = controlSocketPath('user', 'host', 22)
+
+    assert.equal(path.dirname(fallback), `/tmp/hermes-ssh-${process.getuid!()}`)
+    assert.equal(path.basename(fallback), path.basename(socket))
+    assert.ok(Buffer.byteLength(`${fallback}.0123456789abcdef`) <= 104)
+  } finally {
+    home.mockRestore()
+  }
 })
 
 test('default data roots append the suffix literally on each platform', (): void => {

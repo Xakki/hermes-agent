@@ -357,39 +357,6 @@ def _field(obj: Any, key: str, default: Any = None) -> Any:
     return default if val is None else val
 
 
-def _anthropic_event_has_content(event: Any) -> bool:
-    """Whether an Anthropic stream event carries a non-empty payload."""
-    event_type = _field(event, "type")
-    if event_type == "content_block_delta":
-        delta = _field(event, "delta")
-        return any(bool(_field(delta, f)) for f in ("text", "thinking", "partial_json", "signature", "citation"))
-    if event_type == "content_block_start":
-        block = _field(event, "content_block")
-        return _field(block, "type") == "tool_use" and any(bool(_field(block, f)) for f in ("id", "name"))
-    return False
-
-
-def _anthropic_aux_stream_event_hook() -> Callable[[Any], None]:
-    """Per-event callback for the Anthropic aux wire: progress only for substantive payloads
-    (keepalives must not keep a stalled summary alive), stop at the host deadline or explicit
-    cancel. The ``TimeoutError`` text must say "timed out" so ``_is_timeout_error`` classifies it."""
-    host_deadline = _current_aux_stream_deadline()
-    started = time.monotonic()
-
-    def _on_event(event: Any) -> None:
-        if _anthropic_event_has_content(event):
-            _notify_aux_provider_response()
-        else:
-            _notify_aux_timing_response()
-        if _aux_interrupt_cancel_requested():
-            raise AuxiliaryExplicitCancellation()
-        if host_deadline is not None and time.monotonic() >= host_deadline:
-            raise TimeoutError(
-                "Anthropic auxiliary stream timed out at the host compression "
-                f"deadline after {time.monotonic() - started:.0f}s (the caller already stopped waiting)")
-
-    return _on_event
-
 
 # A dead stream fails at the no-progress window (first token AND between tokens); a live
 # stream re-arms per event, bounded by _aux_stream_total_ceiling(). Smaller task/host budgets
@@ -1789,13 +1756,15 @@ class _AnthropicCompletionsAdapter:
                 if not isinstance(existing, dict):
                     existing = {}
                 anthropic_kwargs["extra_body"] = {**existing, **passthrough}
+        from agent.auxiliary_anthropic_events import stream_event_hook
+
         response = create_anthropic_message(
             self._client,
             anthropic_kwargs,
             # Record provider-response timing every event, but tick forward progress only for
             # substantive payloads so keepalives can't hold a stalled summary open. None keeps
             # the fast get_final_message path.
-            on_stream_event=(_anthropic_aux_stream_event_hook() if _aux_progress_active() else None),
+            on_stream_event=(stream_event_hook() if _aux_progress_active() else None),
         )
         _nr = get_transport("anthropic_messages").normalize_response(response, strip_tool_prefix=self._is_oauth)
         usage = None

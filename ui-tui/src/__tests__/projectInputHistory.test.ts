@@ -7,6 +7,7 @@ const keyA = 'a'.repeat(64)
 const keyB = 'b'.repeat(64)
 
 async function fixture() {
+  mkdirSync(resolve('../tmp/project-input-history'), { recursive: true, mode: 0o700 })
   const home = mkdtempSync(resolve('../tmp/project-input-history/storage-'))
   vi.stubEnv('HERMES_HOME', home)
   vi.resetModules()

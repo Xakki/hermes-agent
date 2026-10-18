@@ -18,6 +18,12 @@ function interactionInputLocked(typing: boolean, timing: ClarifyReq['interaction
   return typing || Boolean(timing && (remaining === 0 || now >= (receivedAt ?? now) + timing.remaining_seconds * 1000))
 }
 
+function selectedInteractionRow(ch: string, enter: boolean, selected: number, rows: number) {
+  const number = parseInt(ch, 10)
+
+  return enter ? selected : number >= 1 && number <= rows ? number - 1 : -1
+}
+
 /** Host-owned native interaction; this renderer never chooses on deadline expiry. */
 export function InteractionPrompt({ req, t, onAnswer, onCancel }: InteractionPromptProps) {
   const [sel, setSel] = useState(0)
@@ -57,8 +63,7 @@ export function InteractionPrompt({ req, t, onAnswer, onCancel }: InteractionPro
     if (key.upArrow) {setSel(s => Math.max(0, s - 1))}
 
     if (key.downArrow) {setSel(s => Math.min(rows.length - 1, s + 1))}
-    const n = parseInt(ch, 10)
-    const index = key.return ? sel : n >= 1 && n <= rows.length ? n - 1 : -1
+    const index = selectedInteractionRow(ch, key.return, sel, rows.length)
 
     if (index < 0) {return}
 

@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PassThrough } from 'node:stream'
 
@@ -19,6 +19,7 @@ vi.mock('@hermes/ink', async importOriginal => ({
 }))
 
 it('switches mounted Up/Down recall A → B → A while retaining same-project session history', async () => {
+  mkdirSync(resolve('../tmp/project-input-history'), { recursive: true, mode: 0o700 })
   vi.stubEnv('HERMES_HOME', mkdtempSync(resolve('../tmp/project-input-history/navigation-')))
   const keyA = 'a'.repeat(64)
   const keyB = 'b'.repeat(64)

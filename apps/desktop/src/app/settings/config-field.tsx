@@ -23,6 +23,10 @@ export function parseListFieldDraft(raw: string): string[] {
     .filter(Boolean)
 }
 
+function selectOptionsForSchema(schema: ConfigFieldSchema, enumOptions?: string[]) {
+  return enumOptions ?? (schema.type === 'select' ? (schema.options ?? []).map(String) : undefined)
+}
+
 /**
  * One generic config row: label + description resolved from the i18n field
  * copy (falling back to the schema description), and a control picked from the
@@ -125,7 +129,7 @@ export function ConfigField({
     )
   }
 
-  const selectOptions = enumOptions ?? (schema.type === 'select' ? (schema.options ?? []).map(String) : undefined)
+  const selectOptions = selectOptionsForSchema(schema, enumOptions)
 
   // Large closed-world lists (e.g. ~590 IANA timezones) get a searchable
   // Popover + cmdk combobox instead of a closed Select dropdown.  The schema

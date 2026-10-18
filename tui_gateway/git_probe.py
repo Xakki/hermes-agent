@@ -129,7 +129,7 @@ def canonical_project_root(
     try:
         candidate = os.path.realpath(os.path.abspath(os.path.expanduser(str(cwd))))
         return (root_probe or common_repo_root)(candidate) or candidate
-    except Exception:
+    except (OSError, ValueError, RuntimeError):
         return None
 
 

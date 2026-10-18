@@ -331,9 +331,8 @@ def is_write_approval_required(path: str) -> bool:
     return any(resolved in build_write_approval_paths(home) for home in homes)
 
 
-# Secret-bearing project-local env file basenames, blocked anywhere on disk.
+# The owner-selected project-local read deny is the exact .secret basename.
 _BLOCKED_PROJECT_ENV_BASENAMES: set[str] = {
-    ## Never block read! Except .secret
     ".secret",
 }
 
@@ -371,8 +370,10 @@ def get_read_block_error(path: str) -> Optional[str]:
 
     Blocked: internal skill-hub caches (prompt-injection carriers), credential
     stores under HERMES_HOME and the global root (exact files, plus anything
-    under ``mcp-tokens/`` and ``browser-profile/``), and project-local ``.env``
-    files anywhere on disk (``.env.example`` is the documented-shape substitute).
+    under ``mcp-tokens/``, ``browser-profile/`` and ``vault/``), and the exact
+    project-local ``.secret`` basename (case-insensitive after resolving symlinks).
+    Other project-local environment basenames are readable; Hermes-home ``.env``
+    remains a credential store. Write/patch denials are independent of this policy.
 
     Callers that resolve relative paths against a non-process cwd (e.g.
     ``TERMINAL_CWD``) MUST pass an absolute path: ``resolve()`` here anchors at

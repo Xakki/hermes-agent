@@ -1052,27 +1052,6 @@ class CredentialPool(CredentialPoolAdminMixin, CredentialPoolModelCooldownMixin)
             )
             return min(candidates) if candidates else None
 
-    def entries(self) -> list[PooledCredential]:
-        with self._lock:
-            return list(self._entries)
-
-    def identity_for_entry_id(
-        self, entry_id: Any, api_key_hint: Any = None,
-    ) -> Optional[dict[str, str]]:
-        """Snapshot the non-secret identity of the exact credential selected for a request."""
-        if not isinstance(entry_id, str) or not entry_id:
-            return None
-        with self._lock:
-            entry = self._find(lambda candidate: candidate.id == entry_id)
-            # Env refresh or fallback can replace the runtime key before the
-            # stored entry id is rebound. Never attribute that request to the
-            # old account just because the id still exists.
-            if entry is None or (api_key_hint is not None and entry.runtime_api_key != api_key_hint):
-                return None
-            identity = {"credential_id": entry.id}
-            if entry.label is not None:
-                identity["account_name"] = str(entry.label)
-            return identity
 
     def _is_sole_credential(self) -> bool:
         """DEAD entries never re-enter rotation, so <=1 non-DEAD entry means nothing to rotate to."""

@@ -12,6 +12,10 @@ from types import SimpleNamespace
 from typing import Any, Dict, Optional
 
 from agent.usage_pricing import normalize_usage
+from agent.exception_logging import exception_type_info
+import logging
+
+logger = logging.getLogger(__name__)
 
 _SENSITIVE_HOOK_KEYS = {
     "apikey", "authorization", "proxyauthorization", "cookie", "cookies", "setcookie",
@@ -53,7 +57,8 @@ class ApiRequestHooksMixin:
             return {}
         try:
             snapshot = lookup(entry_id, api_key_hint=getattr(self, "api_key", None))
-        except Exception:
+        except Exception as exc:
+            logger.warning("Credential identity lookup failed", exc_info=exception_type_info(exc))
             return {}
         if not isinstance(snapshot, dict):
             return {}
@@ -111,7 +116,8 @@ class ApiRequestHooksMixin:
             from agent.redact import redact_sensitive_text
             safe = redact_sensitive_text(value, force=True, redact_url_credentials=True)
             return _AUTH_SCHEME_VALUE_RE.sub(r"\1 <redacted>", safe)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Hook value redaction failed", exc_info=exception_type_info(exc))
             return "<redaction failed>"
 
     @classmethod

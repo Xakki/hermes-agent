@@ -648,8 +648,35 @@ def _clamp_to_affordable_budget(agent: Any, api_error: Exception, classified: An
 
 
 def _reject_all_turns(agent: Any, api_error: Exception) -> bool:
+    # Unrelated auth/replay failures must reach their own recovery without resolving a transport.
+    if getattr(api_error, "status_code", None) not in (400, None):
+        return False
+    text = str(api_error).lower()
+    if "reasoning.context" not in text and "all_turns" not in text:
+        return False
     reject = getattr(agent._get_transport(), "reject_all_turns", None)
     return bool(reject(api_error)) if callable(reject) else False
+
+
+def _recover_initial_request_policy(agent: Any, api_error: Exception, classified: Any, retry: TurnRetryState) -> bool:
+    """Try pre-rotation policy recovery in its established short-circuit order."""
+    return (_recover_welcome_tier(agent, classified, retry)
+            or _clamp_to_affordable_budget(agent, api_error, classified, retry)
+            or (agent.api_mode == "codex_responses" and _reject_all_turns(agent, api_error)))
+
+
+def _refresh_paid_entitlement(agent: Any, classified: Any, retry: TurnRetryState) -> bool:
+    from agent.conversation_loop import _is_nous_inference_route
+
+    if (classified.reason != FailoverReason.billing
+            or not _is_nous_inference_route(getattr(agent, "provider", "") or "", getattr(agent, "base_url", "") or "")
+            or retry.nous_paid_entitlement_refresh_attempted):
+        return False
+    retry.nous_paid_entitlement_refresh_attempted = True
+    if not _try_refresh_nous_paid_entitlement_credentials(agent):
+        return False
+    _vlines(agent, "🔐 Nous paid access verified — refreshed runtime credentials and retrying request...")
+    return True
 
 
 def recover_after_classification(
@@ -664,14 +691,10 @@ def recover_after_classification(
     strip → Anthropic OAuth 1M-beta disable → per-provider 401 credential refresh →
     format-recovery strips.
     Returns ``(retry_now, recovered_with_pool)``; the latter feeds the Nous rate-limit guard."""
-    from agent.conversation_loop import _is_nous_inference_route
-
     # The credit-limited 402 clamp runs before pool rotation, which would bench a credential
     # that still has credit. A ``reasoning.context`` 400 is classified reasoning_mandatory, whose rung
     # would drop the whole reasoning config; omit only the all_turns opt-in, ahead of it.
-    if _recover_welcome_tier(agent, classified, _retry) or _clamp_to_affordable_budget(
-        agent, api_error, classified, _retry
-    ) or (agent.api_mode == "codex_responses" and _reject_all_turns(agent, api_error)):
+    if _recover_initial_request_policy(agent, api_error, classified, _retry):
         return True, False
 
     # 401 ``token_expired`` while the transcript still carries ``codex_reasoning_items`` is a
@@ -683,17 +706,8 @@ def recover_after_classification(
     ):
         return True, False
 
-    if (
-        classified.reason == FailoverReason.billing
-        and _is_nous_inference_route(
-            getattr(agent, "provider", "") or "", getattr(agent, "base_url", "") or ""
-        )
-        and not _retry.nous_paid_entitlement_refresh_attempted
-    ):
-        _retry.nous_paid_entitlement_refresh_attempted = True
-        if _try_refresh_nous_paid_entitlement_credentials(agent):
-            _vlines(agent, "🔐 Nous paid access verified — refreshed runtime credentials and retrying request...")
-            return True, False
+    if _refresh_paid_entitlement(agent, classified, _retry):
+        return True, False
 
     recovered_with_pool, _retry.has_retried_429 = agent._recover_with_credential_pool(
         status_code=status_code, has_retried_429=_retry.has_retried_429,

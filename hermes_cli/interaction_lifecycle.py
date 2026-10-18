@@ -12,7 +12,8 @@ import threading
 import time
 import uuid
 
-from hermes_cli.config_defaults import INTERACTION_MAX_OUTPUT_TOKENS
+from hermes_cli.interaction_defaults import INTERACTION_MAX_OUTPUT_TOKENS
+from agent.exception_logging import exception_type_info
 
 
 @dataclass
@@ -83,7 +84,8 @@ class InteractionSession:
                 self._record_sink(dict(self.journal[-1]))
             except Exception as exc:
                 import logging
-                logging.getLogger(__name__).warning("Interaction persistence failed: %s", type(exc).__name__)
+                logging.getLogger(__name__).warning("Interaction persistence failed: %s", type(exc).__name__,
+                                                    exc_info=exception_type_info(exc))
 
     def open(self, kind: str, choices=(), *, scope: str = "", timeout: float | None = None) -> HumanRequest:
         if kind not in {"clarify", "permission", "next_action"}:

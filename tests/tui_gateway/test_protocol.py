@@ -12,15 +12,7 @@ from unittest.mock import MagicMock, patch
 from pathlib import Path
 
 import pytest
-
-_original_stdout = sys.stdout
-
-
-@pytest.fixture(autouse=True)
-def _restore_stdout():
-    yield
-    sys.stdout = _original_stdout
-
+from tests.tui_gateway.protocol_fixtures import _restore_stdout
 
 @pytest.fixture()
 def server():

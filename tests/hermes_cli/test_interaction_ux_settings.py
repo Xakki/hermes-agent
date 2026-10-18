@@ -6,7 +6,7 @@ import pytest
 
 def test_settings_schema_and_saved_menu_roundtrip(tmp_path, monkeypatch):
     from hermes_cli.config import save_config, read_raw_config
-    from hermes_cli.config_defaults import INTERACTION_DEFAULTS
+    from hermes_cli.interaction_defaults import INTERACTION_DEFAULTS
     from hermes_cli.interaction_config import resolve_interaction
     from hermes_cli.web_server_config import CONFIG_SCHEMA, _normalize_config_for_web, _denormalize_config_from_web
     assert CONFIG_SCHEMA['interaction.menu']['type'] == 'json'

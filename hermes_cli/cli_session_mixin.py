@@ -306,7 +306,8 @@ class CLISessionMixin:
         """Return recent CLI sessions for in-chat browsing/resume affordances."""
         if not self._session_db:
             return []
-        from cli import logger
+        import logging
+        logger = logging.getLogger("cli")
         try:
             from hermes_cli.session_listing import query_session_listing
             from hermes_state_sessions import INTERNAL_LISTING_SOURCES
@@ -329,7 +330,9 @@ class CLISessionMixin:
                          len(rows), source_counts, project_root is not None)
             return rows
         except Exception as exc:
-            logger.warning("/resume diagnostics listing_failed error_type=%s", type(exc).__name__)
+            from agent.exception_logging import exception_type_info
+            logger.exception("/resume diagnostics listing_failed error_type=%s", type(exc).__name__,
+                             exc_info=exception_type_info(exc))
             return []
 
     def _show_recent_sessions(self, *, reason: str = "history", limit: int = 10) -> bool:

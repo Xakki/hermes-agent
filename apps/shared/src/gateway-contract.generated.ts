@@ -5306,12 +5306,14 @@ export interface CanonicalApprovalParams {
 }
 export interface CanonicalSteerQueuedParams {
   profile?: string | null
+  project_root?: string | null
   session_id: string
   admission_id: string
 }
 /** The edited prompt: admitted as a NEW admission (``submission_id``) at the FIFO tail. */
 export interface CanonicalReplaceQueuedParams {
   profile?: string | null
+  project_root?: string | null
   session_id: string
   admission_id: string
   submission_id: string

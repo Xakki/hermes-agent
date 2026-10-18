@@ -344,9 +344,10 @@ test.skipIf(process.platform === 'win32')('a corrupt control pointer is a stale 
   const net = await import('node:net')
   const { isStaleLocalGatewayError, mintLocalGatewayTicket, redialLocalGateway } = await import('./local-gateway')
   const home = await shortSocketTmpDir('desktop-pointer-')
-  const runtime = await shortSocketTmpDir('desktop-gw-')
+  const runtime = await shortSocketTmpDir('g-')
   const hash = crypto.createHash('sha256').update(home).digest('hex').slice(0, 16)
   const socketPath = path.join(runtime, `hermes-gw-${hash}`, 'control.sock')
+  expect(Buffer.byteLength(socketPath)).toBeLessThan(process.platform === 'darwin' ? 104 : 108)
   const pointer = path.join(home, 'gateway.sock.path')
   const endpoint = { profile_id: home, instance_id: 'owner', authority_epoch: 1, runtime_protocol: 1, api_origin: 'http://127.0.0.1:1234', capabilities: ['session-authority-v1'], supervisor: 'none' }
   await fs.mkdir(path.dirname(socketPath), { mode: 0o700 })

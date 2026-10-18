@@ -207,7 +207,9 @@ def _observe_event(req: ServerRequest, actor: str, event: str) -> None:
     try:
         _observe(req, actor, event)
     except Exception as exc:
-        logger.warning("Native interaction observer failed: %s", type(exc).__name__)
+        from agent.exception_logging import exception_type_info
+        logger.warning("Native interaction observer failed: %s", type(exc).__name__,
+                       exc_info=exception_type_info(exc))
 
 
 def _expired(req: ServerRequest) -> bool:
@@ -282,8 +284,9 @@ def send(method: str, sid: str, params: dict, *, timeout: float | None,
     """Send one request and block for the response ``result`` (a dict).
 
     Returns ``None`` when the renderer never answered (timeout, cancel, or an error response — e.g.
-    a client without a handler for ``method``). ``timeout`` semantics: None → wait until answered or
-    cancelled, 0 → return immediately, > 0 → bounded wait. A batch (``qids``) that settled returns
+    a client without a handler for ``method``). For human methods, None or a longer timeout retains
+    the native human cap (600s, or the sudo password cap); a positive lower timeout is preserved.
+    For other methods None waits until answered/cancelled. Zero returns immediately. A settled batch returns
     ``{"answers": <locked so far>, "outcome"}`` (``submitted`` / ``cancelled`` / ``timed_out``).
     """
     if _unanswerable(method, sid):
