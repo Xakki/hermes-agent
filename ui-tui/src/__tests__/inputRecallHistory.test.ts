@@ -22,6 +22,7 @@ const encode = (text: string) => `\n# synthetic timestamp\n${text.split('\n').ma
 const projectKey = 'a'.repeat(64)
 
 async function fixture(entries: string[]) {
+  mkdirSync(resolve('../tmp/project-input-history'), { recursive: true, mode: 0o700 })
   const home = mkdtempSync(resolve('../tmp/project-input-history/recall-'))
   vi.stubEnv('HERMES_HOME', home)
   vi.resetModules()

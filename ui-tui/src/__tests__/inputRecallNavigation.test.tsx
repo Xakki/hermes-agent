@@ -22,6 +22,7 @@ vi.mock('@hermes/ink', async importOriginal => ({
 }))
 
 it('navigates only human recall entries with the registered Up/Down callback and restores the draft', async () => {
+  mkdirSync(resolve('../tmp/project-input-history'), { recursive: true, mode: 0o700 })
   const home = mkdtempSync(resolve('../tmp/project-input-history/navigation-human-'))
   const projectKey = 'a'.repeat(64)
   mkdirSync(resolve(home, 'input-history'))
