@@ -6,6 +6,7 @@ would otherwise re-spawn ``git`` on every sidebar open, while the TTL keeps ``gi
 
 from __future__ import annotations
 
+from hashlib import sha256
 import os
 import threading
 import time
@@ -130,6 +131,15 @@ def canonical_project_root(
         return (root_probe or common_repo_root)(candidate) or candidate
     except Exception:
         return None
+
+
+def input_history_key(cwd: str | None) -> str | None:
+    """One project key for CLI recall and TUI session metadata."""
+    root = canonical_project_root(cwd)
+    if root is None:
+        return None
+    root = os.path.realpath(root)
+    return sha256(root.encode("utf-8")).hexdigest()
 
 
 def resolve(cwd: str) -> dict | None:

@@ -424,7 +424,8 @@ def _lazy_resume_info(cwd: str, *, model: str = "", provider: str = "", profile:
         model, default_provider = _session_default_route({"profile_home": _profile_home(profile)})
         provider = provider or default_provider
     return {
-        "cwd": cwd, "branch": git_probe.branch(cwd), "project": _project_info_for_cwd(cwd),
+        "cwd": cwd, "input_history_key": git_probe.input_history_key(cwd),
+        "branch": git_probe.branch(cwd), "project": _project_info_for_cwd(cwd),
         **_lazy_info_route({"profile_home": _profile_home(profile)}, {"model": model, "provider": provider} if model else {}),
         "tools": {}, "skills": {}, "lazy": True,
         "desktop_contract": DESKTOP_BACKEND_CONTRACT, "profile_name": _response_profile_name(profile),
@@ -694,7 +695,8 @@ def _fallback_session_info(session: dict) -> dict:
     # above already follows.
     cwd = _session_cwd(session)
     return {
-        "cwd": cwd, "branch": git_probe.branch(cwd), "project": _project_info_for_cwd(cwd), "lazy": True,
+        "cwd": cwd, "input_history_key": git_probe.input_history_key(cwd),
+        "branch": git_probe.branch(cwd), "project": _project_info_for_cwd(cwd), "lazy": True,
         **_lazy_info_route(session, {}), "skills": {}, "tools": {}, "desktop_contract": DESKTOP_BACKEND_CONTRACT,
     }
 

@@ -10165,6 +10165,18 @@
             ],
             "default": null
           },
+          "input_history_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Input History Key"
+          },
           "system_prompt": {
             "anyOf": [
               {
@@ -10850,6 +10862,18 @@
               }
             ],
             "default": null
+          },
+          "input_history_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Input History Key"
           },
           "system_prompt": {
             "anyOf": [
@@ -37366,6 +37390,18 @@
             "title": "Cwd",
             "type": "string"
           },
+          "input_history_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Input History Key"
+          },
           "branch": {
             "anyOf": [
               {
@@ -38419,6 +38455,18 @@
             "default": "",
             "title": "Cwd",
             "type": "string"
+          },
+          "input_history_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Input History Key"
           },
           "branch": {
             "anyOf": [

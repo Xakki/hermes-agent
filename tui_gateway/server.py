@@ -1641,7 +1641,8 @@ def _session_info(agent, session: dict | None = None) -> dict:
         "yolo": yolo, "approval_mode": approval_mode,
         "tools": dict(mirror.get("tools") or {}) if isinstance(mirror.get("tools"), dict) else {},
         "skills": dict(mirror.get("skills") or {}) if isinstance(mirror.get("skills"), dict) else {},
-        "cwd": cwd, "branch": git_probe.branch(cwd), "project": _project_info_for_cwd(cwd),
+        "cwd": cwd, "input_history_key": git_probe.input_history_key(cwd),
+        "branch": git_probe.branch(cwd), "project": _project_info_for_cwd(cwd),
         "terminal_backend": _effective_terminal_backend(), "personality": str(personality or ""),
         "running": bool(sess.get("running")), "turn_started_at": _turn_started_at(session),
         "title": _session_live_title(sess, session_key) if session_key else "",
@@ -1653,7 +1654,6 @@ def _session_info(agent, session: dict | None = None) -> dict:
     with contextlib.suppress(Exception):
         from hermes_cli import __release_date__
         from hermes_cli.version_info import get_version_info
-
         info.update(version=get_version_info().base_version, release_date=__release_date__)
     live_agent = agent is not None and not sess.get("_compute_host_active")
     if live_agent:

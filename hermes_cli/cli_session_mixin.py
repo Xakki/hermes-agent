@@ -166,6 +166,8 @@ class CLISessionMixin:
                 msg = t("cli.session.cwd_restored", path=recorded)
             except OSError as e:
                 msg = t("cli.session.cwd_enter_failed", path=recorded, error=e)
+        from hermes_cli.input_history import refresh_input_history
+        refresh_input_history(self)
         _dim_notice(self, msg, quiet)
 
     def _restore_session_yolo(self, session_meta: dict, *, quiet: bool = False) -> None:

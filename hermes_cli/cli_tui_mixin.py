@@ -2213,7 +2213,6 @@ class CLITuiMixin:
         from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
         from prompt_toolkit.completion import ThreadedCompleter
         cli_ref = self
-
         def get_prompt():
             return cli_ref._get_tui_prompt_fragments()
 
@@ -2240,6 +2239,7 @@ class CLITuiMixin:
         # Keep prompt_toolkit on its simple tempfile path: buffer.tempfile = "prompt.md" takes
         # the complex-tempfile branch that re-mkdir()s the mkdtemp() dir and raises EEXIST.
         input_area.buffer.tempfile_suffix = '.md'
+        self._input_history_buffer = input_area.buffer
 
         def _input_height():
             # Accounts for explicit newlines AND visual wrapping so the area fits its content.

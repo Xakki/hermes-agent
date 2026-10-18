@@ -57,13 +57,13 @@ _GATEWAY_LIFECYCLE_PATTERN = re.compile(
     r"|(?:launchctl\s+(?:kickstart|unload|load|stop|restart|submit|bootstrap|bootout|remove|disable)\b[^\n]*\bhermes[.\-]?gateway)"
     # Branch C: systemctl ops on a hermes-gateway unit.
     r"|(?:systemctl\s+(?:-\S+\s+)*(?:restart|stop|start)\b[^\n]*\bhermes[.\-]?gateway)"
-    # Branch D: pkill/kill of the gateway process, both token orders. Leading \b keeps "skill" from
-    # matching as "kill".
+    # Branch D: pkill/kill of the gateway process, both token orders. Hyphens are part of options
+    # and helper names: word boundaries alone mistake --kill-after for a kill command.
     # `taskkill` / `Stop-Process` are the Windows spellings of the same operation; `\bp?kill\b`
     # cannot reach inside `taskkill`, so they are named outright. Service-control forms (`net stop`,
     # `sc stop`) presuppose a service install this guard has no evidence of and stay uncovered.
-    r"|(?:\b(?:p?kill|taskkill|stop-process)\b[^\n]*\bhermes\b[^\n]*\bgateway)"
-    r"|(?:\b(?:p?kill|taskkill|stop-process)\b[^\n]*\bgateway\b[^\n]*\bhermes)"
+    r"|(?:(?<![\w-])(?:p?kill|taskkill|stop-process)(?![\w-])[^\n]*\bhermes\b[^\n]*\bgateway)"
+    r"|(?:(?<![\w-])(?:p?kill|taskkill|stop-process)(?![\w-])[^\n]*\bgateway\b[^\n]*\bhermes)"
 )
 
 # Branch E: process killers whose TARGET is the interpreter image hosting the gateway. A supervised

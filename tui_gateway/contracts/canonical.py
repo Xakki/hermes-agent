@@ -145,6 +145,7 @@ class SessionInventoryFields(Result):
     update_command: str | None = None
     branch: str | None = None
     project: ProjectRef | None = None
+    input_history_key: str | None = None
     system_prompt: str | None = None
     context_length: int | None = None
     enabled_toolsets: list[str] | None = None

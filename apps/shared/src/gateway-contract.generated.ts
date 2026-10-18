@@ -546,6 +546,7 @@ export interface SessionLiveInfo {
   tools?: Record<string, string[]>
   skills?: Record<string, string[]>
   cwd?: string
+  input_history_key?: string | null
   branch?: string | null
   project?: ProjectRef | null
   terminal_backend?: string
@@ -3484,6 +3485,7 @@ export interface SessionCwdSetResult {
   tools?: Record<string, string[]>
   skills?: Record<string, string[]>
   cwd?: string
+  input_history_key?: string | null
   branch?: string | null
   project?: ProjectRef | null
   terminal_backend?: string
@@ -4731,6 +4733,7 @@ export interface CanonicalSessionInfo {
   update_command?: string | null
   branch?: string | null
   project?: ProjectRef | null
+  input_history_key?: string | null
   system_prompt?: string | null
   context_length?: number | null
   enabled_toolsets?: string[] | null
@@ -5099,6 +5102,7 @@ export interface CanonicalSnapshotInfo {
   update_command?: string | null
   branch?: string | null
   project?: ProjectRef | null
+  input_history_key?: string | null
   system_prompt?: string | null
   context_length?: number | null
   enabled_toolsets?: string[] | null
