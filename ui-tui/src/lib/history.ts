@@ -1,12 +1,19 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 const MAX = 1000
-const dir = process.env.HERMES_HOME ?? join(homedir(), '.hermes')
-const file = join(dir, '.hermes_history')
+const cache = new Map<string, string[]>()
 
-let cache: string[] | null = null
+export function projectHistoryFile(projectKey: string) {
+  if (!/^[a-f0-9]{64}$/.test(projectKey)) {
+    throw new Error('Invalid project input history key')
+  }
+
+  const home = process.env.HERMES_HOME ?? join(homedir(), '.hermes')
+
+  return join(home, 'input-history', projectKey)
+}
 
 // FileHistory has no role/source fields. Only recognize the complete legacy
 // gateway envelope, not human prose mentioning or quoting notifications.
@@ -18,16 +25,25 @@ const INTERNAL_NOTIFICATION_FOOTER =
 const isLegacyCompletion = (text: string) =>
   text.startsWith('[IMPORTANT: Background process ') && text.endsWith(`\n\n${INTERNAL_NOTIFICATION_FOOTER}`)
 
-export function load() {
-  if (cache) {
-    return cache
+export function load(projectKey: string | null) {
+  if (!projectKey) {
+    return []
   }
+
+  const file = projectHistoryFile(projectKey)
+  const cached = cache.get(file)
+
+  if (cached) {
+    return cached
+  }
+
+  let items: string[] = []
 
   try {
     if (!existsSync(file)) {
-      cache = []
+      cache.set(file, items)
 
-      return cache
+      return items
     }
 
     const entries: string[] = []
@@ -58,22 +74,26 @@ export function load() {
 
     finish()
 
-    cache = entries.slice(-MAX)
+    items = entries.slice(-MAX)
   } catch {
-    cache = []
+    items = []
   }
 
-  return cache
+  cache.set(file, items)
+
+  return items
 }
 
-export function append(line: string) {
+export function append(line: string, projectKey: string | null) {
   const trimmed = line.trim()
 
-  if (!trimmed) {
+  if (!trimmed || !projectKey) {
     return
   }
 
-  const items = load()
+  const file = projectHistoryFile(projectKey)
+  const dir = dirname(file)
+  const items = load(projectKey)
 
   if (items.at(-1) === trimmed) {
     return
@@ -87,7 +107,7 @@ export function append(line: string) {
 
   try {
     if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true })
+      mkdirSync(dir, { recursive: true, mode: 0o700 })
     }
 
     const ts = new Date().toISOString().replace('T', ' ').replace('Z', '')
@@ -100,7 +120,7 @@ export function append(line: string) {
     // append is called only by composer submit/draft actions. Preserve even a
     // human's verbatim notification example across reload; classic FileHistory
     // ignores this compatible comment header.
-    appendFileSync(file, `\n# ${ts}\n${HUMAN_SOURCE}\n${encoded}\n`)
+    appendFileSync(file, `\n# ${ts}\n${HUMAN_SOURCE}\n${encoded}\n`, { mode: 0o600 })
   } catch {
     void 0
   }

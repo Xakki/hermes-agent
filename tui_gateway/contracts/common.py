@@ -77,6 +77,7 @@ class SessionLiveInfo(OpenModel):
     tools: dict[str, list[str]] = Field(default_factory=dict)
     skills: dict[str, list[str]] = Field(default_factory=dict)
     cwd: str = ""
+    input_history_key: str | None = None
     branch: str | None = None
     project: ProjectRef | None = None
     terminal_backend: str = ""
