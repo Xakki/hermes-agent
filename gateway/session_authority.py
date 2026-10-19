@@ -276,7 +276,10 @@ class SessionAuthority:
         text = payload.get('text')
         if text is None:
             text = payload.get('native_text_v1', {}).get('event', {}).get('text', '')
-        return PendingAdmission(**vars(self._receipt(row)), input_id=row['request_id'], text=text)
+        from gateway.session_automation import admission_display
+        card = admission_display(payload)
+        return PendingAdmission(**vars(self._receipt(row)), input_id=row['request_id'], text=text,
+                                display_kind=card.get('display_kind'), display_text=card.get('display_text'))
 
     def _publish_pending(self, ref):
         live = self.sessions[ref.session_id]

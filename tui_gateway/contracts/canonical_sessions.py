@@ -79,6 +79,8 @@ class CanonicalSessionHandle(Result):
 class CanonicalPendingAdmission(AdmissionStatus):
     input_id: str
     text: str
+    display_kind: Literal['process_complete', 'async_delegation_complete'] | None = None
+    display_text: str | None = None
 
 
 class CanonicalPendingPrompt(Result):

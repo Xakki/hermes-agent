@@ -9286,6 +9286,34 @@
           "text": {
             "title": "Text",
             "type": "string"
+          },
+          "display_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "process_complete",
+                  "async_delegation_complete"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Kind"
+          },
+          "display_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Text"
           }
         },
         "required": [

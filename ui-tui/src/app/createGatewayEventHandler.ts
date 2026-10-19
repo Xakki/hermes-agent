@@ -44,7 +44,7 @@ import {
 import { applyGoalSnapshot } from './goalStatus.js'
 import type { GatewayEventHandlerContext, NoticeLevel } from './interfaces.js'
 import { getOverlayState, patchOverlayState, SENSITIVE_PROMPTS } from './overlayStore.js'
-import { markBubbleShown, newlyStartedRows } from './pendingBubbles.js'
+import { markBubbleShown, newlyStartedRows, showProducerNotice } from './pendingBubbles.js'
 import { flashGoodVibes, flashPet } from './petFlashStore.js'
 import { forgetServerRequest } from './serverRequestStore.js'
 import { noteCanonicalCompletion } from './slash/canonicalSessionCommands.js'
@@ -601,7 +601,10 @@ function applySessionInfo(payload: unknown, { appendMessage, setHistoryItems, se
   // authority starts it, so it lands after the previous assistant reply.
   for (const started of newlyStartedRows(current?.pending_submissions, incoming.pending_submissions)) {
     markBubbleShown(started.input_id)
-    appendMessage({ role: 'user', text: started.user })
+
+    if (!showProducerNotice(started, started.admission_id, undefined, appendMessage)) {
+      appendMessage({ role: 'user', text: started.user })
+    }
   }
 
   // A replayed snapshot can be the only terminal signal after reconnect.
@@ -1128,6 +1131,8 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
 
       case 'message.start':
+        showProducerNotice(ev.payload ?? {}, (ev as { admission_id?: string }).admission_id,
+          getUiState().info?.pending_submissions, appendMessage)
         resetAgentsNudgeTurnState()
         turnController.startMessage()
 

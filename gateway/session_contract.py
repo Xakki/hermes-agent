@@ -64,6 +64,8 @@ class AdmissionReceipt:
 class PendingAdmission(AdmissionReceipt):
     input_id: str
     text: str
+    display_kind: Literal['process_complete', 'async_delegation_complete'] | None = None
+    display_text: str | None = None
 
 
 @dataclass(frozen=True)

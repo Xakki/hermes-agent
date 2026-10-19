@@ -5078,6 +5078,8 @@ export interface CanonicalPendingAdmission {
   execution_generation: number | null
   input_id: string
   text: string
+  display_kind?: 'process_complete' | 'async_delegation_complete' | null
+  display_text?: string | null
 }
 export interface CanonicalPendingPrompt {
   kind: 'approval' | 'clarify'
