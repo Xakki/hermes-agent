@@ -14,7 +14,7 @@ def test_post_turn_menu_emits_strict_metadata_and_stable_prompt_choice(monkeypat
     from tui_gateway import server
     from hermes_state import SessionDB
     from hermes_cli.config import save_config
-    from hermes_cli.config_defaults import INTERACTION_DEFAULTS
+    from hermes_cli.interaction_defaults import INTERACTION_DEFAULTS
     from hermes_cli import goals
     requests.reset_for_tests()
     save_config({"interaction": {

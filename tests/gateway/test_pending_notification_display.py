@@ -32,6 +32,7 @@ def completion(request):
 def boundary(payload, monkeypatch):
     authority = SessionAuthority.__new__(SessionAuthority)
     authority.profile_id, authority.epoch, authority.executing = 'synthetic-profile', 1, {}
+    authority.steer_transfers, authority.launch_sources = {}, {'s': 'tui'}
     stream = SessionEvents()
     frames = []
     stream.observers.add(lambda frame: frames.append(deepcopy(frame['params'])))
@@ -67,7 +68,9 @@ def test_pending_and_claim_carry_only_public_producer_presentation(completion, m
         assert pending['text'] == text
         assert {key: pending.get(key) for key in card} == card, 'pending lost trusted producer presentation'
         assert set(pending) == {'admission_id', 'ref', 'sequence', 'status', 'outcome', 'authority_epoch',
-                                'execution_generation', 'input_id', 'text', 'display_kind', 'display_text'}
+                                'execution_generation', 'input_id', 'text', 'display_kind', 'display_text',
+                                'controls', 'steering'}
+        assert pending['controls'] == [] and pending['steering'] is False
         CanonicalPendingAdmission.model_validate(pending)
 
 
@@ -158,3 +161,19 @@ async def test_disposable_native_rpc_and_execution_keep_complete_input(completio
     finally:
         await connection.close()
         runner.session_store.close_all_db_handles()
+
+
+@pytest.mark.parametrize('kind', ['process_complete', 'async_delegation_complete', 'internal_notification'])
+@pytest.mark.parametrize('envelope', ['local', 'native'])
+def test_pending_accepts_every_trusted_producer_card(kind, envelope, monkeypatch):
+    card = automation_display_metadata({'display_kind': kind, 'display_text': 'Synthetic producer receipt'})
+    descriptor = dict(card, identity='private-producer', owner='s', route='private-route')
+    payload = {'text': 'Complete synthetic model input', **(
+        {'local_automation_v1': descriptor} if envelope == 'local' else
+        {'native_text_v1': {'automation': descriptor, 'provenance': {'private': 'proof'}}})}
+    authority, row, _frames = boundary(payload, monkeypatch)
+    pending = asdict(authority._pending_receipt(row))
+    # Producer presentation is public; routing/provenance remain private and no queued verbs apply.
+    assert (pending['display_kind'], pending['display_text']) == (kind, card['display_text'])
+    assert pending['controls'] == [] and pending['steering'] is False
+    CanonicalPendingAdmission.model_validate(pending)

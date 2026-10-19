@@ -111,6 +111,16 @@ def resolve_gateway_clarify(clarify_id: str, response: str) -> bool:
         return True
 
 
+def get_pending(clarify_id: str) -> Optional[_ClarifyEntry]:
+    """The entry for ``clarify_id`` while it is still awaiting an answer, else None (unknown,
+    answered, timed out or cleared). Read-only: adapters rendering native choice cards compare it
+    by identity with the entry they rendered and read ``session_key`` / ``choices`` /
+    ``multi_select`` from it; answering goes through ``resolve_gateway_clarify``."""
+    with _lock:
+        entry = _entries.get(clarify_id)
+        return entry if entry is not None and not entry.event.is_set() else None
+
+
 def get_pending_for_session(session_key: str, *, include_choice_prompts: bool = False) -> Optional[_ClarifyEntry]:
     """Oldest pending entry awaiting free text (open-ended, or after "Other");
     ``include_choice_prompts=True`` returns the oldest unresolved entry of any kind (user
@@ -272,8 +282,8 @@ def clear_session(session_key: str) -> int:
 
 def resolve_clarify_timeout(config: dict) -> int:
     """Clarify timeout (seconds): legacy ``clarify.timeout`` if explicitly set, else
-    ``agent.clarify_timeout``, else 3600 — the single source of truth for every surface
-    (gateway, CLI, TUI). ``<= 0`` is kept verbatim (unlimited); non-numeric -> 3600."""
+    ``agent.clarify_timeout``, else 3600. Native human surfaces apply their own finite cap
+    to this compatibility input. ``<= 0`` is kept verbatim; non-numeric -> 3600."""
     raw = (config.get("clarify") or {}).get("timeout")
     if raw is None:
         raw = (config.get("agent") or {}).get("clarify_timeout", 3600)

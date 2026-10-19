@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from agent.auxiliary_anthropic_events import event_has_content as _anthropic_event_has_content
 from agent.auxiliary_client import (
     _AnthropicCompletionsAdapter,
     _ChatStreamAccumulator,
@@ -22,7 +23,7 @@ from agent.auxiliary_client import (
     _acreate_with_stream,
     _aggregate_chat_stream,
     _aggregate_chat_stream_async,
-    _anthropic_event_has_content,
+
     _aux_dispatch,
     _aux_thread_local_hook,
     _create_with_progress,

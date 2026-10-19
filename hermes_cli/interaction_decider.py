@@ -12,6 +12,7 @@ import threading
 import time
 
 from hermes_cli.interaction_lifecycle import DecisionToken, InteractionSession
+from agent.exception_logging import exception_type_info
 
 _profile_locks: dict[str, threading.Lock] = {}
 _locks_lock = threading.Lock()
@@ -114,7 +115,7 @@ def decide(session: InteractionSession, token: DecisionToken) -> bool:
             # Never expose raw provider errors (they can contain secrets or payloads).
             import logging
             logging.getLogger(__name__).warning("Named decision failed: %s%s", type(exc).__name__,
-                f" ({exc})" if isinstance(exc, DecisionBudgetExceeded) else "")
+                f" ({exc})" if isinstance(exc, DecisionBudgetExceeded) else "", exc_info=exception_type_info(exc))
         finally:
             done.set()
 

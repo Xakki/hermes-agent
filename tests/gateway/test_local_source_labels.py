@@ -1,7 +1,8 @@
 """A canonical local session keeps the source label it was created with, and human pickers hide the
 non-conversation labels (``tool`` integrations, finite ``oneshot`` runs) as on the classic surfaces."""
 from pathlib import Path
-from types import SimpleNamespace
+import sys
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -9,6 +10,10 @@ from gateway.session_controls import AuthorityConnection
 
 
 async def _authority(tmp_path, monkeypatch):
+    # These projections exercise sessions, not install recovery in the real Git directory.
+    bootstrap = ModuleType("hermes_bootstrap")
+    bootstrap._happy_eyeballs_create_connection = lambda *args, **kwargs: pytest.fail("Unexpected network in session fixture")
+    monkeypatch.setitem(sys.modules, "hermes_bootstrap", bootstrap)
     from gateway.config import GatewayConfig
     from gateway.session import SessionStore
     from gateway.session_authority import initialize_session_authority

@@ -140,6 +140,7 @@ from gateway.platforms import api_server_room_dispatch as _room_dispatch
 from gateway.platforms import api_server_room_grants as _room_grants
 from gateway.platforms import api_server_runs as _api_runs
 from gateway.platforms.api_server_openai_routes import OpenAICompatRoutesMixin
+from gateway.platforms.api_server_request_policy import APIServerRequestPolicyMixin
 from gateway.platforms.api_server_memory_sessions import ApiServerMemorySessions
 from gateway.platforms.base import (
     MEDIA_TAG_CLEANUP_RE, BasePlatformAdapter, SendResult, _terminal_sentinel_start, is_network_accessible,
@@ -158,8 +159,8 @@ from gateway.browser_control_broker import (
     ControllerScope, ControllerTicketInvalid, browser_control_developer_mode,
     browser_control_protocol_supported, filter_browser_control_capabilities, get_browser_control_broker)
 
-from gateway.platforms._shared import coerce_port as _coerce_port
-from gateway.platforms._shared import get_scoped_secret as _get_scoped_secret
+from gateway.parked_route_refusal import ParkedRouteRefused
+from gateway.platforms._shared import coerce_port as _coerce_port, get_scoped_secret as _get_scoped_secret
 from gateway.platforms.tcp_site import start_tcp_site
 from hermes_state_errors import SessionActiveWriteGuardError
 
@@ -1096,7 +1097,7 @@ def _run_route_delegate(name: str):
     return _handler
 
 
-class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+class APIServerAdapter(APIServerRequestPolicyMixin, OpenAICompatRoutesMixin, BasePlatformAdapter):
     """aiohttp server routing OpenAI-format requests through hermes-agent's AIAgent."""
 
     # Stateless request/response (``send()`` is a stub): async-delivery tools must not promise
@@ -1197,28 +1198,6 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         self._metrics_last_request_at: Optional[float] = None
         self._metrics_last_heartbeat_at: Optional[float] = None
 
-    @staticmethod
-    def _resolve_trusted_project_root(configured: Any = None) -> Optional[str]:
-        try:
-            from tui_gateway.git_probe import canonical_project_root
-            return canonical_project_root(configured or os.getcwd())
-        except Exception:
-            return None
-
-    def _session_scope_error(self, session: dict[str, Any]) -> Optional["web.Response"]:
-        active_root = getattr(self, "_trusted_project_root", None)
-        if not active_root:
-            return web.json_response(_openai_error("project context required", code="project_context_required"), status=403)
-        try:
-            from tui_gateway.git_probe import canonical_project_root
-            session_root = canonical_project_root(
-                session.get("project_root") or session.get("cwd") or os.getcwd()
-            )
-        except Exception:
-            session_root = None
-        if session_root != active_root:
-            return web.json_response(_openai_error("Session is outside the active project", code="session_outside_project"), status=403)
-        return None
 
     def active_agent_work_count(self) -> int:
         """All live agent work: pending admissions + in-flight turns + live /v1/runs tasks
@@ -1265,13 +1244,6 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         except Exception:
             return False
 
-    def _draining_response(self) -> Optional[web.Response]:
-        """Return a retryable response while the gateway drains existing work."""
-        if not self._gateway_is_draining():
-            return None
-        return _error_response(
-            "Gateway is draining existing work; retry shortly.", 503, code="gateway_draining",
-            headers={"Retry-After": "1"})
 
     def _activate_admitted_request(self) -> None:
         """Transfer this request's drain reservation to agent bookkeeping."""
@@ -1301,15 +1273,6 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
             if status.get("status") in {"queued", "running", "waiting_for_approval", "stopping"}
         )
 
-    @staticmethod
-    def _parse_cors_origins(value: Any) -> tuple[str, ...]:
-        """Normalize configured CORS origins into a stable tuple."""
-        if not value:
-            return ()
-        items = (
-            value.split(",") if isinstance(value, str)
-            else value if isinstance(value, (list, tuple, set)) else [str(value)])
-        return tuple(str(item).strip() for item in items if str(item).strip())
 
     @staticmethod
     def _resolve_max_concurrent_runs() -> int:
@@ -1590,11 +1553,11 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
             return _error_response("Platform event must be a JSON object", 400, code="invalid_request")
         try:
             result = await dispatcher(payload)
+        except ParkedRouteRefused as exc:  # nothing admitted, nothing acknowledged: the platform retries it
+            return _error_response(str(exc), exc.status, err_type="server_error", code=exc.code, headers=exc.headers)
         except Exception:
             logger.exception("Platform HTTP event dispatch failed for %s", platform_name)
-            return _error_response(
-                "Platform event dispatch failed", 500, err_type="server_error",
-                code="platform_event_dispatch_failed")
+            return _error_response("Platform event dispatch failed", 500, err_type="server_error", code="platform_event_dispatch_failed")
         return web.json_response(result if isinstance(result, dict) else {})
 
     # -- Multi-profile multiplexing (/p/<profile>/...) --------------------------------
@@ -2903,9 +2866,9 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         """GET /v1/skills — deterministic JSON listing of installed skills (name, description,
         category), the same set ``/skills list`` shows."""
         try:
-            from tools.skills_tool import _find_all_skills, _sort_skills
-            skills = _sort_skills(
-                _find_all_skills(
+            from tools.skills_tool import find_all_skills, sort_skills
+            skills = sort_skills(
+                find_all_skills(
                     skip_disabled=False, include_editorial=True
                 )
             )
@@ -3102,6 +3065,9 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         body, err = await self._read_json_body(request)
         if err:
             return err
+        from gateway.platforms.api_server_bot_chat import create_peer_bot_chat
+        if (bot_chat := await create_peer_bot_chat(self, body)) is not None:
+            return bot_chat  # the owner minted the canonical Bot Chat (#139370)
         db = await self._ensure_session_db_async()
         if db is None:
             return self._session_db_unavailable()
@@ -3135,9 +3101,9 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         title = body.get("title")
 
         def _atomic(conn):
-            # One BEGIN IMMEDIATE write: a concurrent same-id create blocks and sees the row.
-            if conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone():
-                return None, "exists"
+            from hermes_state_mutation_retirement import create_conflict
+            if conflict := create_conflict(conn, session_id):  # one BEGIN IMMEDIATE write: a racing create sees the row
+                return None, conflict
             conn.execute(
                 """INSERT INTO sessions (
                    id, source, model, model_config, system_prompt, project_root, started_at
@@ -3157,8 +3123,8 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
             return (dict(session_row) if session_row else {
                 "id": session_id, "source": source, "model": model_name, "title": title}), None
         session, err = await asyncio.to_thread(db._execute_write, _atomic)
-        if err == "exists":
-            return _error_response(f"Session already exists: {session_id}", 409, code="session_exists")
+        if isinstance(err, tuple):  # a live row, or a deleted id's fence: refused now, not on every turn
+            return _error_response(f"{err[1]}: {session_id}", 409, code=err[0])
         if err and err.startswith("title:"):
             return _error_response(err[len("title:"):], 400, code="invalid_title")
         return web.json_response({"object": "hermes.session", "session": self._session_response(session)}, status=201)
@@ -3452,11 +3418,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         # through the same door as ``bot_relay.deliver`` and the receipt is its admission's.
         if getattr(self.gateway_runner, "session_authority", None) is not None:
             from gateway.platforms.api_server_bot_chat import admit_peer_turn
-            from gateway.session_authorities import active_authority
-            authority = active_authority(self.gateway_runner)
-            if authority is None:
-                return None
-            return await admit_peer_turn(authority, session_id, message, author)
+            return await admit_peer_turn(self.gateway_runner, session_id, message, author)
         db = await self._ensure_session_db_async()
         if db is None:
             return None
@@ -4197,7 +4159,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         session_history_delivery: str = "", turn_author: Optional[dict[str, Any]] = None,
         relay_metadata: Optional[dict[str, Any]] = None, notification_category: str = "result",
         resume_unanswered_turn: bool = False, approval_notify_callback=None,
-        approval_session_key: Optional[str] = None) -> tuple:
+        approval_session_key: Optional[str] = None, walked_from: Optional[str] = None) -> tuple:
         """Create an agent and run one turn in a thread executor -> ``(result, usage)``.
         ``approval_notify_callback`` (with ``approval_session_key``) routes dangerous-command
         approval requests to the caller's stream, keyed like ``/v1/runs`` approvals (#51871).
@@ -4219,7 +4181,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
                 stream_delta_callback=stream_delta_callback, tool_progress_callback=tool_progress_callback,
                 tool_start_callback=tool_start_callback, tool_complete_callback=tool_complete_callback,
                 interim_assistant_callback=interim_assistant_callback, reasoning_callback=reasoning_callback,
-                status_callback=status_callback,
+                status_callback=status_callback, walked_from=walked_from,
                 agent_ref=agent_ref, active_run_id=active_run_id, gateway_session_key=gateway_session_key,
                 requested_model=requested_model, requested_provider=requested_provider, model_options=model_options,
                 route=route, session_model=session_model, requested_runtime=requested_runtime,

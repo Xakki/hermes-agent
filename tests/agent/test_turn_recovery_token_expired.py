@@ -7,6 +7,8 @@ import pytest
 from agent.error_classifier import FailoverReason
 from agent.turn_recovery import recover_after_classification
 from agent.turn_retry_state import TurnRetryState
+from agent.transports.codex import ResponsesApiTransport
+from run_agent import AIAgent
 
 
 class _RecoveryAgent:
@@ -21,6 +23,10 @@ class _RecoveryAgent:
         self._codex_reasoning_replay_enabled = True
         self.refresh_calls = 0
         self.replay_disable_calls = 0
+        self.transport = ResponsesApiTransport()
+
+    def _get_transport(self):
+        return self.transport
 
     def _recover_with_credential_pool(self, **_kwargs):
         return False, False
@@ -30,14 +36,9 @@ class _RecoveryAgent:
         self.refresh_calls += 1
         return False
 
-    def _disable_codex_reasoning_replay(self, messages):
+    def _disable_codex_reasoning_replay(self, messages, *, keep_replay=False):
         self.replay_disable_calls += 1
-        item_count = sum(len(message.get("codex_reasoning_items", [])) for message in messages)
-        message_count = sum("codex_reasoning_items" in message for message in messages)
-        for message in messages:
-            message.pop("codex_reasoning_items", None)
-        self._codex_reasoning_replay_enabled = False
-        return {"items": item_count, "messages": message_count}
+        return AIAgent._disable_codex_reasoning_replay(self, messages, keep_replay=keep_replay)
 
     def _buffer_vprint(self, _message):
         pass
@@ -143,3 +144,4 @@ def test_invalid_encrypted_content_400_still_strips_cached_reasoning():
     assert recovered is True
     assert agent.replay_disable_calls == 1
     assert all("codex_reasoning_items" not in message for message in messages)
+    assert agent._codex_reasoning_replay_enabled is True

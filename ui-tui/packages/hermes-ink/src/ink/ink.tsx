@@ -40,6 +40,13 @@ import reconciler, {
   resetProfileCounters
 } from './reconciler.js'
 import renderNodeToOutput, { consumeFollowScroll, didLayoutShift } from './render-node-to-output.js'
+import {
+  ALT_SCREEN_ANCHOR_CURSOR,
+  CURSOR_HOME_PATCH,
+  DEEP_ERASE_THEN_HOME_PATCH,
+  ERASE_THEN_HOME_PATCH,
+  makeAltScreenParkPatch
+} from './render-patches.js'
 import { applyPositionedHighlight, type MatchPosition, scanPositions } from './render-to-screen.js'
 import createRenderer, { type Renderer } from './renderer.js'
 import {
@@ -91,8 +98,7 @@ import {
   DISABLE_MODIFY_OTHER_KEYS,
   ENABLE_KITTY_KEYBOARD,
   ENABLE_MODIFY_OTHER_KEYS,
-  ERASE_SCREEN,
-  ERASE_SCROLLBACK
+  ERASE_SCREEN
 } from './termio/csi.js'
 import {
   DBP,
@@ -114,38 +120,7 @@ import {
 } from './termio/osc.js'
 import { TerminalWriteProvider } from './useTerminalNotification.js'
 
-// Alt-screen: renderer.ts sets cursor.visible = !isTTY || screen.height===0,
-// which is always false in alt-screen (TTY + content fills screen).
-// Reusing a frozen object saves 1 allocation per frame.
-const ALT_SCREEN_ANCHOR_CURSOR = Object.freeze({
-  x: 0,
-  y: 0,
-  visible: false
-})
 
-const CURSOR_HOME_PATCH = Object.freeze({
-  type: 'stdout' as const,
-  content: CURSOR_HOME
-})
-
-const ERASE_THEN_HOME_PATCH = Object.freeze({
-  type: 'stdout' as const,
-  content: ERASE_SCREEN + CURSOR_HOME
-})
-
-const DEEP_ERASE_THEN_HOME_PATCH = Object.freeze({
-  type: 'stdout' as const,
-  content: ERASE_SCREEN + ERASE_SCROLLBACK + CURSOR_HOME
-})
-
-// Cached per-Ink-instance, invalidated on resize. frame.cursor.y for
-// alt-screen is always terminalRows - 1 (renderer.ts).
-function makeAltScreenParkPatch(terminalRows: number) {
-  return Object.freeze({
-    type: 'stdout' as const,
-    content: cursorPosition(terminalRows, 1)
-  })
-}
 
 export type Options = {
   stdout: NodeJS.WriteStream

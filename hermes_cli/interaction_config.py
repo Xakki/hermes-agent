@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 
-from hermes_cli.config_defaults import INTERACTION_DEFAULTS, INTERACTION_MAX_OUTPUT_TOKENS
+from hermes_cli.interaction_defaults import INTERACTION_DEFAULTS, INTERACTION_MAX_OUTPUT_TOKENS
 
 
 @dataclass(frozen=True)

@@ -56,16 +56,13 @@ logger = logging.getLogger(__name__)
 
 
 def _load_config_safe() -> Optional[dict]:
-    """Load config.yaml read-only, returning None on any error.
-
-    ``load_config_readonly()`` skips the deepcopy ``load_config()`` pays per
-    call; the picker calls ``load_pool()`` once per provider row, which made
-    that copy the dominant cost of ``model.options``.
-    """
+    """Read-only config (``load_config_readonly`` skips the per-row deepcopy), None on any error.
+    Inside ``frozen_runtime_config`` it is the session's frozen config: a key rotated in config.yaml
+    must never seed a frozen session's pool."""
     try:
         from hermes_cli.config import load_config_readonly
-
-        return load_config_readonly()
+        from hermes_cli.runtime_provider import _FROZEN_RUNTIME_CONFIG
+        return _FROZEN_RUNTIME_CONFIG.get() or load_config_readonly()
     except Exception:
         return None
 
@@ -523,26 +520,11 @@ def custom_provider_pool_key_candidates(
     skipped for the ``no-key-required`` placeholder. ``config`` is a frozen route's config: ITS
     entry owns the endpoint, so a live edit of that entry's URL neither drops nor redirects the pool.
     """
-    if not base_url:
-        return []
-    normalized_url = _norm_url(base_url)
-    requested_aliases = _requested_custom_name_aliases(provider_name) if provider_name else set()
-
-    if requested_aliases:
-        for norm_name, entry in _iter_custom_providers(config):
-            if requested_aliases & _custom_entry_name_aliases(norm_name, entry):
-                # A named pool holds credentials for its configured endpoint only: a launch-
-                # overridden base_url must not inherit them (R2-M1), nor borrow a sibling's by URL.
-                entry_url = _norm_url(entry.get("base_url"))
-                if entry_url and entry_url != normalized_url:
-                    return []
-                return _pool_keys_for_custom_entry(norm_name, entry)
-
-    for norm_name, entry in _iter_custom_providers(config):
-        entry_url = _norm_url(entry.get("base_url"))
-        if entry_url and entry_url == normalized_url:
-            return _pool_keys_for_custom_entry(norm_name, entry)
-    return []
+    # A named pool holds credentials for its configured endpoint only: a launch-overridden base_url
+    # must not inherit them (R2-M1), nor borrow a sibling's by URL.
+    from agent.custom_entry_pool import custom_entry_for_endpoint
+    match = custom_entry_for_endpoint(base_url, provider_name, config)
+    return _pool_keys_for_custom_entry(*match) if match else []
 
 
 def get_custom_provider_pool_key(base_url: Optional[str], provider_name: Optional[str] = None) -> Optional[str]:
@@ -1070,27 +1052,6 @@ class CredentialPool(CredentialPoolAdminMixin, CredentialPoolModelCooldownMixin)
             )
             return min(candidates) if candidates else None
 
-    def entries(self) -> list[PooledCredential]:
-        with self._lock:
-            return list(self._entries)
-
-    def identity_for_entry_id(
-        self, entry_id: Any, api_key_hint: Any = None,
-    ) -> Optional[dict[str, str]]:
-        """Snapshot the non-secret identity of the exact credential selected for a request."""
-        if not isinstance(entry_id, str) or not entry_id:
-            return None
-        with self._lock:
-            entry = self._find(lambda candidate: candidate.id == entry_id)
-            # Env refresh or fallback can replace the runtime key before the
-            # stored entry id is rebound. Never attribute that request to the
-            # old account just because the id still exists.
-            if entry is None or (api_key_hint is not None and entry.runtime_api_key != api_key_hint):
-                return None
-            identity = {"credential_id": entry.id}
-            if entry.label is not None:
-                identity["account_name"] = str(entry.label)
-            return identity
 
     def _is_sole_credential(self) -> bool:
         """DEAD entries never re-enter rotation, so <=1 non-DEAD entry means nothing to rotate to."""

@@ -130,3 +130,30 @@ def test_autonomy_missing_goal_prompt_accepts_enter_without_creating_grant():
         host = cli_host(shell)
         assert host.lifecycle._grant is None
         assert host.lifecycle.mode == "assisted"
+
+
+@pytest.mark.parametrize(("config", "deadline", "expected"), [
+    ({"agent": {"clarify_timeout": 42}}, None, 42),
+    ({"clarify": {"timeout": 31}, "agent": {"clarify_timeout": 42}}, None, 31),
+    ({"agent": {"clarify_timeout": 0}}, None, 600),
+    ({"agent": {"clarify_timeout": -1}}, None, 600),
+    ({}, None, 600),
+    ({"agent": {"clarify_timeout": 42}}, 1035, 35),
+])
+def test_clarify_lower_config_preserves_native_cap_and_owner_deadline(monkeypatch, config, deadline, expected):
+    shell = _shell()
+    monkeypatch.setattr("cli.CLI_CONFIG", config)
+    monkeypatch.setattr("hermes_cli.cli_modal_mixin._time", SimpleNamespace(monotonic=lambda: 1000.0))
+    captured = []
+
+    def answer(_queue, _deadline_attr):
+        captured.append(shell._clarify_deadline)
+        shell._clarify_state["answers"]["q0"] = "fixture"
+        return {"q0": "fixture"}
+
+    shell._poll_modal_queue = answer
+    result = shell._clarify_callback([
+        {"qid": "q0", "question": "Fixture?", "choices": None, "multi_select": False}], deadline=deadline)
+    assert captured == [1000.0 + expected]
+    assert result == {"answers": {"q0": "fixture"}, "outcome": "submitted"}
+    assert shell._clarify_deadline is None

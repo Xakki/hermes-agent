@@ -60,20 +60,19 @@ def _launch_project_root_for_session(source: str, cwd: Optional[str]) -> Optiona
     try:
         from tui_gateway.git_probe import canonical_project_root
         return canonical_project_root(cwd)
-    except Exception:
+    except (ImportError, OSError, ValueError, RuntimeError):
         return cwd
 
 
 # Sources that label interactive UI transport sessions; one-shot child runs get their own source.
 _UI_TRANSPORT_SOURCES = frozenset({"tui", "desktop"})
 ONESHOT_SOURCE = "oneshot"
-CLI_FAMILY_SOURCES = frozenset({"cli", ONESHOT_SOURCE})
 
 
 def _session_source_for_agent(platform: Optional[str]) -> str:
     try:
         from gateway.session_context import get_session_env
-    except Exception:
+    except ImportError:
         get_session_env = os.environ.get
     source = str(get_session_env("HERMES_SESSION_SOURCE", "") or "").strip()
     single_query = get_session_env("HERMES_SINGLE_QUERY_SESSION", "") == "1"

@@ -211,7 +211,7 @@ export interface SessionInfo extends SessionLiveInfo {
     target_profile_home: string
     status: string
     user: string
-    display_kind?: 'process_complete' | 'async_delegation_complete' | null
+    display_kind?: 'process_complete' | 'async_delegation_complete' | 'internal_notification' | null
     display_text?: string | null
     outcome?: string | null
   }>

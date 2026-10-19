@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import httpx
 
-from hermes_cli.config_defaults import INTERACTION_MAX_OUTPUT_TOKENS
+from hermes_cli.interaction_defaults import INTERACTION_MAX_OUTPUT_TOKENS
 
 
 class DecisionBudgetExceeded(BaseException):

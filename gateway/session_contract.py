@@ -1,6 +1,6 @@
 """Public session authority contract; live execution state never crosses this boundary."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, Mapping, Protocol
 
 JsonObject = Mapping[str, object]
@@ -64,8 +64,13 @@ class AdmissionReceipt:
 class PendingAdmission(AdmissionReceipt):
     input_id: str
     text: str
-    display_kind: Literal['process_complete', 'async_delegation_complete'] | None = None
+    display_kind: Literal['process_complete', 'async_delegation_complete', 'internal_notification'] | None = None
     display_text: str | None = None
+    # The queued-row verbs this owner serves for the row (``steer`` / ``replace``); empty otherwise.
+    controls: list[str] = field(default_factory=list)
+    # A queued admission in transfer to the running turn (``prompt.steer_queued``): it reads ``started``
+    # but goes back to its queue place if its text never reached that turn.
+    steering: bool = False
 
 
 @dataclass(frozen=True)
