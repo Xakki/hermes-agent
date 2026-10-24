@@ -557,6 +557,8 @@ def _teardown_session(session: dict | None, *, end_reason: str = "tui_close") ->
     slash-worker is closed in ``_finalize_session`` (the single chokepoint), NOT here. Idempotent via ``_finalized``."""
     if not session:
         return
+    from tui_gateway.interaction_host import invalidate
+    invalidate(session)
     _finalize_session(session, end_reason=end_reason)
     _announce_session_reclaimed(session, end_reason)
     with contextlib.suppress(Exception):
@@ -732,6 +734,8 @@ def _interrupt_session_turn(
     ``orphan=True`` (reaper path) labels dropped approvals ``ws_orphan_reap``; the label comes from the
     caller, never from request_id prefix sniffing — a future orphan caller may use another id (#106678).
     """
+    from tui_gateway.interaction_host import invalidate
+    invalidate(session)
     use_compute_host = _session_uses_compute_host(session)
     # A manual compaction holds `running` with no run thread and its own finally releases it: Stop must not
     # abort it nor clear `running` under it, or the next submit is admitted idle and loses its reply (#133504).

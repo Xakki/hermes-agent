@@ -13,9 +13,10 @@ import { DEV_CREDITS_MODE } from '../config/env.js'
 import { faces } from '../content/faces.js'
 import { VERBS } from '../content/verbs.js'
 import { fmtDuration } from '../domain/messages.js'
+import { sessionTokenLabel } from '../domain/usage.js'
 import { stickyPromptFromViewport } from '../domain/viewport.js'
 import { messages, t as tr } from '../i18n/runtime.js'
-import { buildSubagentTree, treeTotals, widthByDepth } from '../lib/subagentTree.js'
+import { buildSubagentTree, formatSubagentTokenTotal, treeTotals, widthByDepth } from '../lib/subagentTree.js'
 import { useScrollbarSnapshot, useViewportSnapshot } from '../lib/viewportStore.js'
 import type { Theme } from '../theme.js'
 import type { Msg } from '../types.js'
@@ -368,7 +369,11 @@ export function statusBarSegments(cols: number): StatusBarSegments {
   }
 }
 
-function SpawnHud({ t }: { t: Theme }) {
+export function statusHudFits(availableWidth: number, label: string, prefix = ' │ '): boolean {
+  return availableWidth >= stringWidth(`${prefix}${label}`)
+}
+
+function SpawnHud({ maxWidth, t }: { maxWidth?: number; t: Theme }) {
   // Tight HUD that only appears when the session is actually fanning out.
   // Colour escalates to warn/error as depth or concurrency approaches the cap.
   const delegation = useStore($delegationState)
@@ -419,12 +424,23 @@ function SpawnHud({ t }: { t: Theme }) {
     }
   }
 
+  const tokenTotal = formatSubagentTokenTotal(subagents)
+
+  if (tokenTotal) {
+    pieces.push(tokenTotal)
+  }
+
+  const label = pieces.join(' ')
   const atCap = depthRatio >= 1 || concRatio >= 1
+
+  if (maxWidth != null && !statusHudFits(maxWidth, label, atCap ? ' │ ⚠ ' : undefined)) {
+    return null
+  }
 
   return (
     <Text color={color}>
       {atCap ? ' │ ⚠ ' : ' │ '}
-      {pieces.join(' ')}
+      {label}
     </Text>
   )
 }
@@ -530,6 +546,50 @@ export function GoodVibesHeart({ tick, t }: { tick: number; t: Theme }) {
   return <Text color={color}>♥</Text>
 }
 
+function contextStatusLabel(usage: Usage, compact: boolean, visible: boolean) {
+  const mark = usage.context_estimated ? '~' : ''
+
+  return visible
+    ? usage.context_max
+      ? compact
+        ? `${mark}${compactNumber(usage.context_used ?? 0)} tok`
+        : `${mark}${compactNumber(usage.context_used ?? 0)}/${compactNumber(usage.context_max ?? 0)}`
+      : (usage.total ?? 0) > 0
+        ? `${compactNumber(usage.total)} tok`
+        : ''
+    : ''
+}
+
+function usageStatusLabels(usage: Usage) {
+  return {
+    cacheHitText: typeof usage.cache_hit_pct === 'number' ? `◎ ${usage.cache_hit_pct}%` : '',
+    compressions: typeof usage.compressions === 'number' ? usage.compressions : 0,
+    devCreditsText: typeof usage.dev_credits_spent_micros === 'number'
+      ? `Δ ${(usage.dev_credits_spent_micros / 10000).toFixed(1)}¢` : '',
+    latencyText: typeof usage.avg_latency_s === 'number' ? `◷ ${usage.avg_latency_s.toFixed(1)}s` : '',
+    subagentCount: typeof usage.active_subagents === 'number' ? usage.active_subagents : 0,
+    tpsText: typeof usage.avg_tps === 'number' ? `↑ ${Math.round(usage.avg_tps)} t/s` : ''
+  }
+}
+
+function shortSessionTitle(title: string | undefined) {
+  const points = Array.from(title ?? '')
+
+  return points.length <= 18 ? points.join('') : `${points.slice(0, 17).join('')}…`
+}
+
+function statusSlotWidth(
+  busy: boolean,
+  indicatorStyle: NonNullable<StatusRuleProps['indicatorStyle']>,
+  activeTurn: boolean,
+  noticeWidth: number | undefined,
+  status: string
+) {
+  return busy
+    ? busyIndicatorWidth(indicatorStyle, activeTurn)
+    : noticeWidth ?? stringWidth(status)
+}
+
 export function StatusRule({
   battery,
   focusView,
@@ -547,6 +607,7 @@ export function StatusRule({
   indicatorStyle = 'kaomoji',
   notice,
   usage,
+  yolo = false,
   bgCount,
   lastTurnEndedAt,
   liveSessionCount,
@@ -563,6 +624,8 @@ export function StatusRule({
   const contextMark = usage.context_estimated ? '~' : ''
   const barColor = ctxBarColor(pct, t)
   const segs = statusBarSegments(cols)
+  const displaySessionTitle = shortSessionTitle(sessionTitle)
+  const { cacheHitText, compressions, devCreditsText, latencyText, subagentCount, tpsText } = usageStatusLabels(usage)
 
   // display.status_bar.fields visibility gate (same key + names as the
   // classic CLI bar). null = user hasn't customized → everything shows.
@@ -570,16 +633,9 @@ export function StatusRule({
 
   // On narrow terminals the context read-out collapses to a bare token count
   // (`12k tok`) and the visual fill bar is dropped entirely.
-  const ctxLabel =
-    ok('context_detail') || ok('context_pct')
-      ? usage.context_max
-        ? segs.compactCtx
-          ? `${contextMark}${compactNumber(usage.context_used ?? 0)} tok`
-          : `${contextMark}${compactNumber(usage.context_used ?? 0)}/${compactNumber(usage.context_max ?? 0)}`
-        : (usage.total ?? 0) > 0
-          ? `${compactNumber(usage.total)} tok`
-          : ''
-      : ''
+  const ctxLabel = contextStatusLabel(usage, segs.compactCtx, ok('context_detail') || ok('context_pct'))
+
+  const tokenLabel = sessionTokenLabel(usage)
 
   const bar = !segs.compactCtx && usage.context_max && ok('context_pct') ? ctxBar(pct) : ''
   const modelText = modelLabel(model, modelReasoningEffort, modelFast, modelReasoningEffortWire)
@@ -589,6 +645,8 @@ export function StatusRule({
   const batteryText = showBattery ? batteryLabel(battery!) : ''
   const batteryColorVal = showBattery ? batteryColor(battery!, t) : ''
   const batteryWidth = showBattery ? stringWidth(`${batteryText} │ `) : 0
+  const showYolo = yolo && ok('yolo')
+  const yoloWidth = showYolo ? stringWidth(' │ ⚠ YOLO') : 0
 
   // A credits notice replaces the status/verb slot, but only when idle —
   // while busy the FaceTicker always wins (R1 render priority). The notice
@@ -607,11 +665,7 @@ export function StatusRule({
   // yields first. The busy face width depends on the active /indicator style
   // (kaomoji is wide + verb; unicode is a bare 1-col spinner). When a notice
   // occupies the slot it reserves only `noticeReserve` (it shrinks/truncates).
-  const slotWidth = busy
-    ? busyIndicatorWidth(indicatorStyle, turnStartedAt != null)
-    : showNotice
-      ? noticeReserve
-      : stringWidth(status)
+  const slotWidth = statusSlotWidth(busy, indicatorStyle, turnStartedAt != null, showNotice ? noticeReserve : undefined, status)
 
   const essentialWidth =
     stringWidth('─ ') +
@@ -619,9 +673,11 @@ export function StatusRule({
     slotWidth +
     stringWidth(' │ ') +
     stringWidth(modelText) +
-    (ctxLabel ? stringWidth(' │ ') + stringWidth(ctxLabel) : 0)
+    (ctxLabel ? stringWidth(' │ ') + stringWidth(ctxLabel) : 0) +
+    (tokenLabel ? stringWidth(' │ ') + stringWidth(tokenLabel) : 0) +
+    yoloWidth
 
-  const rightLabel = sessionTitle && ok('title') ? ` ${sessionTitle} ` : cwdLabel
+  const rightLabel = displaySessionTitle && ok('title') ? `${cwdLabel}  ${displaySessionTitle}` : cwdLabel
   const { leftWidth, rightWidth, separatorWidth } = statusRuleWidths(cols, rightLabel, essentialWidth)
 
   // Whole-segment progressive disclosure for the tail: a segment renders only
@@ -643,16 +699,6 @@ export function StatusRule({
   }
 
   const sessionCountText = liveSessionCount > 0 ? statusSessionCountLabel(liveSessionCount) : ''
-  const compressions = typeof usage.compressions === 'number' ? usage.compressions : 0
-
-  // Dev-only readout (HERMES_DEV_CREDITS). The server omits the key entirely unless the
-  // flag is on, so this segment self-hides for normal users. micros→cents is allowed money
-  // math (display formatting) — never parseFloat a *_usd. Signed: a mid-session top-up that
-  // raises remaining nets a negative Δ (honest).
-  const devCreditsText =
-    typeof usage.dev_credits_spent_micros === 'number'
-      ? `Δ ${(usage.dev_credits_spent_micros / 10000).toFixed(1)}¢`
-      : ''
 
   const showBar = !!bar && fits(SEP + stringWidth(`[${bar}] ${pct != null ? `${contextMark}${pct}%` : ''}`))
   const showDuration = segs.duration && ok('duration') && !!sessionStartedAt && fits(SEP + MAX_DURATION_WIDTH)
@@ -672,17 +718,13 @@ export function StatusRule({
   // Cache-hit % + rolling latency / tokens-per-sec — mirrored from the classic
   // CLI bar (PR #98250). The server omits the keys when no data exists (zero
   // cache reads, Codex app-server with no latency), so these self-hide.
-  const cacheHitText = typeof usage.cache_hit_pct === 'number' ? `◎ ${usage.cache_hit_pct}%` : ''
   const showCacheHit = segs.cacheHit && ok('cache_hit') && !!cacheHitText && fits(SEP + stringWidth(cacheHitText))
-  const latencyText = typeof usage.avg_latency_s === 'number' ? `◷ ${usage.avg_latency_s.toFixed(1)}s` : ''
   const showLatency = segs.latency && ok('latency') && !!latencyText && fits(SEP + stringWidth(latencyText))
-  const tpsText = typeof usage.avg_tps === 'number' ? `↑ ${Math.round(usage.avg_tps)} t/s` : ''
   const showTps = segs.tps && ok('tps') && !!tpsText && fits(SEP + stringWidth(tpsText))
 
   const showVoice = segs.voice && ok('voice') && !!voiceLabel && fits(SEP + stringWidth(voiceLabel))
   const showSessionCount = !!sessionCountText && fits(SEP + stringWidth(sessionCountText))
   const showBg = segs.bg && ok('bg_tasks') && bgCount > 0 && fits(SEP + stringWidth(T.status.bgTasks(bgCount)))
-  const subagentCount = typeof usage.active_subagents === 'number' ? usage.active_subagents : 0
 
   const showSubagents =
     segs.subagents && ok('bg_subagents') && subagentCount > 0 && fits(SEP + stringWidth(`⛓ ${subagentCount}`))
@@ -728,6 +770,12 @@ export function StatusRule({
             ellipsizes instead of crushing model │ ctx (R3-M7). */}
         <Box flexDirection="row" flexShrink={0}>
           <Text color={t.color.border}>{'─ '}</Text>
+          {showYolo ? (
+            <>
+              <Text color={t.color.warn}>⚠ YOLO</Text>
+              <Text color={t.color.muted}>{' │ '}</Text>
+            </>
+          ) : null}
           {showBattery ? (
             <Text color={batteryColorVal}>
               {batteryText}
@@ -772,6 +820,12 @@ export function StatusRule({
             <Text color={t.color.muted} wrap="truncate-end">
               {' │ '}
               {ctxLabel}
+            </Text>
+          ) : null}
+          {tokenLabel ? (
+            <Text color={t.color.muted} wrap="truncate-end">
+              {' │ '}
+              {tokenLabel}
             </Text>
           ) : null}
         </Box>
@@ -871,17 +925,20 @@ export function StatusRule({
             {devCreditsText}
           </Text>
         ) : null}
-        {/* SpawnHud isn't part of the tail budget (its width is dynamic), so it
-            renders last — any overflow truncates the HUD itself rather than the
-            budgeted segments before it. It self-hides when no delegation runs. */}
-        <SpawnHud t={t} />
+        {/* SpawnHud is the lowest-priority tail segment. It receives the
+            remaining budget and self-hides when the dynamic label cannot fit. */}
+        <SpawnHud maxWidth={tailBudget} t={t} />
       </Box>
 
       {rightWidth > 0 ? (
         <>
           <Text color={t.color.border}>{separatorWidth >= 3 ? ' ─ ' : ' '}</Text>
           <Box flexShrink={0} width={rightWidth}>
-            <Text bold={!!sessionTitle} color={sessionTitle ? t.color.accent : t.color.label} wrap="truncate-end">
+            <Text
+              bold={!!displaySessionTitle}
+              color={displaySessionTitle ? t.color.accent : t.color.label}
+              wrap="truncate-end"
+            >
               {rightLabel}
             </Text>
           </Box>
@@ -1001,6 +1058,7 @@ interface StatusRuleProps {
   modelFast?: boolean
   modelReasoningEffort?: string
   modelReasoningEffortWire?: string
+  yolo?: boolean
   indicatorStyle?: IndicatorStyle
   notice?: Notice | null
   sessionStartedAt?: null | number

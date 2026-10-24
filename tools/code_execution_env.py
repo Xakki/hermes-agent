@@ -116,6 +116,8 @@ def _scrub_child_env(source_env, is_passthrough=None, is_windows=None, toolchain
         for key in (DELEGATED_CHILD_ENV_MARKER, "HERMES_KANBAN_DB", "HERMES_KANBAN_BOARD"):
             if key in scoped:
                 scrubbed[key] = scoped[key]
+    from tools.environments.local import _inject_yolo_env
+    _inject_yolo_env(scrubbed)
     return delegated_child_subprocess_env(scrubbed)
 
 

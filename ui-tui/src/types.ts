@@ -126,12 +126,24 @@ export interface ClarifyQuestion {
 }
 
 export interface ClarifyReq {
+  question?: string
+  choices?: string[] | null
   sharedControl?: SharedControl
   requestId: string
   questions: ClarifyQuestion[]
   /** Answers already locked server-side (qid → answer): seeded from the
    *  reconnect replay, updated as the user locks each question. */
   answers?: Record<string, string>
+  actionMetadata?: { id: string; label: string; description: string }[]
+  interaction?: {
+    remaining_seconds: number
+    reminder_remaining_seconds: number
+    reminded: boolean
+    show_countdown: boolean
+    phase: string
+  }
+  /** Local receipt time, not an authority or backend wall-clock deadline. */
+  receivedAt?: number
 }
 
 export interface Msg {
@@ -199,6 +211,8 @@ export interface SessionInfo extends SessionLiveInfo {
     target_profile_home: string
     status: string
     user: string
+    display_kind?: 'process_complete' | 'async_delegation_complete' | 'internal_notification' | null
+    display_text?: string | null
     outcome?: string | null
   }>
 }

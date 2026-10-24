@@ -11,6 +11,11 @@ export function rememberServerRequest(request: ServerRequest): void {
   open.set(request.id, request)
 }
 
+/** Map insertion order preserves FIFO even when reconnect replaces a request by id. */
+export function getPendingApprovalRequest(): ServerRequest | undefined {
+  return [...open.values()].find(request => request.method === 'approval')
+}
+
 export function forgetServerRequest(id: string): void {
   open.delete(id)
 }

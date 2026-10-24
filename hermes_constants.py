@@ -22,6 +22,8 @@ _HERMES_HOME_OVERRIDE: ContextVar[str | object] = ContextVar("_HERMES_HOME_OVERR
 INDICATOR_STYLES: tuple[str, ...] = ("ascii", "emoji", "kaomoji", "unicode")
 DEFAULT_INDICATOR_STYLE: str = "kaomoji"
 
+SUDO_PASSWORD_TIMEOUT_SECONDS: int = 1800
+
 
 def set_hermes_home_override(path: str | Path | None) -> Token:
     """Set a context-local Hermes home override and return its reset token.
@@ -502,7 +504,7 @@ def _run_version_probe(argv: list[str], **kwargs):
         from hermes_cli._subprocess_compat import windows_hide_flags
         return subprocess.run(  # noqa: PLW1510 -- forwarding wrapper: callers pass subprocess kwargs via **kwargs (check may arrive through it); an explicit check=False would raise TypeError
             argv, capture_output=True, timeout=10, creationflags=windows_hide_flags(), **kwargs,
-        
+
         )
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return None
@@ -1464,4 +1466,3 @@ def normalize_scope(scope: str | Path | None) -> str | None:
     normcase on Windows) so writes and reads agree on the key.
     """
     return hermes_home_key(scope) if scope is not None else None
-

@@ -1,6 +1,7 @@
 import queue
 import threading
 import time
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import cli as cli_module
@@ -104,22 +105,32 @@ def test_secret_capture_uses_masked_prompt_without_tui():
 def test_secret_capture_timeout_clears_hidden_input_buffer():
     cli = _make_cli_stub(with_app=True)
     cleared = {"value": False}
+    now = [0.0]
 
     def clear_buffer():
         cleared["value"] = True
 
     cli._clear_secret_input_buffer = clear_buffer
 
-    with patch("hermes_cli.callbacks.queue.Queue.get", side_effect=queue.Empty), patch(
-        "hermes_cli.callbacks._time.monotonic",
-        side_effect=[0, 121],
-    ):
+    def expire_wait(*, timeout):
+        assert timeout == 1
+        assert cli._secret_deadline - now[0] == 600
+        cleared["value"] = False  # require expiry cleanup, not only the entry clear
+        now[0] = cli._secret_deadline
+        raise queue.Empty
+
+    with patch("hermes_cli.callbacks.queue.Queue.get", side_effect=expire_wait), patch(
+        "hermes_cli.callbacks._time", SimpleNamespace(monotonic=lambda: now[0])
+    ), patch("hermes_cli.callbacks.save_env_value_secure") as save_secret:
         result = prompt_for_secret(cli, "TENOR_API_KEY", "Tenor API key")
+        save_secret.assert_not_called()
 
     assert result["success"] is True
     assert result["skipped"] is True
     assert result["reason"] == "timeout"
     assert cleared["value"] is True
+    assert cli._secret_state is None
+    assert cli._secret_deadline == 0
 
 
 def test_cli_chat_registers_secret_capture_callback():

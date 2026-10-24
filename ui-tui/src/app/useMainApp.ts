@@ -19,7 +19,7 @@ import { WHEEL_SCROLL_STEP } from '../config/limits.js'
 import { RESIZE_COALESCE_MS } from '../config/timing.js'
 import { hasLeadGap, prevRenderedMsg } from '../domain/blockLayout.js'
 import { SECTION_NAMES, sectionMode } from '../domain/details.js'
-import { composeTabTitle, fmtProjectCwdBranch, shortCwd } from '../domain/paths.js'
+import { composeTabTitle, fmtAgentStatus, shortCwd } from '../domain/paths.js'
 import { type GatewayClient } from '../gatewayClient.js'
 import type { SubagentListResponse } from '../gatewayTypes.js'
 import type {
@@ -31,7 +31,7 @@ import type {
   SharedControlRespondResponse,
   TerminalResizeResponse
 } from '../gatewayTypes.js'
-import { useGitBranch } from '../hooks/useGitBranch.js'
+import { useGitStatus } from '../hooks/useGitStatus.js'
 import { pruneVirtualHeightCache, useVirtualHistory } from '../hooks/useVirtualHistory.js'
 import { t } from '../i18n/runtime.js'
 import { useT } from '../i18n/useT.js'
@@ -47,6 +47,7 @@ import { onUserWidgets } from '../sdk/userWidgets.js'
 import type { Msg, PanelSection } from '../types.js'
 
 import { applyAgentSnapshot } from './agentRoster.js'
+import { answerApprovalRequest } from './approvalRequestQueue.js'
 import { clarifySettledRows } from './clarifyTranscript.js'
 import { createGatewayEventHandler } from './createGatewayEventHandler.js'
 import { createServerRequestHandler } from './createServerRequestHandler.js'
@@ -861,7 +862,7 @@ export function useMainApp(gw: GatewayClient) {
       return
     }
 
-    if (!respondToServerRequest(clarify.requestId, {})) {
+    if (!respondToServerRequest(clarify.requestId, clarify.interaction ? { answer: 'stop' } : {})) {
       // The request already expired (request.cancel raced the keystroke): nothing to answer.
       patchOverlayState({ clarify: null })
 
@@ -878,6 +879,15 @@ export function useMainApp(gw: GatewayClient) {
     (qid: string, answer: string) => {
       const clarify = overlay.clarify
       const question = clarify?.questions.find(q => q.qid === qid)
+
+      if (clarify && !clarify.questions.length && capturePromptResponseGuard('clarify', clarify)()) {
+        if (respondToServerRequest(clarify.requestId, { answer })) {
+          patchOverlayState({ clarify: null })
+          patchUiState({ status: 'running…' })
+        }
+
+        return
+      }
 
       if (!clarify || !question) {
         return
@@ -1269,7 +1279,7 @@ export function useMainApp(gw: GatewayClient) {
         }).then(r => r && settle())
       }
 
-      respondWith(overlay.approval.requestId, { choice }, settle)
+      answerApprovalRequest(overlay.approval.requestId, choice)
     },
     [overlay.approval, respondWith, rpc]
   )
@@ -1597,14 +1607,11 @@ export function useMainApp(gw: GatewayClient) {
   const appProgress = useMemo(() => ({ showProgressArea }), [showProgressArea])
 
   const cwd = ui.info?.cwd || process.env.HERMES_CWD || process.cwd()
-  const gitBranch = useGitBranch(cwd)
+  const gitStatus = useGitStatus(cwd)
 
   const appStatus = useMemo(
     () => ({
-      // Cap the status-bar cwd/branch label tighter than the shared default so
-      // it doesn't dominate the bar; the status rule reserves the left-side
-      // essentials and truncates this further on narrow terminals.
-      cwdLabel: fmtProjectCwdBranch(cwd, gitBranch, ui.info?.project?.name, 28),
+      cwdLabel: fmtAgentStatus(cwd, gitStatus, ui.info?.project?.name),
       goodVibesTick,
       lastTurnEndedAt: ui.sid ? lastTurnEndedAt : null,
       sessionStartedAt: ui.sid ? sessionStartedAt : null,
@@ -1623,7 +1630,7 @@ export function useMainApp(gw: GatewayClient) {
     }),
     [
       cwd,
-      gitBranch,
+      gitStatus,
       goodVibesTick,
       i18n,
       lastTurnEndedAt,

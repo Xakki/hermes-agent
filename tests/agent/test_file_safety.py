@@ -1,26 +1,22 @@
-"""Tests for agent/file_safety.py read guards — env file blocking.
+"""Tests for the owner-selected project read policy and independent home guards.
 
-Run with:  python -m pytest tests/agent/test_file_safety.py -v
+Run with: scripts/run_tests.sh tests/agent/test_file_safety.py -v
 """
 
-import os
 from unittest.mock import patch
 
 import pytest
 
-from agent.file_safety import (
-    _BLOCKED_PROJECT_ENV_BASENAMES,
-    get_read_block_error,
-)
+from agent.file_safety import get_read_block_error
 
 
 # ---------------------------------------------------------------------------
-# Project-local .env file blocking (issue #20734)
+# Project-local environment files follow the owner's exact-basename policy.
 # ---------------------------------------------------------------------------
 
 
 class TestEnvFileReadBlocking:
-    """Secret-bearing .env files must be blocked by get_read_block_error."""
+    """Only .secret is denied by the project-local basename rule."""
 
     @pytest.mark.parametrize("basename", [
         ".env",
@@ -30,34 +26,35 @@ class TestEnvFileReadBlocking:
         ".env.test",
         ".env.staging",
         ".envrc",
-    ])
-    def test_blocked_env_basenames(self, basename):
-        """All secret-bearing .env basenames are blocked regardless of directory."""
-        path = f"/tmp/project/{basename}"
-        error = get_read_block_error(path)
-        assert error is not None, f"{basename} should be blocked"
-        assert "Access denied" in error
-        assert "secret-bearing" in error.lower() or "environment file" in error.lower()
-
-
-    @pytest.mark.parametrize("basename", [
         ".ENV",
         ".Env.Local",
         ".ENV.PRODUCTION",
         ".ENVRC",
+        ".env.example",
+        ".secret.local",
     ])
-    def test_blocked_env_basenames_case_insensitive(self, basename):
-        """Secret-bearing .env basenames are blocked regardless of case."""
-        error = get_read_block_error(f"/tmp/project/{basename}")
+    def test_project_env_basenames_are_readable(self, tmp_path, basename):
+        assert get_read_block_error(str(tmp_path / "project" / basename)) is None
+
+
+    @pytest.mark.parametrize("basename", [
+        ".secret",
+        ".SECRET",
+        ".Secret",
+    ])
+    def test_secret_basename_is_blocked_case_insensitively(self, tmp_path, basename):
+        error = get_read_block_error(str(tmp_path / "project" / basename))
         assert error is not None, f"{basename} should be blocked"
         assert "Access denied" in error
         assert "environment file" in error.lower()
 
 
-    def test_allowed_env_example(self):
-        """"The .env.example file is explicitly allowed — it's documentation, not a secret."""
-        error = get_read_block_error("/tmp/project/.env.example")
-        assert error is None
+    def test_symlink_to_secret_stays_blocked(self, tmp_path):
+        target = tmp_path / ".secret"
+        target.write_text("synthetic", encoding="utf-8")
+        alias = tmp_path / "public.txt"
+        alias.symlink_to(target)
+        assert get_read_block_error(str(alias)) is not None
 
 
 
@@ -110,13 +107,32 @@ class TestCombinedGuards:
         hermes_home.mkdir()
 
         with patch("agent.file_safety._hermes_home_path", return_value=hermes_home):
-            # Regular project .env should still be blocked
-            error = get_read_block_error("/workspace/.env")
+            error = get_read_block_error(str(tmp_path / "project" / ".secret"))
             assert error is not None
 
-            # .env.example should still be allowed
-            error = get_read_block_error("/workspace/.env.example")
+            error = get_read_block_error(str(tmp_path / "project" / ".env"))
             assert error is None
+
+    @pytest.mark.parametrize("relative", [
+        ".env", "auth.json", ".anthropic_oauth.json", "auth/google_oauth.json",
+        "mcp-tokens/token.json", "vault/vault.key", "browser-profile/Default/Cookies",
+    ])
+    def test_profile_and_root_credentials_remain_read_denied(self, tmp_path, monkeypatch, relative):
+        import agent.file_safety as fs
+
+        root = tmp_path / "hermes"
+        profile = root / "profiles" / "synthetic"
+        profile.mkdir(parents=True)
+        monkeypatch.setattr(fs, "_hermes_root_path", lambda: root)
+        monkeypatch.setattr(fs, "_hermes_home_path", lambda: profile)
+        for index, home in enumerate((root, profile)):
+            target = home / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("synthetic", encoding="utf-8")
+            alias = tmp_path / f"alias-{index}"
+            alias.symlink_to(target)
+            assert get_read_block_error(str(target)) is not None
+            assert get_read_block_error(str(alias)) is not None
 
     def test_cache_guard_still_works_with_env_guard(self, tmp_path):
         """Cache file blocking still works when env guard is active."""

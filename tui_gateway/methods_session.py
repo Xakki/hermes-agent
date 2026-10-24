@@ -110,16 +110,9 @@ def _cwd_info(session: dict, cwd: str, branch=None) -> dict:
 def _session_row_summary(row: dict, *, tip_row: dict | None = None, resolved_id=None, db=None) -> dict:
     """Compact session.list row; ``tip_row``/``resolved_id`` come from the compression tip.
     ``db`` adds ``live_message_count`` (see ``_live_count_field``)."""
-    tip_row = tip_row or row
-    return {"id": row["id"], **({} if resolved_id is None else {"resolved_id": resolved_id}),
-            "title": row.get("title") or "", "preview": tip_row.get("preview") or "",
-            "started_at": row.get("started_at") or 0, "message_count": tip_row.get("message_count") or 0,
-            "source": row.get("source") or "",
-            # Durable lineage root for compressed conversations — the same field REST
-            # projects (api_server._session_response); RPC consumers (desktop pinning /
-            # lineage dedup) group on it. #66663.
-            "_lineage_root_id": row.get("_lineage_root_id"),
-            **({} if db is None else _live_count_field(db, row["id"] if resolved_id is None else resolved_id))}
+    from tui_gateway.session_listing import stored_session_summary
+    live_count = {} if db is None else _live_count_field(db, row["id"] if resolved_id is None else resolved_id)
+    return stored_session_summary(row, tip_row=tip_row, resolved_id=resolved_id, live_count=live_count)
 
 
 from hermes_state_sessions import INTERNAL_LISTING_SOURCES
@@ -146,7 +139,16 @@ def _auto_resume_denied_source(row: dict) -> bool:
 def _listing_rows(db, limit: int, **kwargs) -> list:
     """Human-facing ``list_sessions_rich`` rows (most recent first), deny-list applied."""
     rows = db.list_sessions_rich(source=None, limit=limit, order_by_last_active=True, compact_rows=True, **kwargs)
-    return [row for row in rows if not _denied_source(row)]
+    visible = [row for row in rows if not _denied_source(row)]
+    source_counts: dict[str, int] = {}
+    safe_sources = {"cli", "tui", "desktop", "oneshot", "subagent", "tool", "kanban", "unknown", "cron", "api"}
+    for row in rows:
+        source = str(row.get("source") or "").strip().lower()
+        key = source if source in safe_sources else "other"
+        source_counts[key] = source_counts.get(key, 0) + 1
+    logger.debug("session.list diagnostics raw_count=%d visible_count=%d source_counts=%s hidden_included=%s",
+                 len(rows), len(visible), source_counts, bool(kwargs.get("include_hidden")))
+    return visible
 
 
 def _snapshot_sessions(rid):
@@ -206,29 +208,6 @@ def _active_pet():
     enabled, pet, scale = _pet_active_selection()
     return None if not enabled or pet is None or not pet.exists else (pet, scale)
 
-
-def _billing_call(rid, fn, extra: dict | None = None) -> dict:
-    """Portal call → ok; BillingError → serialized envelope, else generic; ``extra`` rides both ERROR envelopes."""
-    from hermes_cli.nous_billing import BillingError
-    try:
-        return _ok(rid, fn())
-    except BillingError as exc:
-        return _ok(rid, {**_serialize_billing_error(exc), **(extra or {})})
-    except Exception as exc:
-        return _ok(rid, {"ok": False, "error": "error", "message": str(exc), **(extra or {})})
-
-
-def _billing_invalid(rid, message: str, error: str = "invalid_request") -> dict:
-    return _ok(rid, {"ok": False, "error": error, "message": message})
-
-
-def _billing_pick(result: dict, **fields) -> dict:
-    """``{"ok": True, <snake>: result[<camel>], ...}`` in ``fields`` order."""
-    return {"ok": True, **{key: result.get(src) for key, src in fields.items()}}
-
-
-def _billing_pending_change(result: dict) -> dict:
-    return {"ok": True, "message": result.get("message"), "payload": result}
 
 
 # ── session.create / list / most_recent / facts ──────────────────────
@@ -548,20 +527,22 @@ def _(rid, params: dict, db) -> dict:
         # Over-fetch: per-source filtering + tip merging must not leave us short. ``include_hidden`` is for
         # surfaces that OWN hidden sessions (Bots pane, pickers).
         from pathlib import Path
-
         from hermes_cli.session_listing import show_subagent_sessions
-
-        # ``sessions.show_subagents`` (the store's own profile config) re-admits delegate runs (#97202).
-        # A store without a path has no profile config to read, so it keeps the default shape.
+        project_root = _active_project_root(params, db)
+        if not project_root:
+            logger.warning("session.list unavailable reason=project_context_missing")
+            return _err(rid, 4008, "project context required")
         db_path = getattr(db, "db_path", None)
         include_subagents = bool(db_path) and show_subagent_sessions(Path(db_path).parent)
         rows = _listing_rows(db, max(limit * 2, 200), include_hidden=_flag(params, "include_hidden"),
-                             include_subagents=include_subagents)[:limit]
+                             project_root=project_root, include_subagents=include_subagents)[:limit]
+        logger.info("session.list completed output_count=%d", len(rows))
         # No live_message_count here on purpose: the bulk listing serves rows whose open
         # paths never demand history (expectHistory defaults false); the count is a
         # per-session scan and would turn one listing call into hundreds of them.
         return _ok(rid, {"sessions": [_session_row_summary(s) for s in rows]})
     except Exception as e:
+        logger.warning("session.list failed error_type=%s", type(e).__name__)
         return _err(rid, 5006, str(e))
 
 
@@ -1061,6 +1042,14 @@ def _(rid, params: dict) -> dict:
         _resume_follow_tip(ctx)
         if (resp := _resume_guard(ctx)) is not None:
             return resp
+        # Preserve live reattach refusal before enforcing project ownership.
+        with _session_resume_lock:
+            live = _find_live_session_by_key(ctx.target, ctx.profile_home)
+            if live is not None and (resp := _reattach_refusal(ctx.rid, live[0], live[1])) is not None:
+                return resp
+        active_root = _active_project_root(params, ctx.db)
+        if not active_root or _session_project_root(ctx.found) != active_root:
+            return _err(rid, 4008, "session outside active project")
         ctx.profile_resume_cwd = (_resumable_stored_cwd(_str_param(ctx.found, "cwd"), ctx.profile_home)
                                   or _profile_default_cwd(ctx.profile_home))
         with _session_resume_lock:  # fast path: reuse a session live IN THIS PROFILE, never another's
@@ -1150,7 +1139,11 @@ def _(rid, params: dict) -> dict:
     # ``_finalized`` sessions linger until the reaper pops them (they inflated the footer). Do NOT filter on
     # the WS-detached sentinel: detached is attachable until grace-reap, and ``hermes --tui`` rides stdio.
     # Keep insertion order (focused must not jump).
-    rows = [_session_live_item(sid, session, current) for sid, session in snapshot if not session.get("_finalized")]
+    project_root = _active_project_root(params, _get_db())
+    if not project_root:
+        return _err(rid, 4008, "project context required")
+    rows = [_session_live_item(sid, session, current) for sid, session in snapshot
+            if not session.get("_finalized") and _session_project_root(session) == project_root]
     return _ok(rid, {"sessions": rows})
 
 
@@ -1186,6 +1179,10 @@ def _(rid, params: dict) -> dict:
     with _profile_db(params, writer=True) as db:
         if db is None:
             return _db_unavailable_error(rid, code=5036)
+        active_root = _active_project_root(params, db)
+        target_row = db.get_session(target)
+        if not active_root or target_row is None or _session_project_root(target_row) != active_root:
+            return _err(rid, 4008, "session outside active project")
         try:
             home = Path(profile_home) if profile_home is not None else get_hermes_home()
             deleted = delete_chat(db, target, lambda: db.delete_session(
@@ -2351,6 +2348,8 @@ def _(rid, params: dict) -> dict:
 def register(server) -> None:
     """Publish this module's helpers onto ``server`` (rebound to its globals) and install handlers."""
     bind_module(globals(), server, skip=("_",))
+    from . import methods_session_billing
+    methods_session_billing.register(server)
     from . import methods_session_branch
     methods_session_branch.register(server)
     from . import methods_session_interrupt

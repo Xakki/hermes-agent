@@ -34,6 +34,9 @@ _APPROVAL_OUTCOME_KEYS = {
     "always": "cli.approval.outcome_always",
     "deny": "cli.approval.outcome_deny"}
 
+_CLARIFY_TIMEOUT_REPLY = (
+    "The user did not provide a response within the time limit. "
+    "Pause this decision. Do not infer permission or expand the accepted scope.")
 
 def _approval_outcome_label(result) -> str:
     key = _APPROVAL_OUTCOME_KEYS.get(result)
@@ -90,6 +93,14 @@ class CLIModalMixin:
     palette, slash-confirm, external editor."""
 
     _connection_state = None
+
+    def _handle_autonomy_command(self, cmd_original):
+        from hermes_cli.interaction_host import cli_host
+        manager = self._get_goal_manager()
+        scope = manager.state.goal if manager and manager.state else ""
+        parts = cmd_original.split(None, 1)
+        arg = parts[1] if len(parts) > 1 else "status"
+        print(cli_host(self).command(arg, scope, ask=lambda question, choices: self._clarify_callback(question, list(choices))))
 
     def _open_external_editor(self, buffer=None) -> bool:
         """Open the active input buffer in an external editor."""
@@ -286,11 +297,45 @@ class CLIModalMixin:
         """
         paint = paint or self._paint_now
         last = _time.monotonic()
+        reminded = False
+        from hermes_cli.interaction_host import cli_host
+        import uuid
+        host = cli_host(self) if getattr(self, "session_id", None) else None
+        logical = getattr(self, "_interaction_wait_request", None)
+        request_id = logical.request_id if logical else uuid.uuid4().hex
+        deadline = logical.deadline if logical else getattr(self, deadline_attr)
+        if logical and host is not None:
+            def withdraw():
+                response_queue._interaction_cancelled = True
+                response_queue.put(None)
+            host._withdraw = withdraw
+        if host is not None and logical is None:
+            host.lifecycle._record("host", "opened", request_id, purpose=deadline_attr)
         while True:
+            if logical and host is not None and host.lifecycle._pending(request_id) is None:
+                return _TIMED_OUT if logical.state == "expired" else None
+            if deadline is not None and _time.monotonic() >= deadline:
+                if host is not None:
+                    host.lifecycle._record("host", "expired", request_id, purpose=deadline_attr)
+                return _TIMED_OUT
+            if deadline is not None and not reminded and _time.monotonic() >= deadline - 300:
+                reminded = True
+                emit = host.lifecycle.reminder(request_id) is not None if logical and host else True
+                if emit and hasattr(self, "_ring_bell"):
+                    self._ring_bell(prompt=True, context="Human decision still pending")
+                if host is not None and logical is None:
+                    host.lifecycle._record("host", "reminder", request_id, purpose=deadline_attr)
             try:
-                return response_queue.get(timeout=1)
+                value = response_queue.get(timeout=1)
+                if logical and host is not None and host.lifecycle._pending(request_id) is None:
+                    return _TIMED_OUT if logical.state == "expired" else None
+                if deadline is not None and _time.monotonic() >= deadline:
+                    return _TIMED_OUT
+                if host is not None and logical is None:
+                    cancelled = getattr(response_queue, "_interaction_cancelled", False)
+                    host.lifecycle._record("host" if cancelled else "user", "cancelled" if cancelled else "answered", request_id, purpose=deadline_attr)
+                return value
             except queue.Empty:
-                deadline = getattr(self, deadline_attr)
                 if deadline is not None and deadline - _time.monotonic() <= 0:
                     return _TIMED_OUT
                 now = _time.monotonic()
@@ -403,11 +448,12 @@ class CLIModalMixin:
         if not choice_raw:
             return None
         allowed = {choice[0] for choice in choices}
+        exact = {choice.casefold(): choice for choice in allowed}
         normalized = _CONFIRM_ALIASES.get(choice_raw)
         if normalized in allowed:
             return normalized
-        if choice_raw in allowed:
-            return choice_raw
+        if choice_raw in exact:
+            return exact[choice_raw]
         return None
 
     def _build_command_palette_entries(self) -> list:
@@ -1000,7 +1046,21 @@ class CLIModalMixin:
         self._clarify_freetext = True
         self._clarify_prefill = meta.get("other_text") or "" if meta.get("kind") == "other" else ""
 
-    def _clarify_callback(self, questions):
+    def _interaction_clarify_callback(self, question, choices, multi_select=False, questions=None, *, deadline=None):
+        """Adapt scalar interaction prompts to the batch state expected by every input binding."""
+        if questions:
+            return self._clarify_callback(questions, deadline=deadline)
+        result = self._clarify_callback([{
+            "qid": "q0",
+            "question": question,
+            "choices": list(choices) if choices else None,
+            "multi_select": bool(multi_select and choices),
+        }], deadline=deadline)
+        if result["outcome"] == "timed_out":
+            return "No human answer. Pause any action requiring this clarification; no new scope or permission is granted."
+        return result["answers"].get("q0")
+
+    def _clarify_callback(self, questions, choices=None, multi_select=False, *, deadline=None):
         """Clarify-tool platform callback (agent thread, #18450): the batch panel (A-compact) shows
         all questions, one active, and blocks until the key bindings lock every answer. Returns
         ``{"answers": {qid: raw | None}, "outcome"}`` (None = skipped): ``submitted`` when every
@@ -1008,7 +1068,10 @@ class CLIModalMixin:
         from cli import CLI_CONFIG, _DIM, _RST, _cprint
         from tools.clarify_gateway import resolve_clarify_timeout
 
-        timeout = resolve_clarify_timeout(CLI_CONFIG)
+        if isinstance(questions, str):
+            return self._interaction_clarify_callback(questions, choices, multi_select, deadline=deadline)
+        configured = resolve_clarify_timeout(CLI_CONFIG)
+        timeout = min(600, configured) if configured > 0 else 600
         response_queue = queue.Queue()
         state = {
             "questions": list(questions),
@@ -1024,7 +1087,7 @@ class CLIModalMixin:
             "selected_indices": None}
         self._clarify_state = state
         self._clarify_batch_set_active(state, 0)
-        self._clarify_deadline = None if timeout <= 0 else _time.monotonic() + timeout
+        self._clarify_deadline = min(_time.monotonic() + timeout, deadline) if deadline is not None else _time.monotonic() + timeout
         self._ring_bell(prompt=True, context=t("cli.clarify.bell_context"))
         self._paint_now()
 
@@ -1056,11 +1119,12 @@ class CLIModalMixin:
         """Prompt for a sudo password through the prompt_toolkit UI (agent thread); clarify-style
         state + queue answered by the Enter binding."""
         from cli import _DIM, _RST, _cprint
+        from hermes_constants import SUDO_PASSWORD_TIMEOUT_SECONDS
 
         response_queue = queue.Queue()
         self._capture_modal_input_snapshot()
         self._sudo_state = {"response_queue": response_queue}
-        self._sudo_deadline = _time.monotonic() + 45
+        self._sudo_deadline = _time.monotonic() + SUDO_PASSWORD_TIMEOUT_SECONDS
         self._ring_bell(prompt=True, context=t("cli.secret.bell_sudo"))
         self._paint_now()
 
@@ -1091,7 +1155,7 @@ class CLIModalMixin:
         from cli import CLI_CONFIG, _DIM, _RST, _cprint
 
         with self._approval_lock:
-            timeout = int(CLI_CONFIG.get("approvals", {}).get("timeout", 300))
+            timeout = 600
             response_queue = queue.Queue()
             self._approval_state = {
                 "command": command,
@@ -1166,7 +1230,7 @@ class CLIModalMixin:
         response_queue = queue.Queue()
         self._capture_modal_input_snapshot()
         self._sudo_state = {"response_queue": response_queue, "vault_backend": display_name}
-        self._sudo_deadline = _time.monotonic() + 120
+        self._sudo_deadline = _time.monotonic() + 600
         self._ring_bell(prompt=True, context=t("cli.secret.bell_unlock", name=display_name))
         self._paint_now()
 
@@ -1192,7 +1256,7 @@ class CLIModalMixin:
             self._capture_modal_input_snapshot()
             self._sudo_state = {"response_queue": response_queue, "vault_save": {"site": site, "origin": origin,
                                                                                   "step": step}}
-            self._sudo_deadline = _time.monotonic() + 180
+            self._sudo_deadline = _time.monotonic() + 600
             if step == "identifier":
                 self._ring_bell(prompt=True, context=t("cli.secret.bell_save_login", site=site))
             self._paint_now()
@@ -1216,7 +1280,7 @@ class CLIModalMixin:
         response_queue = queue.Queue()
         self._capture_modal_input_snapshot()
         self._sudo_state = {"response_queue": response_queue, "vault_code": {"site": site, "hint": hint}}
-        self._sudo_deadline = _time.monotonic() + 180
+        self._sudo_deadline = _time.monotonic() + 600
         self._ring_bell(prompt=True, context=t("cli.secret.bell_verification_code", site=site))
         self._paint_now()
         result = self._poll_modal_queue(response_queue, "_sudo_deadline", refresh=0)
@@ -1267,8 +1331,14 @@ class CLIModalMixin:
         thread is gone but the state dict still gates input (frozen terminal until its timeout).
         Push a safe value onto each queue (approval -> "deny", others -> cancel), nil the state,
         restore the draft; each step is wrapped so a dead queue can't block the others."""
+        from hermes_cli.interaction_host import invalidate_cli
+        invalidate_cli(self)
+        if getattr(self, "_slash_confirm_state", None):
+            self._slash_confirm_state["response_queue"]._interaction_cancelled = True
+            self._submit_slash_confirm_response(None)
         def _put(state, value) -> None:
             try:
+                state["response_queue"]._interaction_cancelled = True
                 state["response_queue"].put(value)
             except Exception:
                 pass

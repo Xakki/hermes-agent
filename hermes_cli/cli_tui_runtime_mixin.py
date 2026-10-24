@@ -132,6 +132,13 @@ class CLITuiRuntimeMixin:
             _cprint(f"  {_DIM}{_attached}{_RST}")
 
         self._agent_running = self._interactive_turn = True
+        from hermes_cli.interaction_host import cli_host
+        host = cli_host(self)
+        if is_seeded_query or notification_preview:
+            host.invalidate_pending()
+        else:
+            host.accept_task(user_input)
+        self._interaction_seeded_turn = is_seeded_query
         self._pet_turn_error = self._pet_reasoning = False
         self._turn_summary_begin()
         self._app.invalidate()
@@ -189,6 +196,13 @@ class CLITuiRuntimeMixin:
             except Exception as _exc:
                 logging.debug("%s hook failed: %s", what, _exc)
 
+        # Exited processes can still own followups not yet admitted to the input queue.
+        with suppress(Exception):
+            self._drain_process_notifications("cli-post-turn")
+
+        from hermes_cli.interaction_host import cli_completion
+        cli_completion(self)
+
         # Continuous voice: restart recording off-thread (beep + recorder start would block process_loop).
         if self._voice_mode and self._voice_continuous and not self._voice_recording:
             def _restart_recording():
@@ -204,9 +218,6 @@ class CLITuiRuntimeMixin:
                 except Exception as e:
                     _cprint(f"{_DIM}{t('cli.voice.autorestart_failed', error=e)}{_RST}")
             threading.Thread(target=_restart_recording, daemon=True).start()
-
-        with suppress(Exception):
-            self._drain_process_notifications("cli-post-turn")
 
     def _tui_signal_handler(self, signum, frame):
         """SIGHUP/SIGTERM -> graceful shutdown.
@@ -489,6 +500,8 @@ class CLITuiRuntimeMixin:
         from cli import _DIM, _RST, _cprint, _invoke_interrupted_session_end, _run_cleanup, set_approval_callback, set_secret_capture_callback, set_sudo_password_callback
         self._should_exit = True
         self._pet_stop_anim()
+        from hermes_cli.interaction_host import invalidate_cli
+        invalidate_cli(self)
         # Without this line the terminal sits silent through the whole cleanup window.
         with suppress(Exception):
             print(f"{_DIM}{t('cli.tui.shutting_down')}{_RST}", flush=True)

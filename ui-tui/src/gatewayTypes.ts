@@ -234,6 +234,7 @@ export type LiveSessionStatus = 'idle' | 'starting' | 'waiting' | 'working'
 
 export interface SessionActiveItem {
   current?: boolean
+  cwd?: null | string
   id: string
   last_active?: number
   message_count?: number

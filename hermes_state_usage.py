@@ -430,13 +430,17 @@ class SessionUsageMixin:
         )
         return {row["task"]: {k: row[k] for k in row.keys() if k != "task"} for row in rows}
 
-    def usage_totals(self, *, min_message_count: int = 1, include_archived: bool = False) -> dict[str, float]:
+    def usage_totals(self, *, min_message_count: int = 1, include_archived: bool = False,
+                     project_root: str | None = None) -> dict[str, float]:
         """Tokens and spend across the whole store (one scan), so the sidebar total does not
         shrink with paging. Spend prefers the billed figure over the estimate."""
         where = ["parent_session_id IS NULL", "message_count >= ?"]
         params: list[Any] = [min_message_count]
         if not include_archived:
             where.append("COALESCE(archived, 0) = 0")
+        if project_root:
+            where.append("project_root = ?")
+            params.append(project_root)
         row = self._read_one(f"""
             SELECT COALESCE(SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)), 0),
                    COALESCE(SUM(COALESCE(actual_cost_usd, estimated_cost_usd, 0)), 0)

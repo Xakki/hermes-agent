@@ -12,15 +12,7 @@ from unittest.mock import MagicMock, patch
 from pathlib import Path
 
 import pytest
-
-_original_stdout = sys.stdout
-
-
-@pytest.fixture(autouse=True)
-def _restore_stdout():
-    yield
-    sys.stdout = _original_stdout
-
+from tests.tui_gateway.protocol_fixtures import _restore_stdout
 
 @pytest.fixture()
 def server():
@@ -290,10 +282,8 @@ def test_settlement_wins_over_a_later_cancel(capture, method, qids, settle, expe
     assert req.event.is_set()
 
 
-def test_send_returns_an_answer_committed_after_the_deadline_expired(capture, monkeypatch):
-    """An answer accepted by resolve_response is never reported as a timeout (#112548): the
-    response frame can land after event.wait() gave up and before send() withdraws the request,
-    and the renderer must not get a bogus request.cancel for a card the user just answered."""
+def test_send_rejects_an_answer_after_the_absolute_deadline(capture, monkeypatch):
+    """A slow waiter cannot extend a human permission window by accepting a late response."""
     from tui_gateway import server_requests
 
     cancels: list[dict] = []
@@ -305,13 +295,13 @@ def test_send_returns_an_answer_committed_after_the_deadline_expired(capture, mo
         # Deadline expires, then the response frame lands before send() re-enters the lock.
         expired = real_wait(event, timeout)
         rid = next(iter(server_requests._open))
-        assert server_requests.resolve_response({"id": rid, "result": {"value": "yes"}})
+        assert not server_requests.resolve_response({"id": rid, "result": {"value": "yes"}})
         return expired
 
     monkeypatch.setattr(server_requests.threading.Event, "wait", answered_during_the_gap)
 
-    assert server_requests.send("sudo", "s1", {}, timeout=0.001) == {"value": "yes"}
-    assert cancels == []
+    assert server_requests.send("sudo", "s1", {}, timeout=0.001) is None
+    assert len(cancels) == 1 and cancels[0]["reason"] == "timeout"
     assert not server_requests._open
 
 
@@ -323,9 +313,11 @@ def _silent_ws():
         def __init__(self):
             self._ws, self._loop, self._peer, self._auth_identity = object(), None, "test", None
             self.frames: list[dict] = []
+            self.delivered = threading.Event()
 
         def write(self, obj):
             self.frames.append(obj)
+            self.delivered.set()
             return True
 
         def close(self):
@@ -379,6 +371,7 @@ def test_server_request_waits_for_a_ws_client_that_advertised(server):
                               daemon=True)
     thread.start()
     req = _wait_open(server_requests)
+    assert peer.delivered.wait(30), "native frame was not delivered"
     assert peer.frames[-1]["id"] == req.id
     assert server.dispatch({"jsonrpc": "2.0", "id": req.id, "result": {"value": "yes"}}) is None
     thread.join(timeout=5)

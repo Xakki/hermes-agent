@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import type { ConfigFieldSchema } from '@/types/hermes'
 
 import { ComboboxInput } from './combobox-input'
+import { ConfigJsonField } from './config-json-field'
 import { CONTROL_TEXT, EMPTY_SELECT_VALUE, FIELD_DESCRIPTIONS, FIELD_LABELS, FREE_INPUT_KEYS } from './constants'
 import { FallbackModelsField } from './fallback-models-field'
 import { fieldCopyForSchemaKey } from './field-copy'
@@ -20,6 +21,10 @@ export function parseListFieldDraft(raw: string): string[] {
     .split(',')
     .map(item => item.trim())
     .filter(Boolean)
+}
+
+function selectOptionsForSchema(schema: ConfigFieldSchema, enumOptions?: string[]) {
+  return enumOptions ?? (schema.type === 'select' ? (schema.options ?? []).map(String) : undefined)
 }
 
 /**
@@ -124,7 +129,7 @@ export function ConfigField({
     )
   }
 
-  const selectOptions = enumOptions ?? (schema.type === 'select' ? (schema.options ?? []).map(String) : undefined)
+  const selectOptions = selectOptionsForSchema(schema, enumOptions)
 
   // Large closed-world lists (e.g. ~590 IANA timezones) get a searchable
   // Popover + cmdk combobox instead of a closed Select dropdown.  The schema
@@ -208,6 +213,16 @@ export function ConfigField({
 
   if (schema.type === 'list') {
     return row(<ListField onChange={onChange} placeholder={c.commaSeparated} value={value} />)
+  }
+
+  if (schema.type === 'json') {
+    return wideRow(
+      <ConfigJsonField
+        className={cn('min-h-28 resize-y bg-background font-mono', CONTROL_TEXT)}
+        onChange={onChange}
+        value={value}
+      />
+    )
   }
 
   if (typeof value === 'object' && value !== null) {

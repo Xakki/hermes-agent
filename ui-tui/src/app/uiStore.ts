@@ -48,6 +48,12 @@ export const $uiState = atom<UiState>(buildUiState())
 
 export const $uiTheme = computed($uiState, state => state.theme)
 export const $uiSessionId = computed($uiState, state => state.sid)
+// The owner canonicalizes the project identically for CLI and TUI.
+export const $inputHistoryProject = computed($uiState, state => {
+  const key = state.info?.input_history_key
+
+  return typeof key === 'string' && /^[a-f0-9]{64}$/.test(key) ? key : null
+})
 
 export const getUiState = () => $uiState.get()
 

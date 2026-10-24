@@ -40,6 +40,12 @@ export { refreshSessionView, scheduleResumeScrollToBottom } from './sessionResum
 
 const usageFrom = (info: null | SessionInfo): Usage => (info?.usage ? { ...ZERO, ...info.usage } : ZERO)
 
+const workspaceCreationOptions = (info: null | SessionInfo) => {
+  const cwd = info?.cwd || STARTUP_WORKSPACE_CWD
+
+  return cwd ? { cwd } : {}
+}
+
 const statusFromLiveSession = (status?: string, running = false) => {
   if (status === 'waiting') {
     return t('session.status.waitingForInput')
@@ -404,7 +410,8 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
   const startNewSession = useCallback(
     async (msg?: string, title?: string, keepCurrent = false) => {
       const flight = ++attachmentFlight.current
-      const previousSid = getUiState().sid
+      const previousState = getUiState()
+      const previousSid = previousState.sid
       const previousSubscription = previousSid ? canonicalSubscriptions.current.get(previousSid) : undefined
       pendingAttachments.current.add(flight)
 
@@ -430,7 +437,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
         // HERMES_TUI_CWD is the dashboard-picked workspace: an explicit cwd on
         // session.create on both transports, so /new stays in that workspace.
-        const workspaceCwd = STARTUP_WORKSPACE_CWD ? { cwd: STARTUP_WORKSPACE_CWD } : {}
+        const workspaceCwd = workspaceCreationOptions(previousState.info)
 
         const r = await rpc<SessionCreateResponse>(
           'session.create',
@@ -679,10 +686,10 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
           const request = pendingDetach
             ? pendingDetach.then(() =>
                 flight === attachmentFlight.current
-                  ? gw.request<SessionResumeResult>('session.resume', { cols: colsRef.current, session_id: id })
+                  ? gw.request<SessionResumeResult>('session.resume', { cols: colsRef.current, session_id: id, ...(gw.isCanonical ? {} : { current_session_id: previousSid, project_root: getUiState().info?.project?.primary_path || process.env.HERMES_CWD || process.cwd() }) })
                   : null
               )
-            : gw.request<SessionResumeResult>('session.resume', { cols: colsRef.current, session_id: id })
+            : gw.request<SessionResumeResult>('session.resume', { cols: colsRef.current, session_id: id, ...(gw.isCanonical ? {} : { current_session_id: previousSid, project_root: getUiState().info?.project?.primary_path || process.env.HERMES_CWD || process.cwd() }) })
 
           return request
             .then(raw => {

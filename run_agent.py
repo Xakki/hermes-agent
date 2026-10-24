@@ -54,6 +54,36 @@ def _launch_cwd_for_session(source: str) -> Optional[str]:
         return None
 
 
+def _launch_project_root_for_session(source: str, cwd: Optional[str]) -> Optional[str]:
+    if not cwd:
+        return None
+    try:
+        from tui_gateway.git_probe import canonical_project_root
+        return canonical_project_root(cwd)
+    except (ImportError, OSError, ValueError, RuntimeError):
+        return cwd
+
+
+# Sources that label interactive UI transport sessions; one-shot child runs get their own source.
+_UI_TRANSPORT_SOURCES = frozenset({"tui", "desktop"})
+ONESHOT_SOURCE = "oneshot"
+
+
+def _session_source_for_agent(platform: Optional[str]) -> str:
+    try:
+        from gateway.session_context import get_session_env
+    except ImportError:
+        get_session_env = os.environ.get
+    source = str(get_session_env("HERMES_SESSION_SOURCE", "") or "").strip()
+    single_query = get_session_env("HERMES_SINGLE_QUERY_SESSION", "") == "1"
+    explicit = get_session_env("HERMES_SESSION_SOURCE_EXPLICIT", "") == "1"
+    if single_query and not explicit and source in _UI_TRANSPORT_SOURCES:
+        source = ""
+    if single_query and not source and (platform or "cli") == "cli":
+        return ONESHOT_SOURCE
+    return source or platform or "cli"
+
+
 def _gateway_origin_json(agent: "AIAgent") -> Optional[str]:
     """Gateway routing ``origin_json`` for a session row; None when the agent carries no gateway identity.
 
@@ -340,7 +370,8 @@ class AIAgent(
                 thread_id=getattr(self, "_thread_id", None),
                 display_name=getattr(self, "_chat_name", None) or getattr(self, "_user_name", None),
                 origin_json=_gateway_origin_json(self), parent_session_id=self._parent_session_id,
-                cwd=_launch_cwd_for_session(source), profile_name=profile_for_session,
+                cwd=(session_cwd := _launch_cwd_for_session(source)),
+                project_root=_launch_project_root_for_session(source, session_cwd), profile_name=profile_for_session,
             )
             self._session_db_created = True
         except Exception as e:

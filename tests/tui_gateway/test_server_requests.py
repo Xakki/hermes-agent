@@ -27,13 +27,18 @@ def wire(monkeypatch):
     server_requests.reset_for_tests()
 
 
-def test_cancel_racing_the_request_write_reaches_the_wire_after_the_request(wire, monkeypatch):
+@pytest.mark.parametrize("correlated", [False, True])
+def test_cancel_racing_the_request_write_reaches_the_wire_after_the_request(wire, monkeypatch, correlated):
     write_request = server_requests._write
     cancelled = []
 
     def write_after_an_interrupt(frame):
         # session.interrupt on another thread lands after registration, before the frame goes out.
-        interrupt = threading.Thread(target=lambda: cancelled.append(server_requests.cancel("s1")))
+        def cancel():
+            result = (server_requests.cancel_request(frame["id"]) if correlated
+                      else server_requests.cancel("s1"))
+            cancelled.append(result)
+        interrupt = threading.Thread(target=cancel)
         interrupt.start()
         interrupt.join(timeout=10)
         write_request(frame)
@@ -47,10 +52,14 @@ def test_cancel_racing_the_request_write_reaches_the_wire_after_the_request(wire
     assert server_requests.open_requests("s1") == []
 
 
-def test_cancel_after_the_write_is_emitted_once(wire):
+@pytest.mark.parametrize("correlated", [False, True])
+def test_cancel_after_the_write_is_emitted_once(wire, correlated):
     pending = server_requests.send_async("approval", "s1", {"request_id": "r1", "command": "rm", "description": ""},
                                          lambda result: None)
 
-    assert server_requests.cancel("s1") == 1
+    if correlated:
+        assert server_requests.cancel_request(wire[0][1]) is True
+    else:
+        assert server_requests.cancel("s1") == 1
     pending("resolved")
     assert [event for event, _ in wire] == ["request", "request.cancel"]

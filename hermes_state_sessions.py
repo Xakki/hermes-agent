@@ -104,6 +104,11 @@ def _workspace_key_clause(key: str) -> tuple[str, list[str]]:
     )
 
 
+def _project_root_clause(project_root: str) -> tuple[str, list[str]]:
+    root = (project_root or "").strip().rstrip("/\\") or (project_root or "").strip()
+    return "s.project_root = ?", [root]
+
+
 def _where_sql(clauses: list[str], lead: str = "") -> str:
     """``WHERE a AND b`` (with *lead* prefix) or "" when there are no clauses."""
     return f"{lead}WHERE {' AND '.join(clauses)}" if clauses else ""
@@ -276,9 +281,8 @@ _SAME_KEY_NAMESPACE_SQL = (
 _UPSERT_KEEP_EXISTING_SQL = ",\n".join(
     f"                       {col} = COALESCE(sessions.{col}, excluded.{col})" for col in (
         "session_key", "chat_id", "chat_type", "thread_id", "parent_session_id", "cwd", "profile_name",
-        "transport_profile", "git_repo_root", "origin_json", "display_name",
-        # Immutable provenance (#56439): stamped once at first creation, never overwritten by later
-        # upserts — unlike ``source``, which stays live routing state.
+        "transport_profile", "git_repo_root", "origin_json", "display_name", "project_root",
+        # Immutable provenance: stamped once at creation, never overwritten by later upserts.
         "created_source",
     )
 )
@@ -297,7 +301,7 @@ _INHERIT_SEP = ",\n" + " " * 27
 _INHERIT_PARENT_META_SQL = (
     "UPDATE sessions\n                       SET "
     + _INHERIT_SEP.join((
-        *(_inherit_col_sql(c) for c in ("cwd", "git_repo_root", "git_branch")),
+        *(_inherit_col_sql(c) for c in ("cwd", "git_repo_root", "git_branch", "project_root")),
         _inherit_col_sql("profile_name", "\n" + " " * 46 + f"AND ({_SAME_KEY_NAMESPACE_SQL})"),
     ))
     + "\n                     WHERE id = ? AND parent_session_id IS NOT NULL"
@@ -365,7 +369,7 @@ class SessionSessionsMixin:
         chat_id: str | None = None, chat_type: str | None = None, thread_id: str | None = None,
         parent_session_id: str | None = None, cwd: str | None = None, profile_name: Optional[str] = None,
         git_repo_root: str | None = None, origin_json: str | None = None, display_name: str | None = None,
-        transport_profile: Optional[str] = None,
+        project_root: str | None = None, transport_profile: Optional[str] = None,
     ) -> None:
         """Upsert a session row, never overwriting what an earlier writer set (the gateway creates a
         bare row before create_session carries the real model/prompt) — the one exception is the
@@ -402,7 +406,7 @@ class SessionSessionsMixin:
                       chat_id=chat_id, chat_type=chat_type, thread_id=thread_id,
                       parent_session_id=parent_session_id, cwd=cwd, profile_name=profile_name,
                       git_repo_root=git_repo_root, origin_json=origin_json, display_name=display_name,
-                      transport_profile=transport_profile)
+                      transport_profile=transport_profile, project_root=project_root)
         self._execute_write(lambda conn: insert_session_row_in_transaction(self, conn, **params),
                             patience_s=self._TRANSCRIPT_WRITE_PATIENCE_S)
 
@@ -1335,7 +1339,8 @@ class SessionSessionsMixin:
         order_by_last_active: bool = False, include_archived: bool = False, archived_only: bool = False,
         id_query: str | None = None, search_query: str | None = None, compact_rows: bool = False,
         include_pinned: bool = False, session_key: str | None = None, include_hidden: bool = False,
-        include_subagents: bool = False, local_created_sources: Sequence[str] | None = None,
+        project_root: str | None = None, include_subagents: bool = False,
+        local_created_sources: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
         """List sessions with preview and ``last_active`` in one query. ``order_by_last_active`` sorts
         by the chain TIP via a recursive CTE (the only path honouring ``id_query`` / ``search_query``);
@@ -1350,10 +1355,11 @@ class SessionSessionsMixin:
             archived_only=archived_only, include_archived=include_archived, include_subagents=include_subagents,
             local_created_sources=local_created_sources,
         )
-        # The archived-only view is the recovery surface for rows that dropped out of every
-        # default list: a session that is archived AND hidden (Bot Mode marks its sessions
-        # hidden) must still be reachable there, or nothing but direct DB access can bring
-        # it back (#90946).
+        if project_root:
+            clause, clause_params = _project_root_clause(project_root)
+            where_clauses.append(clause)
+            params.extend(clause_params)
+        # Archived-only listing is also the recovery surface for hidden archived rows.
         if not include_hidden and not archived_only:
             where_clauses.append("s.hidden = 0")
         heads = {}
@@ -1544,7 +1550,8 @@ class SessionSessionsMixin:
 
     def search_sessions(
         self, source: str | Sequence[str] | None = None, limit: int = 20, offset: int = 0,
-        workspace_key: str | None = None, local_created_sources: Sequence[str] | None = None,
+        workspace_key: str | None = None, project_root: str | None = None,
+        local_created_sources: Sequence[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Sessions MRU-first with a computed ``last_active``; ``workspace_key`` scopes to one workspace
         so ``hermes -c``/``--resume`` picks its last session. ``source`` may be one label or several.
@@ -1560,6 +1567,10 @@ class SessionSessionsMixin:
             ws_clause, ws_params = _workspace_key_clause(workspace_key)
             where_clauses.append(ws_clause)
             params.extend(ws_params)
+        if project_root:
+            clause, clause_params = _project_root_clause(project_root)
+            where_clauses.append(clause)
+            params.extend(clause_params)
         return [self._session_row_dict(row) for row in self._read_all(
             "SELECT s.*, COALESCE(sp.prompt, s.system_prompt) AS _system_prompt_resolved, "
             f"{_sql_session_last_active('s')} AS last_active "
@@ -1572,7 +1583,7 @@ class SessionSessionsMixin:
     def session_count(
         self, source: str | None = None, sources: list[str] | None = None, cwd_prefix: str | None = None,
         min_message_count: int = 0, include_archived: bool = False, archived_only: bool = False,
-        exclude_children: bool = False, exclude_sources: list[str] | None = None, include_subagents: bool = False,
+        exclude_children: bool = False, exclude_sources: list[str] | None = None, project_root: str | None = None, include_subagents: bool = False,
     ) -> int:
         """Count sessions with list_sessions_rich's filters so a paired "load more" total matches."""
         where_clauses, params = _session_filter_where(
@@ -1580,6 +1591,10 @@ class SessionSessionsMixin:
             exclude_sources=exclude_sources, cwd_prefix=cwd_prefix, min_message_count=min_message_count,
             archived_only=archived_only, include_archived=include_archived, include_subagents=include_subagents,
         )
+        if project_root:
+            clause, clause_params = _project_root_clause(project_root)
+            where_clauses.append(clause)
+            params.extend(clause_params)
         if exclude_children:
             from hermes_state_local import exclude_superseded_segments
             exclude_superseded_segments(self, where_clauses, params)
@@ -1930,17 +1945,27 @@ class SessionSessionsMixin:
         "SELECT 1 FROM messages WHERE messages.session_id = sessions.id)"
     )
 
-    def count_empty_sessions(self) -> int:
+    def count_empty_sessions(self, project_root: str | None = None) -> int:
         """Count of empty, ended, non-archived sessions; ended_at guards a fresh session's first message."""
-        return self._read_one(f"SELECT COUNT(*) FROM sessions WHERE {self._EMPTY_SESSION_WHERE}")[0]
+        where = self._EMPTY_SESSION_WHERE
+        params = []
+        if project_root:
+            where += " AND project_root = ?"
+            params.append(project_root)
+        return self._read_one(f"SELECT COUNT(*) FROM sessions WHERE {where}", params)[0]
 
-    def delete_empty_sessions(self, sessions_dir: Optional[Path] = None) -> int:
+    def delete_empty_sessions(self, sessions_dir: Optional[Path] = None, project_root: str | None = None) -> int:
         """Delete every empty, ended, non-archived session in one transaction, orphaning (not cascading)
         children; transcript files are swept too."""
         removed_ids: list[str] = []
         def _do(conn):
+            where = self._EMPTY_SESSION_WHERE
+            params = []
+            if project_root:
+                where += " AND project_root = ?"
+                params.append(project_root)
             session_ids = {row["id"] for row in conn.execute(
-                f"SELECT id FROM sessions WHERE {self._EMPTY_SESSION_WHERE}"
+                f"SELECT id FROM sessions WHERE {where}", params
             ).fetchall()}
             from hermes_state_mutation_retirement import retire_prunable
             session_ids = retire_prunable(conn, sorted(session_ids))
@@ -1964,17 +1989,3 @@ class SessionSessionsMixin:
         for sid in removed_ids:
             self._remove_session_files(sessions_dir, sid)
         return count
-
-    def archive_sessions(
-        self, older_than_days: Optional[float] = None, source: str | None = None, **filters,
-    ) -> int:
-        """Bulk soft-hide with prune_sessions' filter surface, via set_session_archived so each lineage
-        flips as a unit; idempotent. Returns matches. A lineage is matched through its TIP only: an
-        old compression ancestor never qualifies on its own age, or the fan-out would hide an open,
-        recently active continuation (#115489)."""
-        filters.setdefault("archived", False)
-        filters["lineage_tips_only"] = True
-        rows = self.list_prune_candidates(older_than_days=older_than_days, source=source, **filters)
-        for row in rows:
-            self.set_session_archived(row["id"], True)
-        return len(rows)

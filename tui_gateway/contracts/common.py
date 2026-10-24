@@ -77,6 +77,7 @@ class SessionLiveInfo(OpenModel):
     tools: dict[str, list[str]] = Field(default_factory=dict)
     skills: dict[str, list[str]] = Field(default_factory=dict)
     cwd: str = ""
+    input_history_key: str | None = None
     branch: str | None = None
     project: ProjectRef | None = None
     terminal_backend: str = ""
@@ -226,12 +227,14 @@ class SessionParams(Params):
 
     session_id: str
     profile: str | None = None
+    project_root: str | None = None
 
 
 class ProfileParams(Params):
     """Any method the desktop may route to a named profile (``requestGatewayForProfile`` adds ``profile``)."""
 
     profile: str | None = None
+    project_root: str | None = None
 
 
 class SessionOwner(Params):

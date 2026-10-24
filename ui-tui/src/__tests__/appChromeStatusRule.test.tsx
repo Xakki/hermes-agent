@@ -120,6 +120,43 @@ describe('StatusRule model label', () => {
 })
 
 describe('StatusRule session title', () => {
+  it('caps displayed titles at 18 code points, preserving short and exact-limit titles', () => {
+    const titles = [
+      'short 😀',
+      'x'.repeat(18),
+      'x'.repeat(19),
+      'a long ASCII session title',
+      'длинное название сессии',
+      'emoji title 😀😃😄😁😆😅😂🤣'
+    ]
+
+    for (const title of titles) {
+      const rendered = textContent(StatusRule({ ...baseProps, sessionTitle: title }))
+      const codePoints = Array.from(title)
+      const expected = codePoints.length <= 18 ? title : `${codePoints.slice(0, 17).join('')}…`
+
+      expect(rendered).toContain(expected)
+
+      if (codePoints.length > 18) {
+        expect(rendered).not.toContain(title)
+      }
+
+      expect(title).toBe(codePoints.join(''))
+    }
+  })
+
+  it('pins the active YOLO warning and respects the configured field filter', () => {
+    const rendered = textContent(StatusRule({ ...baseProps, yolo: true, cols: 44, bgCount: 4 }))
+    expect(rendered).toContain('⚠ YOLO')
+    expect(textContent(StatusRule({ ...baseProps, yolo: false }))).not.toContain('⚠ YOLO')
+    expect(
+      textContent(StatusRule({ ...baseProps, yolo: true, statusBarFields: new Set(['context_detail', 'yolo']) }))
+    ).toContain('⚠ YOLO')
+    expect(
+      textContent(StatusRule({ ...baseProps, yolo: true, statusBarFields: new Set(['context_detail']) }))
+    ).not.toContain('⚠ YOLO')
+  })
+
   it('marks only estimated context occupancy at every visible width', () => {
     for (const cols of [80, 120, 200]) {
       for (const estimated of [true, false]) {
@@ -150,7 +187,7 @@ describe('StatusRule session title', () => {
     const title = findElementWithText(element, 'weekly-digest')
 
     expect(rendered).toContain('weekly-digest')
-    expect(rendered).not.toContain('~/repo')
+    expect(rendered).toContain('~/repo')
     // Regression for issue #82465: a raw, full-saturation accent-hue
     // background (e.g. #FFBF00 on DARK_SEEDS) paired with statusFg (a
     // near-white tone never designed to sit on it) rendered at roughly a

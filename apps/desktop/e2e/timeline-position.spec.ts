@@ -8,7 +8,8 @@ import { resolveElectronBinary } from './electron-binary'
 import { _electron, expect, test } from './test'
 
 /** Native Chromium geometry, without a backend or the app's other scroll observers. */
-test('timeline reads stay logarithmic with real skipped tool-heavy groups', async ({}, testInfo) => {
+test('timeline reads stay logarithmic with real skipped tool-heavy groups', async () => {
+  const testInfo = test.info()
   const temporary = mkdtempSync(path.join(tmpdir(), 'hermes-timeline-position-'))
   const main = path.join(temporary, 'main.cjs')
   writeFileSync(

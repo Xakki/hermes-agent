@@ -42,6 +42,14 @@ _session_db_path_for_profile = late("_session_db_path_for_profile", "hermes_cli.
 
 _NOT_FOUND = "Session not found"
 
+def _active_project_root(profile):
+    from tui_gateway import server
+    root = server._active_project_root({"profile": profile} if profile else {}, None)
+    if not root:
+        raise HTTPException(status_code=400, detail="No trusted active project")
+    return root
+
+
 # CRITICAL — every literal-path route on ``manage_router`` MUST be declared
 # BEFORE the templated ``/api/sessions/{session_id}`` family. Starlette matches
 # in registration order and ``{session_id}`` is unconstrained, so e.g.
@@ -199,6 +207,7 @@ def get_sessions(
     profile_name = _cron_profile_home(profile)[0] if profile else None
     try:
         db = _open_session_db_for_profile(profile, read_only=True)
+        project_root = _active_project_root(profile)
         try:
             min_message_count = max(0, min_messages)
             archived_only = archived == "only"
@@ -213,7 +222,7 @@ def get_sessions(
                 source=source or None, sources=source_list or None,
                 exclude_sources=exclude_list or None, cwd_prefix=(cwd_prefix or None),
                 min_message_count=min_message_count, include_archived=include_archived,
-                archived_only=archived_only, include_subagents=include_subagents)
+                archived_only=archived_only, include_subagents=include_subagents, project_root=project_root)
             sessions = db.list_sessions_rich(
                 limit=limit,
                 offset=offset,
@@ -356,6 +365,12 @@ async def search_sessions(
 
             def add_lineage_result(raw_sid: str, payload: dict) -> None:
                 if not raw_sid:
+                    return
+                ownership = db.get_session(raw_sid)
+                if not ownership or not ownership.get("project_root"):
+                    return
+                from tui_gateway.git_probe import canonical_project_root
+                if canonical_project_root(ownership["project_root"]) != _active_project_root(profile):
                     return
                 root = compression_root(raw_sid)
                 if root in seen or len(seen) >= safe_limit:

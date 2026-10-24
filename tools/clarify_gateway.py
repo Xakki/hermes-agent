@@ -282,8 +282,8 @@ def clear_session(session_key: str) -> int:
 
 def resolve_clarify_timeout(config: dict) -> int:
     """Clarify timeout (seconds): legacy ``clarify.timeout`` if explicitly set, else
-    ``agent.clarify_timeout``, else 3600 — the single source of truth for every surface
-    (gateway, CLI, TUI). ``<= 0`` is kept verbatim (unlimited); non-numeric -> 3600."""
+    ``agent.clarify_timeout``, else 3600. Native human surfaces apply their own finite cap
+    to this compatibility input. ``<= 0`` is kept verbatim; non-numeric -> 3600."""
     raw = (config.get("clarify") or {}).get("timeout")
     if raw is None:
         raw = (config.get("agent") or {}).get("clarify_timeout", 3600)

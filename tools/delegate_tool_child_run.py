@@ -853,14 +853,29 @@ class _ChildRun:
         # Resolved after seed_workspace so a multimodal goal's text part carries the worktree note too.
         _images = list(getattr(child, "_delegate_images", None) or [])
         user_message: Any = _build_child_goal_message(self.goal, _images, child) if _images else self.goal
+        from tools.approval import is_approval_bypass_active, disable_session_yolo, enable_session_yolo, is_session_yolo_enabled
+        from tools.approval_context import reset_current_session_key, set_current_session_key
+
+        # Resolve BEFORE binding the child's identity; /yolo never changes the process env.
+        parent_yolo = is_approval_bypass_active()
+        child_session_key = str(getattr(child, "session_id", "") or self.child_task_id)
 
         def _run_with_thread_capture():
             worker_thread_holder["t"] = threading.current_thread()
             from agent.delegation_context import delegated_child_context
             with delegated_child_context(str(getattr(child, "session_id", "") or "")):
-                return child.run_conversation(
-                    user_message=user_message, task_id=self.child_task_id, stream_callback=self.relay_text,
-                )
+                token = set_current_session_key(child_session_key)
+                inherited_yolo = parent_yolo and not is_session_yolo_enabled(child_session_key)
+                try:
+                    if inherited_yolo:
+                        enable_session_yolo(child_session_key)
+                    return child.run_conversation(
+                        user_message=user_message, task_id=self.child_task_id, stream_callback=self.relay_text,
+                    )
+                finally:
+                    if inherited_yolo:
+                        disable_session_yolo(child_session_key)
+                    reset_current_session_key(token)
 
         future = executor.submit(contextvars.copy_context().run, _run_with_thread_capture)
         # One wait covers both ways out: the worker finishing, or the heartbeat's stale verdict.

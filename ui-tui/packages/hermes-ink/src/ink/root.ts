@@ -118,6 +118,7 @@ export const renderSync = (node: ReactNode, options?: NodeJS.WriteStream | Rende
 
   const instance: Ink = getInstance(inkOptions.stdout, () => new Ink(inkOptions))
 
+  instance.useSynchronousRendering()
   instance.render(node)
 
   return {

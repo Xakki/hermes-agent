@@ -303,6 +303,13 @@ def _hermetic_environment(tmp_path, tmp_path_factory, monkeypatch):
     (fake_hermes_home / "memories").mkdir()
     (fake_hermes_home / "skills").mkdir()
     monkeypatch.setenv("HERMES_HOME", str(fake_hermes_home))
+    # A source checkout inside the operator home is not a sealed payload.
+    # Keep bootstrap metadata resolution in this fixture, without relaxing the home-I/O guard.
+    from pm import environments as pm_environments
+    payload_manifest = pm_environments._payload_manifest
+    monkeypatch.setattr(pm_environments, "_payload_manifest",
+                        lambda root: None if root.resolve() == PROJECT_ROOT.resolve() else payload_manifest(root))
+    monkeypatch.setenv("HERMES_RUNTIME_DIR", str(tmp_path / "runtime"))
     # A test that pins the process home (hermes_constants.pin_process_hermes_home) must not
     # leak that module-global into the next test's routed-profile decisions.
     try:

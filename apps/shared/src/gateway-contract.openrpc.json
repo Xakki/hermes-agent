@@ -5278,6 +5278,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           }
         },
         "required": [
@@ -5321,6 +5333,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "request_id": {
             "title": "Request Id",
@@ -5464,6 +5488,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "choice": {
             "anyOf": [
@@ -5856,6 +5892,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "enabled": {
             "default": false,
             "title": "Enabled",
@@ -6016,6 +6064,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "amount_usd": {
             "anyOf": [
@@ -6201,6 +6261,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "charge_id": {
             "anyOf": [
@@ -7041,6 +7113,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "session_id": {
             "anyOf": [
               {
@@ -7288,6 +7372,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           }
         },
         "title": "BotRelayOutboxDrainParams",
@@ -7324,6 +7420,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "id": {
             "title": "Id",
@@ -7386,6 +7494,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "agents": {
             "anyOf": [
@@ -7829,6 +7949,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "session_id": {
             "title": "Session Id",
@@ -8397,6 +8529,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "session_id": {
             "anyOf": [
               {
@@ -8467,6 +8611,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "session_id": {
             "title": "Session Id",
             "type": "string"
@@ -8497,6 +8653,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "session_id": {
             "title": "Session Id",
@@ -8567,6 +8735,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "request_id": {
             "anyOf": [
@@ -8874,6 +9054,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "session_id": {
             "title": "Session Id",
             "type": "string"
@@ -8973,6 +9165,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "scope": {
             "default": "live",
@@ -9118,6 +9322,35 @@
           "text": {
             "title": "Text",
             "type": "string"
+          },
+          "display_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "process_complete",
+                  "async_delegation_complete",
+                  "internal_notification"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Kind"
+          },
+          "display_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Display Text"
           },
           "controls": {
             "anyOf": [
@@ -9417,6 +9650,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "include_sessions": {
             "default": true,
             "title": "Include Sessions",
@@ -9468,6 +9713,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "session_id": {
             "title": "Session Id",
@@ -9621,6 +9878,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "session_id": {
             "default": "",
             "title": "Session Id",
@@ -9749,6 +10018,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "room_id": {
             "title": "Room Id",
             "type": "string"
@@ -9804,6 +10085,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "room_id": {
             "title": "Room Id",
             "type": "string"
@@ -9844,6 +10137,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "room_id": {
             "title": "Room Id",
@@ -10049,6 +10354,18 @@
               }
             ],
             "default": null
+          },
+          "input_history_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Input History Key"
           },
           "system_prompt": {
             "anyOf": [
@@ -10376,6 +10693,18 @@
           "session_id": {
             "title": "Session Id",
             "type": "string"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cwd"
           },
           "id": {
             "title": "Id",
@@ -10751,6 +11080,18 @@
             ],
             "default": null
           },
+          "input_history_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Input History Key"
+          },
           "system_prompt": {
             "anyOf": [
               {
@@ -11101,6 +11442,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "session_id": {
             "title": "Session Id",
             "type": "string"
@@ -11131,6 +11484,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "session_id": {
             "title": "Session Id",
@@ -11627,12 +11992,59 @@
             "title": "Session Id",
             "type": "string"
           },
+          "question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Question"
+          },
+          "choices": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Choices"
+          },
+          "multi_select": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Multi Select"
+          },
           "questions": {
-            "items": {
-              "$ref": "#/components/schemas/ClarifyQuestion"
-            },
-            "title": "Questions",
-            "type": "array"
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ClarifyQuestion"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Questions"
           },
           "answers": {
             "anyOf": [
@@ -11655,11 +12067,36 @@
             ],
             "default": null,
             "title": "Answers"
+          },
+          "action_metadata": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/InteractionActionMetadata"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Action Metadata"
+          },
+          "interaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InteractionTiming"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
-          "session_id",
-          "questions"
+          "session_id"
         ],
         "title": "ClarifyRequestParams",
         "type": "object"
@@ -11869,6 +12306,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           }
         },
         "required": [
@@ -12330,6 +12779,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "word": {
             "anyOf": [
               {
@@ -12571,6 +13032,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "key": {
             "title": "Key",
@@ -12846,6 +13319,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "key": {
             "title": "Key",
@@ -13208,6 +13693,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "owner": {
             "discriminator": {
@@ -13773,6 +14270,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "owner": {
             "discriminator": {
               "mapping": {
@@ -14166,6 +14675,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "connector": {
             "anyOf": [
               {
@@ -14197,6 +14718,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "connection_id": {
             "minLength": 1,
@@ -14249,6 +14782,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "connection_id": {
             "minLength": 1,
@@ -14753,6 +15298,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "change": {
             "discriminator": {
               "mapping": {
@@ -15020,6 +15577,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "slug": {
             "title": "Slug",
             "type": "string"
@@ -15122,6 +15691,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "owner": {
             "discriminator": {
@@ -15292,6 +15873,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "owner": {
             "discriminator": {
@@ -16526,6 +17119,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "paused": {
             "default": true,
             "title": "Paused",
@@ -16911,6 +17516,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "viewer_id": {
             "title": "Viewer Id",
             "type": "string"
@@ -16967,6 +17584,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "viewer_id": {
             "anyOf": [
               {
@@ -17022,6 +17651,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "viewer_id": {
             "anyOf": [
@@ -17559,6 +18200,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "force": {
             "anyOf": [
               {
@@ -17757,6 +18410,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "approve": {
             "default": true,
@@ -18143,6 +18808,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "path": {
             "anyOf": [
               {
@@ -18391,6 +19068,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "url": {
             "title": "Url",
@@ -18902,6 +19591,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "room_id": {
             "title": "Room Id",
             "type": "string"
@@ -18973,6 +19674,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "room_id": {
             "title": "Room Id",
             "type": "string"
@@ -19008,6 +19721,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "room_id": {
             "title": "Room Id",
@@ -19059,6 +19784,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           }
         },
         "title": "GroupsCapabilitiesParams",
@@ -19133,6 +19870,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "room_id": {
             "title": "Room Id",
             "type": "string"
@@ -19196,6 +19945,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "room_id": {
             "title": "Room Id",
@@ -19262,6 +20023,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "room_id": {
             "title": "Room Id",
             "type": "string"
@@ -19312,6 +20085,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "room_id": {
             "title": "Room Id",
@@ -19371,6 +20156,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "include_disbanded": {
             "anyOf": [
@@ -19455,6 +20252,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "room_id": {
             "title": "Room Id",
@@ -19554,6 +20363,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "room_id": {
             "anyOf": [
@@ -19685,6 +20506,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "room_id": {
             "title": "Room Id",
             "type": "string"
@@ -19795,6 +20628,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "grant": {
             "title": "Grant",
             "type": "string"
@@ -19832,6 +20677,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "room_id": {
             "title": "Room Id",
@@ -19927,6 +20784,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "room_id": {
             "title": "Room Id",
             "type": "string"
@@ -19975,6 +20844,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "room_id": {
             "title": "Room Id",
@@ -20058,6 +20939,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "room_id": {
             "title": "Room Id",
             "type": "string"
@@ -20136,6 +21029,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "room_id": {
             "title": "Room Id",
             "type": "string"
@@ -20184,6 +21089,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "room_id": {
             "title": "Room Id",
@@ -20264,6 +21181,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "room_id": {
             "title": "Room Id",
             "type": "string"
@@ -20326,6 +21255,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "room_id": {
             "title": "Room Id",
             "type": "string"
@@ -20381,6 +21322,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "error": {
             "anyOf": [
@@ -20439,6 +21392,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "platform": {
             "title": "Platform",
@@ -20560,6 +21525,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "lang": {
             "title": "Lang",
             "type": "string"
@@ -20639,6 +21616,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "content_base64": {
             "anyOf": [
               {
@@ -20713,6 +21702,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "path": {
             "title": "Path",
             "type": "string"
@@ -20743,6 +21744,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "path": {
             "title": "Path",
@@ -21037,6 +22050,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "text": {
             "anyOf": [
               {
@@ -21231,6 +22256,65 @@
         ],
         "title": "InstallPhase",
         "type": "string"
+      },
+      "InteractionActionMetadata": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "InteractionActionMetadata",
+        "type": "object"
+      },
+      "InteractionTiming": {
+        "additionalProperties": false,
+        "description": "Display-only snapshot; the host alone owns deadlines and settlement.",
+        "properties": {
+          "remaining_seconds": {
+            "title": "Remaining Seconds",
+            "type": "number"
+          },
+          "reminder_remaining_seconds": {
+            "title": "Reminder Remaining Seconds",
+            "type": "number"
+          },
+          "reminded": {
+            "default": false,
+            "title": "Reminded",
+            "type": "boolean"
+          },
+          "show_countdown": {
+            "default": true,
+            "title": "Show Countdown",
+            "type": "boolean"
+          },
+          "phase": {
+            "default": "human",
+            "title": "Phase",
+            "type": "string"
+          }
+        },
+        "required": [
+          "remaining_seconds",
+          "reminder_remaining_seconds"
+        ],
+        "title": "InteractionTiming",
+        "type": "object"
       },
       "InterruptStatus": {
         "enum": [
@@ -21930,6 +23014,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "template": {
             "anyOf": [
               {
@@ -22413,6 +23509,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -22569,6 +23677,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -22678,6 +23798,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "name": {
             "title": "Name",
@@ -22800,6 +23932,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "name": {
             "title": "Name",
@@ -23054,6 +24198,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -23175,6 +24331,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "name": {
             "title": "Name",
@@ -23608,6 +24776,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "row_id": {
             "anyOf": [
@@ -24327,6 +25507,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "session_id": {
             "anyOf": [
               {
@@ -24786,6 +25978,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           }
         },
         "required": [
@@ -25027,6 +26231,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "path": {
             "anyOf": [
@@ -25463,6 +26679,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "token": {
             "anyOf": [
               {
@@ -25508,6 +26736,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "state": {
             "anyOf": [
@@ -25889,6 +27129,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "localOnly": {
             "default": false,
             "title": "Localonly",
@@ -25964,6 +27216,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "prompt": {
             "anyOf": [
@@ -26136,6 +27400,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "token": {
             "title": "Token",
@@ -26400,6 +27676,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "knownRevision": {
             "anyOf": [
               {
@@ -26623,6 +27911,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "slug": {
             "title": "Slug",
             "type": "string"
@@ -26653,6 +27953,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "scale": {
             "default": null,
@@ -26695,6 +28007,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "slug": {
             "title": "Slug",
@@ -26926,6 +28250,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "slug": {
             "title": "Slug",
             "type": "string"
@@ -27095,6 +28431,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "name": {
             "title": "Name",
@@ -27471,6 +28819,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "action": {
             "$ref": "#/components/schemas/PluginsAction",
@@ -28159,6 +29519,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "url": {
             "title": "Url",
             "type": "string"
@@ -28813,6 +30185,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "name": {
             "anyOf": [
               {
@@ -28844,6 +30228,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           }
         },
         "title": "ProfileParams",
@@ -29219,6 +30615,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "name": {
             "anyOf": [
               {
@@ -29429,6 +30837,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "name": {
             "title": "Name",
@@ -29699,6 +31119,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "name": {
             "anyOf": [
               {
@@ -29793,6 +31225,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "include_sessions": {
             "anyOf": [
               {
@@ -29852,6 +31296,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "name": {
             "anyOf": [
@@ -30006,6 +31462,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "cwd": {
             "anyOf": [
               {
@@ -30100,6 +31568,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -30131,6 +31611,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "id": {
             "title": "Id",
@@ -30821,6 +32313,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -30869,6 +32373,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -30900,6 +32416,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "name": {
             "title": "Name",
@@ -31020,6 +32548,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "scan": {
             "default": false,
             "title": "Scan",
@@ -31072,6 +32612,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "cwd": {
             "anyOf": [
@@ -31164,6 +32716,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "project_id": {
             "title": "Project Id",
             "type": "string"
@@ -31220,6 +32784,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "repos": {
             "anyOf": [
@@ -31307,6 +32883,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "id": {
             "anyOf": [
               {
@@ -31337,6 +32925,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "preview_limit": {
             "anyOf": [
@@ -31417,6 +33017,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "id": {
             "title": "Id",
@@ -31692,6 +33304,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "text": {
             "default": "",
@@ -34278,6 +35902,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "cols": {
             "anyOf": [
               {
@@ -34534,6 +36170,18 @@
             "title": "Id",
             "type": "string"
           },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cwd"
+          },
           "last_active": {
             "title": "Last Active",
             "type": "number"
@@ -34595,6 +36243,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "current_session_id": {
             "anyOf": [
@@ -34818,6 +36478,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "name": {
             "anyOf": [
               {
@@ -34921,6 +36593,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "parent_session_id": {
             "minLength": 1,
@@ -35034,6 +36718,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "name": {
             "anyOf": [
               {
@@ -35126,6 +36822,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           }
         },
         "required": [
@@ -35173,6 +36881,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "focus_topic": {
             "anyOf": [
@@ -35400,6 +37120,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           }
         },
         "required": [
@@ -35587,6 +37319,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "session_id": {
             "title": "Session Id",
             "type": "string"
@@ -35628,6 +37372,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "session_id": {
             "title": "Session Id",
@@ -35755,6 +37511,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "text": {
             "title": "Text",
             "type": "string"
@@ -35824,6 +37592,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "cols": {
             "anyOf": [
@@ -36063,6 +37843,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "cwd": {
             "title": "Cwd",
             "type": "string"
@@ -36143,6 +37935,18 @@
             "default": "",
             "title": "Cwd",
             "type": "string"
+          },
+          "input_history_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Input History Key"
           },
           "branch": {
             "anyOf": [
@@ -36333,6 +38137,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           }
         },
         "required": [
@@ -36429,6 +38245,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "last_seen": {
             "anyOf": [
               {
@@ -36508,6 +38336,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           }
         },
         "title": "SessionEventsStatsParams",
@@ -36568,6 +38408,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "id": {
             "anyOf": [
               {
@@ -36617,6 +38469,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "source": {
             "anyOf": [
@@ -36763,6 +38627,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           }
         },
         "required": [
@@ -36811,6 +38687,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "expected_hosted_task_id": {
             "anyOf": [
@@ -36883,6 +38771,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "title": {
             "anyOf": [
               {
@@ -36911,6 +38811,18 @@
             "default": false,
             "title": "Include Hidden",
             "type": "boolean"
+          },
+          "current_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Current Session Id"
           }
         },
         "title": "SessionListParams",
@@ -36952,6 +38864,18 @@
             ],
             "default": null,
             "title": "Resolved Id"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cwd"
           },
           "title": {
             "default": "",
@@ -37077,6 +39001,18 @@
             "default": "",
             "title": "Cwd",
             "type": "string"
+          },
+          "input_history_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Input History Key"
           },
           "branch": {
             "anyOf": [
@@ -37262,6 +39198,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           }
         },
         "title": "SessionMostRecentParams",
@@ -37444,6 +39392,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           }
         },
         "required": [
@@ -37567,6 +39527,30 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
+          "current_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Current Session Id"
           },
           "cols": {
             "anyOf": [
@@ -37910,6 +39894,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           }
         },
         "required": [
@@ -38196,6 +40192,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           }
         },
         "required": [
@@ -38236,6 +40244,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "title": {
             "anyOf": [
@@ -38333,6 +40353,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "intent": {
             "anyOf": [
               {
@@ -38383,6 +40415,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           }
         },
         "required": [
@@ -38944,6 +40988,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "session_key": {
             "title": "Session Key",
             "type": "string"
@@ -39427,6 +41483,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "provider": {
             "anyOf": [
               {
@@ -39829,6 +41897,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "day": {
             "title": "Day",
             "type": "string"
@@ -39889,6 +41969,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "signal": {
             "title": "Signal",
             "type": "string"
@@ -39933,6 +42025,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "area": {
             "title": "Area",
             "type": "string"
@@ -39959,6 +42063,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "kind": {
             "title": "Kind",
@@ -40020,6 +42136,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "step": {
             "title": "Step",
             "type": "string"
@@ -40051,6 +42179,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "enabled": {
             "title": "Enabled",
@@ -40088,6 +42228,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "command": {
             "title": "Command",
@@ -40141,6 +42293,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "elapsed_ms": {
             "title": "Elapsed Ms",
@@ -40210,6 +42374,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "outcome": {
             "title": "Outcome",
@@ -40384,6 +42560,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "text": {
             "title": "Text",
@@ -40608,6 +42796,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "action": {
             "$ref": "#/components/schemas/SkillsAction",
@@ -41157,6 +43357,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "session_id": {
             "anyOf": [
               {
@@ -41221,6 +43433,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "path": {
             "title": "Path",
@@ -41311,6 +43535,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "subagents": {
             "items": {
@@ -41768,6 +44004,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "subagent_id": {
             "title": "Subagent Id",
             "type": "string"
@@ -42013,6 +44261,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "subagent_id": {
             "title": "Subagent Id",
             "type": "string"
@@ -42110,6 +44370,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "subscription_type_id": {
             "anyOf": [
               {
@@ -42153,6 +44425,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "subscription_type_id": {
             "anyOf": [
@@ -42610,6 +44894,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "subscription_type_id": {
             "anyOf": [
               {
@@ -42961,6 +45257,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "cols": {
             "anyOf": [
@@ -44703,6 +47011,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "kind": {
             "anyOf": [
               {
@@ -44928,6 +47248,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "name": {
             "anyOf": [
               {
@@ -44970,6 +47302,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "id": {
             "anyOf": [
@@ -45079,6 +47423,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "name": {
             "anyOf": [
               {
@@ -45155,6 +47511,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "name": {
             "anyOf": [
@@ -45458,6 +47826,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "session_id": {
             "anyOf": [

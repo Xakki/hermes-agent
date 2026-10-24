@@ -73,25 +73,48 @@ def prompt_for_secret(cli, var_name: str, prompt: str, metadata=None) -> dict:
         "prompt": prompt,
         "metadata": metadata or {},
         "response_queue": response_queue}
-    cli._secret_deadline = _time.monotonic() + 120
+    cli._secret_deadline = _time.monotonic() + 600
     if hasattr(cli, "_ring_bell"):
         cli._ring_bell(prompt=True, context=f"secret needed ({var_name})")
     _clear_secret_input(cli)
     _invalidate(cli)
 
+    deadline = cli._secret_deadline
+    reminded = False
+    from hermes_cli.interaction_host import cli_host
+    import uuid
+    host = cli_host(cli) if getattr(cli, "session_id", None) else None
+    request_id = uuid.uuid4().hex
+    if host is not None:
+        host.lifecycle._record("host", "opened", request_id, purpose="secret")
     while True:
+        if deadline <= _time.monotonic():
+            break
         try:
             value = response_queue.get(timeout=1)
         except queue.Empty:
-            if cli._secret_deadline - _time.monotonic() <= 0:
+            if deadline - _time.monotonic() <= 0:
                 break
+            if not reminded and _time.monotonic() >= deadline - 300:
+                reminded = True
+                if host is not None:
+                    host.lifecycle._record("host", "reminder", request_id, purpose="secret")
+                if hasattr(cli, "_ring_bell"):
+                    cli._ring_bell(prompt=True, context="Human secret entry still pending")
             _invalidate(cli)
             continue
+        if deadline <= _time.monotonic():
+            break
+        if host is not None:
+            cancelled = getattr(response_queue, "_interaction_cancelled", False)
+            host.lifecycle._record("host" if cancelled else "user", "cancelled" if cancelled else "answered", request_id, purpose="secret")
         cli._secret_state = None
         cli._secret_deadline = 0
         _invalidate(cli)
         return _secret_result(var_name, value)
 
+    if host is not None:
+        host.lifecycle._record("host", "expired", request_id, purpose="secret")
     cli._secret_state = None
     cli._secret_deadline = 0
     _clear_secret_input(cli)

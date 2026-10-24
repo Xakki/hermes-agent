@@ -326,7 +326,7 @@ def _project_tree_row(r: dict) -> dict:
     what ``SidebarSessionRow`` reads), minus the heavy columns."""
     row = {k: r.get(k) for k in (
         "id", "_lineage_root_id", "_lineage_ids", "parent_session_id",
-        "_reset_from", "_branched_from", "title", "preview")}
+        "_reset_from", "_branched_from", "title", "preview", "project_root")}
     row.update(
         started_at=r.get("started_at") or 0, ended_at=r.get("ended_at"),
         last_active=r.get("last_active") or r.get("started_at") or 0,
@@ -339,7 +339,7 @@ def _project_tree_row(r: dict) -> dict:
 
 
 def _project_tree_inputs(
-    db, session_limit: int, *, include_discovered: bool
+    db, session_limit: int, *, include_discovered: bool, project_root: str | None = None
 ) -> tuple[list[dict], list[dict], list[dict], str | None]:
     """Gather (sessions, projects, discovered_repos, active_id) for build_tree.
     ``include_discovered`` is the zero-session-repo overview tier; drill-in skips it (and
@@ -348,7 +348,7 @@ def _project_tree_inputs(
     rows = db.list_sessions_rich(
         limit=session_limit, offset=0, order_by_last_active=True, min_message_count=1,
         include_children=False, exclude_sources=_PROJECT_TREE_EXCLUDED_SOURCES,
-        include_archived=False, compact_rows=True)
+        include_archived=False, compact_rows=True, project_root=project_root)
     sessions = [_project_tree_row(r) for r in rows]
     # Parallel-warm the git cache so build_tree's resolver doesn't cold-probe each cwd in turn.
     git_probe.warm_roots(s["cwd"] for s in sessions if s.get("cwd"))
@@ -382,13 +382,14 @@ def _dir_exists_cached(path: str) -> bool:
 
 
 def _build_project_tree(
-    db, *, preview_limit: int, hydrate: bool, session_limit: int, include_discovered: bool
+    db, *, preview_limit: int, hydrate: bool, session_limit: int, include_discovered: bool,
+    project_root: str | None = None,
 ) -> tuple[dict, str | None]:
     """Gather inputs and run the one authoritative builder. Returns (tree, active_id)."""
     from tui_gateway import project_tree
     _DIR_EXISTS_CACHE.clear()
     sessions, projects, discovered, active_id = _project_tree_inputs(
-        db, session_limit, include_discovered=include_discovered)
+        db, session_limit, include_discovered=include_discovered, project_root=project_root)
     # build_tree also resolves declared project folders and discovered roots — warm them too.
     git_probe.warm_roots(
         [str(f.get("path") or "") for p in projects for f in (p.get("folders") or [])]

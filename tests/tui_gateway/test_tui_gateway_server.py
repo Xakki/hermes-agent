@@ -16,6 +16,16 @@ import pytest
 from hermes_constants import reset_hermes_home_override, set_hermes_home_override
 from hermes_cli.active_sessions import active_session_registry_snapshot
 from hermes_cli.browser_connect import ChromeDebugLaunch
+from tests.tui_gateway.inline_thread_fixtures import (
+    ImmediateThread as _ImmediateThread,
+    finish_no_model_prompt,
+    inline_prompt_threads,
+    no_model_prompt,
+)
+from tests.tui_gateway.session_fixtures import (
+    StoredSessionDB,
+    session_data as _session,
+)
 from tools import async_delegation as ad
 from tui_gateway import server
 from tui_gateway.transport import bind_transport, reset_transport
@@ -394,7 +404,7 @@ def test_prompt_submit_fails_open_inline_when_compute_host_dispatch_breaks(monke
         "_run_prompt_submit",
         lambda rid, sid, _session, text, **_kwargs: inline_calls.append((rid, sid, text)),
     )
-    monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+    inline_prompt_threads(monkeypatch, _ImmediateThread)
 
     try:
         resp = server.handle_request(
@@ -665,7 +675,7 @@ def test_prompt_submit_golden_transcript_matches_flag_off_and_on(monkeypatch):
 
     fixed_info = {"model": "gold-model", "provider": "gold-provider", "usage": {"total": 15}}
     usage = server._get_usage(_Agent())
-    monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+    completion = inline_prompt_threads(monkeypatch, _ImmediateThread)
     monkeypatch.setattr(server, "_ensure_session_db_row", lambda _session: None)
     monkeypatch.setattr(server, "_persist_branch_seed", lambda _session: None)
     monkeypatch.setattr(server, "_session_info", lambda _agent, _session=None: dict(fixed_info))
@@ -737,6 +747,8 @@ def test_prompt_submit_golden_transcript_matches_flag_off_and_on(monkeypatch):
             server._sessions.pop("sid", None)
 
     assert run_flag_on() == run_flag_off()
+    completion.assert_called()
+    assert all(call.args[0] == "sid" and call.args[2]["final_response"] == "hi" for call in completion.call_args_list)
 
 
 def test_session_context_explicit_cwd_for_ephemeral_task(monkeypatch, tmp_path):
@@ -1413,7 +1425,7 @@ def test_run_prompt_submit_never_ticks_after_message_complete(monkeypatch):
         "_start_usage_ticker",
         lambda sid, agent, interval=1.0: real_ticker(sid, agent, interval=0.01),
     )
-    monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+    inline_prompt_threads(monkeypatch, _ImmediateThread)
     monkeypatch.setattr(server, "make_stream_renderer", lambda cols: None)
     monkeypatch.setattr(server, "render_message", lambda raw, cols: None)
     monkeypatch.setattr(server, "_get_db", lambda: None)
@@ -3280,7 +3292,10 @@ def test_session_resume_uses_parent_lineage_for_display(monkeypatch, omit_messag
 
     class FakeDB:
         def get_session(self, target):
-            return {"id": target}
+            return {"id": target, "project_root": str(Path.cwd())}
+
+        def get_session_by_title(self, _target):
+            return None
 
         def reopen_session(self, target):
             captured["reopened"] = target
@@ -3335,7 +3350,7 @@ def test_session_resume_uses_parent_lineage_for_display(monkeypatch, omit_messag
     # _neuter_agent_prewarm_timer fixture; this test only asserts the
     # returned display history.
 
-    params = {"session_id": target}
+    params = {"session_id": target, "project_root": str(Path.cwd())}
     if omit_messages:
         params["omit_messages"] = True
     resp = server.handle_request(
@@ -3589,7 +3604,7 @@ def test_lazy_child_watch_resume_serves_candidate_inclusive_display(monkeypatch,
     from hermes_state import SessionDB
 
     db = SessionDB(db_path=tmp_path / "state.db")
-    db.create_session("child1", source="tui")
+    db.create_session("child1", source="tui", project_root=str(tmp_path))
     db.append_message("child1", role="user", content="child prompt")
     db.append_message(
         "child1", role="assistant", content="child substantive answer",
@@ -3612,12 +3627,13 @@ def test_lazy_child_watch_resume_serves_candidate_inclusive_display(monkeypatch,
     monkeypatch.setattr(server, "_claim_or_reuse_live", lambda *a, **k: None)
     monkeypatch.setattr(server, "_child_run_active", lambda *a, **k: False)
     monkeypatch.setattr(server, "_schedule_session_cap_enforcement", lambda *a, **k: None)
+    monkeypatch.chdir(tmp_path)
 
     resp = server.handle_request(
         {
             "id": "1",
             "method": "session.resume",
-            "params": {"session_id": "child1", "lazy": True},
+            "params": {"session_id": "child1", "lazy": True, "project_root": str(tmp_path)},
         }
     )
 
@@ -3856,13 +3872,15 @@ def test_session_resume_follows_compression_tip(monkeypatch, tmp_path):
 
     db = SessionDB(db_path=tmp_path / "state.db")
     base = int(time.time()) - 10_000
-    db.create_session("parent_root", source="tui")
+    db.create_session("parent_root", source="tui", project_root=str(tmp_path))
     db.append_message(
         "parent_root", role="user", content="pre-compression turn",
         timestamp=base + 10,
     )
     db.end_session("parent_root", "compression")
-    db.create_session("cont_tip", source="tui", parent_session_id="parent_root")
+    db.create_session(
+        "cont_tip", source="tui", parent_session_id="parent_root", project_root=str(tmp_path)
+    )
     db.append_message(
         "cont_tip", role="assistant", content="post-compression reply",
         timestamp=base + 110,
@@ -3898,11 +3916,12 @@ def test_session_resume_follows_compression_tip(monkeypatch, tmp_path):
     )
 
     try:
+        monkeypatch.chdir(tmp_path)
         # eager_build: this asserts the synchronously-built agent binds to the
         # resolved tip (captured["agent_session_id"]); the compression-tip
         # resolution itself runs before the build and is mode-agnostic.
         resp = server.handle_request(
-            {"id": "1", "method": "session.resume", "params": {"session_id": "parent_root", "eager_build": True}}
+            {"id": "1", "method": "session.resume", "params": {"session_id": "parent_root", "eager_build": True, "project_root": str(tmp_path)}}
         )
     finally:
         db.close()
@@ -3922,10 +3941,14 @@ def test_session_resume_passes_stored_runtime_to_agent(monkeypatch):
         def get_session(self, target):
             return {
                 "id": target,
+                "project_root": str(Path.cwd()),
                 "model": "gpt-5.4",
                 "billing_provider": "openai-codex",
                 "model_config": '{"reasoning_config":{"enabled":true,"effort":"high"},"service_tier":"priority","base_url":"https://custom.example/v1","api_mode":"chat_completions"}',
             }
+
+        def get_session_by_title(self, _target):
+            return None
 
         def reopen_session(self, target):
             pass
@@ -3962,7 +3985,7 @@ def test_session_resume_passes_stored_runtime_to_agent(monkeypatch):
     # overrides reach _make_agent, info comes from _session_info). The deferred
     # default restores the same overrides via _start_agent_build off-thread.
     resp = server.handle_request(
-        {"id": "1", "method": "session.resume", "params": {"session_id": "stored-session", "eager_build": True}}
+        {"id": "1", "method": "session.resume", "params": {"session_id": "stored-session", "eager_build": True, "project_root": str(Path.cwd())}}
     )
 
     assert captured["model_override"] == {
@@ -3990,7 +4013,7 @@ def test_session_resume_profile_uses_profile_db_cwd(monkeypatch, tmp_path):
 
     class ProfileDB:
         def get_session(self, _target):
-            return {"id": target, "cwd": str(profile_cwd)}
+            return {"id": target, "cwd": str(profile_cwd), "project_root": str(Path.cwd())}
 
         def get_session_by_title(self, _target):
             return None
@@ -4015,7 +4038,7 @@ def test_session_resume_profile_uses_profile_db_cwd(monkeypatch, tmp_path):
 
     class LaunchDB:
         def get_session(self, _target):
-            return {"id": target, "cwd": str(launch_cwd)}
+            return {"id": target, "cwd": str(launch_cwd), "project_root": "/work/a"}
 
         def update_session_cwd(self, *_args):
             captured["launch_update"] = True
@@ -4068,7 +4091,7 @@ def test_session_resume_profile_uses_profile_db_cwd(monkeypatch, tmp_path):
             {
                 "id": "1",
                 "method": "session.resume",
-                "params": {"session_id": target, "profile": "worker", "eager_build": True},
+                "params": {"session_id": target, "profile": "worker", "eager_build": True, "project_root": str(Path.cwd())},
             }
         )
 
@@ -4897,24 +4920,6 @@ def test_startup_runtime_does_not_call_network_detector(monkeypatch):
 
     assert model
     assert provider in {None, "anthropic"}
-
-
-def _session(agent=None, **extra):
-    return {
-        "agent": agent if agent is not None else types.SimpleNamespace(),
-        "session_key": "session-key",
-        "history": [],
-        "history_lock": threading.Lock(),
-        "history_version": 0,
-        "running": False,
-        "attached_images": [],
-        "image_counter": 0,
-        "cols": 80,
-        "slash_worker": None,
-        "show_reasoning": False,
-        "tool_progress_mode": "all",
-        **extra,
-    }
 
 
 def test_session_close_commits_memory_and_fires_finalize_hook(monkeypatch):
@@ -6689,6 +6694,7 @@ def test_prompt_submit_truncates_by_message_id(monkeypatch):
     ]
     server._sessions["msg-id-trunc-sid"] = _session(history=list(history))
     monkeypatch.setattr(server, "_get_db", lambda: _FakeDB())
+    run_turn = no_model_prompt(monkeypatch, server)
     monkeypatch.setattr(
         server, "_start_agent_build", lambda *a, **k: None
     )
@@ -6713,6 +6719,7 @@ def test_prompt_submit_truncates_by_message_id(monkeypatch):
         assert len(replaced) == 1
         assert replaced[0][1] == history[:2]
     finally:
+        finish_no_model_prompt(server._sessions["msg-id-trunc-sid"], run_turn)
         server._sessions.pop("msg-id-trunc-sid", None)
 
 
@@ -6947,6 +6954,7 @@ def test_prompt_submit_truncates_by_row_id(monkeypatch):
     sess = _session(history=list(history))
     server._sessions["row-id-trunc-sid"] = sess
     monkeypatch.setattr(server, "_get_db", lambda: _FakeDB())
+    run_turn = no_model_prompt(monkeypatch, server)
     started = []
     monkeypatch.setattr(
         server, "_start_agent_build", lambda *a, **k: started.append(k)
@@ -6972,6 +6980,7 @@ def test_prompt_submit_truncates_by_row_id(monkeypatch):
         assert len(replaced) == 1
         assert replaced[0][1] == history[:2]
     finally:
+        finish_no_model_prompt(sess, run_turn)
         server._sessions.pop("row-id-trunc-sid", None)
 
 
@@ -6999,6 +7008,7 @@ def test_prompt_submit_truncates_by_string_row_id(monkeypatch):
     sess = _session(history=list(history))
     server._sessions["str-row-id-trunc-sid"] = sess
     monkeypatch.setattr(server, "_get_db", lambda: _FakeDB())
+    run_turn = no_model_prompt(monkeypatch, server)
     monkeypatch.setattr(server, "_start_agent_build", lambda *a, **k: None)
 
     try:
@@ -7017,6 +7027,7 @@ def test_prompt_submit_truncates_by_string_row_id(monkeypatch):
         assert resp.get("error") is None
         assert len(sess["history"]) == 2
     finally:
+        finish_no_model_prompt(sess, run_turn)
         server._sessions.pop("str-row-id-trunc-sid", None)
 
 
@@ -7788,7 +7799,7 @@ def _configure_immediate_prompt_run(
             return False
 
     if immediate_threads:
-        monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+        inline_prompt_threads(monkeypatch, _ImmediateThread)
     monkeypatch.setattr(server, "_emit", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(server, "make_stream_renderer", lambda _cols: None)
     monkeypatch.setattr(server, "render_message", lambda _raw, _cols: None)
@@ -8241,7 +8252,7 @@ def test_ensure_session_db_row_persists_explicit_cwd(monkeypatch, tmp_path):
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, profile_name=None, user_id=None):
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, project_root=None, profile_name=None, user_id=None, **_kw):
             created.append(
                 {"key": key, "source": source, "model": model, "model_config": model_config, "cwd": cwd}
             )
@@ -8262,7 +8273,7 @@ def test_ensure_session_db_row_persists_session_source(monkeypatch):
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, profile_name=None, user_id=None):
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, project_root=None, profile_name=None, user_id=None, **_kw):
             created.append(
                 {"key": key, "source": source, "model": model, "model_config": model_config, "cwd": cwd}
             )
@@ -8287,7 +8298,7 @@ def test_ensure_session_db_row_records_a_terminal_workspace(monkeypatch, tmp_pat
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, profile_name=None, user_id=None):
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, project_root=None, profile_name=None, user_id=None, **_kw):
             created.append(
                 {"key": key, "source": source, "model": model, "model_config": model_config, "cwd": cwd}
             )
@@ -8310,7 +8321,7 @@ def test_ensure_session_db_row_defaults_desktop_to_no_workspace(monkeypatch, tmp
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, profile_name=None, user_id=None):
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, project_root=None, profile_name=None, user_id=None, **_kw):
             created.append(
                 {"key": key, "source": source, "model": model, "model_config": model_config, "cwd": cwd}
             )
@@ -8337,7 +8348,7 @@ def test_ensure_session_db_row_persists_session_model_override(monkeypatch):
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, profile_name=None, user_id=None):
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, project_root=None, profile_name=None, user_id=None, **_kw):
             created.append(
                 {"key": key, "model": model, "model_config": model_config, "cwd": cwd}
             )
@@ -8369,7 +8380,7 @@ def test_ensure_session_db_row_no_override_uses_global(monkeypatch):
     created = []
 
     class _FakeDB:
-        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, profile_name=None, user_id=None):
+        def create_session(self, key, source=None, model=None, model_config=None, parent_session_id=None, cwd=None, project_root=None, profile_name=None, user_id=None, **_kw):
             created.append({"model": model, "model_config": model_config})
 
     monkeypatch.setattr(server, "_get_db", lambda: _FakeDB())
@@ -8708,7 +8719,7 @@ def test_session_create_drops_pending_title_on_valueerror(monkeypatch):
     monkeypatch.setattr(
         server, "_sync_session_key_after_compress", lambda *a, **kw: None
     )
-    monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+    inline_prompt_threads(monkeypatch, _ImmediateThread)
 
     try:
         server.handle_request(
@@ -11592,7 +11603,7 @@ def test_prompt_submit_sets_approval_session_key(monkeypatch):
             self._target()
 
     server._sessions["sid"] = _session(agent=_Agent())
-    monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+    inline_prompt_threads(monkeypatch, _ImmediateThread)
     monkeypatch.setattr(server, "_emit", lambda *args, **kwargs: None)
     monkeypatch.setattr(server, "make_stream_renderer", lambda cols: None)
     monkeypatch.setattr(server, "render_message", lambda raw, cols: None)
@@ -11645,7 +11656,7 @@ def test_prompt_submit_expands_context_refs(monkeypatch):
     fake_meta.get_model_context_length = lambda *args, **kwargs: 100000
 
     server._sessions["sid"] = _session(agent=_Agent())
-    monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+    inline_prompt_threads(monkeypatch, _ImmediateThread)
     monkeypatch.setattr(server, "_emit", lambda *args, **kwargs: None)
     monkeypatch.setattr(server, "make_stream_renderer", lambda cols: None)
     monkeypatch.setattr(server, "render_message", lambda raw, cols: None)
@@ -11730,6 +11741,7 @@ def test_file_attach_uploads_remote_file_into_session_workspace(monkeypatch, tmp
     """
     workspace = tmp_path / "workspace"
     workspace.mkdir()
+    monkeypatch.chdir(workspace)
     home = tmp_path / "home"
     fake_cli = types.ModuleType("cli")
     fake_cli._detect_file_drop = lambda raw: None
@@ -11767,6 +11779,7 @@ def test_file_attach_copies_gateway_visible_file_outside_workspace(monkeypatch, 
     """Local case: gateway can see the file but it's outside the workspace → copy in."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
+    monkeypatch.chdir(workspace)
     home = tmp_path / "home"
     source = tmp_path / "outside.txt"
     source.write_text("outside workspace", encoding="utf-8")
@@ -11800,6 +11813,7 @@ def test_file_attach_uses_in_workspace_file_without_copying(monkeypatch, tmp_pat
     """Local case: file already inside the workspace → ref it directly, no copy."""
     workspace = tmp_path / "workspace"
     (workspace / "data").mkdir(parents=True)
+    monkeypatch.chdir(workspace)
     source = workspace / "data" / "exam.csv"
     source.write_text("a,b,c\n1,2,3\n", encoding="utf-8")
     fake_cli = types.ModuleType("cli")
@@ -11834,6 +11848,7 @@ def test_file_attach_errors_when_unresolvable_and_no_bytes(monkeypatch, tmp_path
     """Remote path not on gateway and no data_url → actionable error, not a stage."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
+    monkeypatch.chdir(workspace)
     fake_cli = types.ModuleType("cli")
     fake_cli._detect_file_drop = lambda raw: None
     fake_cli._split_path_input = lambda raw: (raw, "")
@@ -11860,6 +11875,7 @@ def test_file_attach_quotes_ref_with_spaces(monkeypatch, tmp_path):
     """Staged names with spaces must be backtick-quoted so the @file: ref parses."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
+    monkeypatch.chdir(workspace)
     fake_cli = types.ModuleType("cli")
     fake_cli._detect_file_drop = lambda raw: None
     fake_cli._split_path_input = lambda raw: (raw, "")
@@ -13211,7 +13227,7 @@ def test_prompt_submit_history_version_mismatch_surfaces_warning(monkeypatch):
     session_ref["s"] = server._sessions["sid"]
     emits: list[tuple] = []
     try:
-        monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+        inline_prompt_threads(monkeypatch, _ImmediateThread)
         monkeypatch.setattr(server, "_get_usage", lambda _a: {})
         monkeypatch.setattr(server, "render_message", lambda _t, _c: "")
         monkeypatch.setattr(server, "_emit", lambda *a: emits.append(a))
@@ -13316,7 +13332,7 @@ def test_prompt_submit_merges_on_model_switch_marker(monkeypatch):
         session_ref["s"] = server._sessions["sid"]
         emits: list[tuple] = []
         try:
-            monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+            inline_prompt_threads(monkeypatch, _ImmediateThread)
             monkeypatch.setattr(server, "_get_usage", lambda _a: {})
             monkeypatch.setattr(server, "render_message", lambda _t, _c: "")
             monkeypatch.setattr(server, "_emit", lambda *a: emits.append(a))
@@ -13406,7 +13422,7 @@ def test_prompt_submit_merges_on_personality_pivot_marker(monkeypatch):
     session_ref["s"] = server._sessions["sid"]
     emits: list[tuple] = []
     try:
-        monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+        inline_prompt_threads(monkeypatch, _ImmediateThread)
         monkeypatch.setattr(server, "_get_usage", lambda _a: {})
         monkeypatch.setattr(server, "render_message", lambda _t, _c: "")
         monkeypatch.setattr(server, "_session_info", lambda *a, **k: {})
@@ -13472,7 +13488,7 @@ def test_prompt_submit_sanitizes_bracketed_paste_before_agent(monkeypatch):
     corrupted = "hello[" + "~[[e" * 8
     server._sessions["sid"] = _session(agent=_Agent())
     try:
-        monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+        inline_prompt_threads(monkeypatch, _ImmediateThread)
         monkeypatch.setattr(server, "_get_usage", lambda _a: {})
         monkeypatch.setattr(server, "render_message", lambda _t, _c: "")
         monkeypatch.setattr(server, "_emit", lambda *a: None)
@@ -13513,7 +13529,7 @@ def test_prompt_submit_history_version_match_persists_normally(monkeypatch):
     server._sessions["sid"] = _session(agent=_Agent())
     emits: list[tuple] = []
     try:
-        monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+        inline_prompt_threads(monkeypatch, _ImmediateThread)
         monkeypatch.setattr(server, "_get_usage", lambda _a: {})
         monkeypatch.setattr(server, "render_message", lambda _t, _c: "")
         monkeypatch.setattr(server, "_emit", lambda *a: emits.append(a))
@@ -13574,7 +13590,7 @@ def test_prompt_submit_snapshots_history_after_pending_model_switch(monkeypatch)
     server._sessions["sid"]["pending_model_switch"] = {"raw": "new-model"}
     emits = []
     try:
-        monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+        inline_prompt_threads(monkeypatch, _ImmediateThread)
         monkeypatch.setattr(server, "_apply_pending_model_switch", _apply_pending)
         monkeypatch.setattr(server, "_sync_agent_model_with_config", lambda *_a: None)
         monkeypatch.setattr(server, "_get_usage", lambda _a: {})
@@ -13648,7 +13664,7 @@ def test_prompt_submit_can_truncate_before_user_ordinal(monkeypatch):
     stub_db = _StubDb()
 
     try:
-        monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+        inline_prompt_threads(monkeypatch, _ImmediateThread)
         monkeypatch.setattr(server, "_get_usage", lambda _a: {})
         monkeypatch.setattr(server, "render_message", lambda _t, _c: "")
         monkeypatch.setattr(server, "_emit", lambda *a: None)
@@ -13874,7 +13890,7 @@ def test_prompt_submit_truncate_ordinal_skips_display_kind_rows(monkeypatch):
     stub_db = _StubDb()
 
     try:
-        monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+        inline_prompt_threads(monkeypatch, _ImmediateThread)
         monkeypatch.setattr(server, "_get_usage", lambda _a: {})
         monkeypatch.setattr(server, "render_message", lambda _t, _c: "")
         monkeypatch.setattr(server, "_emit", lambda *a: None)
@@ -13985,7 +14001,7 @@ def test_prompt_submit_truncate_translates_display_prefix_ordinal(monkeypatch):
     stub_db = _StubDb()
 
     try:
-        monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+        inline_prompt_threads(monkeypatch, _ImmediateThread)
         monkeypatch.setattr(server, "_get_usage", lambda _a: {})
         monkeypatch.setattr(server, "render_message", lambda _t, _c: "")
         monkeypatch.setattr(server, "_emit", lambda *a: None)
@@ -15831,6 +15847,164 @@ def test_session_list_returns_clean_error_when_state_db_is_unavailable(monkeypat
 # --------------------------------------------------------------------------
 
 
+def test_session_delete_requires_session_id(monkeypatch):
+    """Empty / missing session_id is a 4006 client error (no DB call)."""
+    called: list[tuple] = []
+
+    class _DB:
+        def delete_session(self, *a, **kw):
+            called.append((a, kw))
+            return True
+
+    monkeypatch.setattr(server, "_get_db", lambda: _DB())
+
+    resp = server.handle_request({"id": "1", "method": "session.delete", "params": {}})
+    assert "error" in resp
+    assert resp["error"]["code"] == 4006
+    assert called == []
+
+
+def test_session_delete_returns_db_unavailable_when_no_db(monkeypatch):
+    monkeypatch.setattr(server, "_get_db", lambda: None)
+    monkeypatch.setattr(server, "_db_error", "locked")
+
+    resp = server.handle_request(
+        {"id": "1", "method": "session.delete", "params": {"session_id": "abc"}}
+    )
+
+    assert "error" in resp
+    assert resp["error"]["code"] == 5036
+    assert resp["error"]["data"]["code"] == "storage_locked"
+
+
+def test_session_delete_refuses_active_session(monkeypatch):
+    """Cannot delete a session currently bound to a live TUI session."""
+    called: list[str] = []
+
+    class _DB:
+        def delete_session(self, sid, sessions_dir=None, **_kw):
+            called.append(sid)
+            return True
+
+    monkeypatch.setattr(server, "_get_db", lambda: _DB())
+    monkeypatch.setitem(server._sessions, "live", {"session_key": "key-live"})
+    try:
+        resp = server.handle_request(
+            {
+                "id": "1",
+                "method": "session.delete",
+                "params": {"session_id": "key-live"},
+            }
+        )
+    finally:
+        server._sessions.pop("live", None)
+
+    assert "error" in resp
+    assert resp["error"]["code"] == 4023
+    assert called == [], "delete_session must not be called for active sessions"
+
+
+def test_session_delete_fails_closed_when_active_snapshot_raises(monkeypatch):
+    """Concurrent ``_sessions`` mutation from another RPC thread can raise
+    ``RuntimeError: dictionary changed size during iteration``.  When the
+    handler can't enumerate active sessions safely it must refuse the
+    delete (fail closed) rather than fall through and allow it."""
+
+    class _DB:
+        def delete_session(self, *a, **kw):
+            raise AssertionError("delete must not run when active snapshot fails")
+
+    class _ExplodingDict:
+        def values(self):
+            raise RuntimeError("dictionary changed size during iteration")
+
+    monkeypatch.setattr(server, "_get_db", lambda: _DB())
+    monkeypatch.setattr(server, "_sessions", _ExplodingDict())
+
+    resp = server.handle_request(
+        {"id": "1", "method": "session.delete", "params": {"session_id": "x"}}
+    )
+
+    assert "error" in resp
+    assert resp["error"]["code"] == 5036
+
+
+def test_session_delete_rejects_missing_project_scope(monkeypatch):
+    class _DB:
+        def get_session(self, sid):
+            return None
+
+        def delete_session(self, sid, sessions_dir=None, **_kw):
+            return False
+
+    monkeypatch.setattr(server, "_get_db", lambda: _DB())
+
+    resp = server.handle_request(
+        {"id": "1", "method": "session.delete", "params": {"session_id": "ghost"}}
+    )
+
+    assert "error" in resp
+    assert resp["error"]["code"] == 4008
+
+
+def test_session_delete_propagates_db_exception(monkeypatch):
+    class _DB(StoredSessionDB):
+        def get_session(self, sid):
+            return {"id": sid, "project_root": str(Path.cwd())}
+
+        def delete_session(self, sid, sessions_dir=None, **_kw):
+            raise RuntimeError("disk full")
+
+    monkeypatch.setattr(server, "_get_db", lambda: _DB())
+
+    resp = server.handle_request(
+        {"id": "1", "method": "session.delete", "params": {"session_id": "x"}}
+    )
+
+    assert "error" in resp
+    assert resp["error"]["code"] == 5036
+    assert "disk full" in resp["error"]["message"]
+
+
+def test_session_delete_success_returns_deleted_id(monkeypatch):
+    """Happy path — DB delete succeeds, response carries the deleted id
+    and the on-disk sessions dir is forwarded so transcript files get
+    cleaned up alongside the row."""
+    captured: dict = {}
+
+    class _DB(StoredSessionDB):
+        def get_session(self, sid):
+            return {"id": sid, "project_root": str(Path.cwd())}
+
+        def delete_session(self, sid, sessions_dir=None, **_kw):
+            captured["sid"] = sid
+            captured["sessions_dir"] = sessions_dir
+            return True
+
+    monkeypatch.setattr(server, "_get_db", lambda: _DB())
+
+    resp = server.handle_request(
+        {"id": "1", "method": "session.delete", "params": {"session_id": "old-1"}}
+    )
+
+    assert "result" in resp, resp
+    assert resp["result"] == {"deleted": "old-1"}
+    assert captured["sid"] == "old-1"
+    # sessions_dir must be forwarded so transcript files get cleaned up
+    # too — not just the SQLite row.  The autouse _isolate_hermes_home
+    # fixture pins HERMES_HOME to a temp dir; the handler should append
+    # /sessions to it.
+    assert captured["sessions_dir"] is not None
+    assert str(captured["sessions_dir"]).endswith("sessions")
+
+
+
+
+# --------------------------------------------------------------------------
+# session.* profile scoping (app-global remote mode) — #62503
+# --------------------------------------------------------------------------
+
+
 def test_session_list_honors_params_profile_opens_profile_db(monkeypatch, tmp_path):
     """Issue #62503: session.list must read the profile's state.db, not launch."""
     profile_home = tmp_path / "profiles" / "mlperf"
@@ -15874,7 +16048,7 @@ def test_session_list_honors_params_profile_opens_profile_db(monkeypatch, tmp_pa
         {
             "id": "1",
             "method": "session.list",
-            "params": {"profile": "mlperf", "limit": 5},
+            "params": {"profile": "mlperf", "limit": 5, "project_root": "/work/a"},
         }
     )
     assert "result" in resp, resp
@@ -15918,7 +16092,7 @@ def test_session_most_recent_honors_params_profile(monkeypatch, tmp_path):
         {
             "id": "1",
             "method": "session.most_recent",
-            "params": {"profile": "mlperf"},
+            "params": {"profile": "mlperf", "project_root": "/work/a"},
         }
     )
     assert resp["result"]["session_id"] == "ml-tip"
@@ -16017,6 +16191,45 @@ def test_session_create_reports_requested_profile_name(monkeypatch, tmp_path):
         assert server._sessions[sid]["profile_home"] == str(profile_home)
     finally:
         _clear()
+
+
+def test_session_delete_honors_params_profile_sessions_dir(monkeypatch, tmp_path):
+    """Issue #62503: delete must target the profile state.db + sessions dir."""
+    profile_home = tmp_path / "profiles" / "mlperf"
+    (profile_home / "sessions").mkdir(parents=True)
+    captured: dict = {}
+
+    class ProfileDB(StoredSessionDB):
+        def __init__(self, db_path=None):
+            captured["db_path"] = db_path
+
+        def get_session(self, sid):
+            return {"id": sid, "project_root": str(Path.cwd())}
+
+        def delete_session(self, sid, sessions_dir=None, **_kw):
+            captured["sid"] = sid
+            captured["sessions_dir"] = sessions_dir
+            return True
+
+        def close(self):
+            captured["closed"] = True
+
+    monkeypatch.setattr(server, "_profile_home", lambda p: profile_home if p == "mlperf" else None)
+    monkeypatch.setattr(server, "_get_db", lambda: None)
+    monkeypatch.setattr("hermes_state_registry.acquire", ProfileDB)
+
+    resp = server.handle_request(
+        {
+            "id": "1",
+            "method": "session.delete",
+            "params": {"session_id": "old-ml", "profile": "mlperf"},
+        }
+    )
+    assert "result" in resp, resp
+    assert resp["result"] == {"deleted": "old-ml"}
+    assert str(captured["db_path"]).endswith("state.db")
+    assert Path(captured["sessions_dir"]) == profile_home / "sessions"
+    assert captured.get("closed") is True
 
 
 def test_session_title_uses_session_profile_db_not_launch(monkeypatch, tmp_path):
@@ -17114,8 +17327,8 @@ def test_model_options_preserves_canonical_custom_row_after_agent_init(monkeypat
         "hermes_cli.auth.is_provider_explicitly_configured",
         lambda _slug: False,
     )
-    # A host signed in to Claude Code / Anthropic OAuth would otherwise keep the anthropic row.
-    monkeypatch.setattr("hermes_cli.inventory._anthropic_oauth_credentials_present", lambda: False)
+    # This fixture represents explicit OAuth sign-in without config/env credentials.
+    monkeypatch.setattr("hermes_cli.inventory._anthropic_oauth_credentials_present", lambda: True)
     monkeypatch.setattr("hermes_cli.inventory._apply_pricing", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("hermes_cli.inventory._apply_capabilities", lambda *_args, **_kwargs: None)
 
@@ -17126,8 +17339,9 @@ def test_model_options_preserves_canonical_custom_row_after_agent_init(monkeypat
 
     assert "result" in resp, resp
     assert resp["result"]["provider"] == "custom:local-ollama"
+    # Authenticated Anthropic OAuth is an explicit sign-in even without config/env.
     assert [row["slug"] for row in resp["result"]["providers"]] == [
-        "custom:local-ollama"
+        "anthropic", "custom:local-ollama"
     ]
 
 
@@ -17259,7 +17473,7 @@ def test_prompt_submit_releases_old_history_before_heap_trim(monkeypatch, tmp_pa
     del old
     server._sessions["sid_trim"] = session
     try:
-        monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+        inline_prompt_threads(monkeypatch, _ImmediateThread)
         monkeypatch.setattr(server, "_get_usage", lambda _a: {})
         monkeypatch.setattr(server, "render_message", lambda _t, _c: "")
         monkeypatch.setattr(server, "_emit", lambda *a: None)
@@ -17276,16 +17490,6 @@ def test_prompt_submit_releases_old_history_before_heap_trim(monkeypatch, tmp_pa
         assert observed["alive_at_trim"] is False, "a pre-turn history snapshot survived to the heap trim"
     finally:
         server._sessions.pop("sid_trim", None)
-
-
-class _ImmediateThread:
-    """Runs the target callable synchronously so assertions can follow."""
-
-    def __init__(self, target=None, daemon=None, **_thread_options):
-        self._target = target
-
-    def start(self):
-        self._target()
 
 
 def test_prompt_submit_wires_live_title_rename_callback(monkeypatch):
@@ -17315,7 +17519,7 @@ def test_prompt_submit_wires_live_title_rename_callback(monkeypatch):
     agent = _Agent()
     server._sessions["sid"] = _session(agent=agent)
     emitted = []
-    monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+    inline_prompt_threads(monkeypatch, _ImmediateThread)
     monkeypatch.setattr(
         server, "_emit", lambda kind, sid, payload=None, **kw: emitted.append((kind, payload))
     )
@@ -17365,7 +17569,7 @@ def test_prompt_submit_surfaces_backend_error_as_visible_text(monkeypatch):
             }
 
     server._sessions["sid"] = _session(agent=_Agent())
-    monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+    inline_prompt_threads(monkeypatch, _ImmediateThread)
 
     emitted: list[tuple[str, str, dict]] = []
     monkeypatch.setattr(
@@ -17409,7 +17613,7 @@ def test_prompt_submit_preserves_empty_response_without_error(monkeypatch):
             }
 
     server._sessions["sid"] = _session(agent=_Agent())
-    monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+    inline_prompt_threads(monkeypatch, _ImmediateThread)
 
     emitted: list[tuple[str, str, dict]] = []
     monkeypatch.setattr(
@@ -17442,6 +17646,40 @@ def test_prompt_submit_preserves_empty_response_without_error(monkeypatch):
 # ── active live TUI sessions ─────────────────────────────────────────
 
 
+def test_session_active_list_enforces_durable_project_root(monkeypatch):
+    class _DB:
+        def get_session(self, session_id):
+            return {"project_root": "/repo/main"} if session_id == "current" else None
+
+    previous_sessions = dict(server._sessions)
+    server._sessions.clear()
+    monkeypatch.setattr(server, "_get_db", lambda: _DB())
+    monkeypatch.setattr(
+        server,
+        "_git_common_repo_root_for_cwd",
+        lambda path: "/repo/main" if str(path).startswith("/repo/main") else "",
+    )
+    monkeypatch.setattr(server, "_active_project_root", lambda params, db: "/repo/main")
+    server._sessions["sid-a"] = _session(
+        agent=types.SimpleNamespace(model="model-a"),
+        project_root="/repo/main/subdir",
+    )
+    server._sessions["sid-b"] = _session(
+        agent=types.SimpleNamespace(model="model-b"),
+        project_root="/repo/other",
+    )
+    try:
+        response = server.handle_request({
+            "id": "scope",
+            "method": "session.active_list",
+            "params": {"current_session_id": "current", "project_root": "/repo/other"},
+        })
+        assert [row["id"] for row in response["result"]["sessions"]] == ["sid-a"]
+    finally:
+        server._sessions.clear()
+        server._sessions.update(previous_sessions)
+
+
 def test_session_active_list_reports_live_sessions(monkeypatch):
     class _DB:
         def get_session_title(self, key):
@@ -17449,8 +17687,12 @@ def test_session_active_list_reports_live_sessions(monkeypatch):
 
     previous_sessions = dict(server._sessions)
     server._sessions.clear()
+    project_root = server._canonical_project_root(str(Path.cwd()))
+    assert project_root is not None
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
+    monkeypatch.setattr(server, "_active_project_root", lambda params, db: project_root)
     server._sessions["sid-a"] = _session(
+        project_root=project_root,
         agent=types.SimpleNamespace(model="model-a"),
         history=[{"role": "user", "content": "find docs"}],
         session_key="key-a",
@@ -17458,6 +17700,7 @@ def test_session_active_list_reports_live_sessions(monkeypatch):
         last_active=20.0,
     )
     server._sessions["sid-b"] = _session(
+        project_root=project_root,
         agent=types.SimpleNamespace(model="model-b"),
         history=[{"role": "assistant", "content": "writing code"}],
         running=True,
@@ -17484,6 +17727,7 @@ def test_session_active_list_reports_live_sessions(monkeypatch):
     assert rows["sid-a"] == {
         "current": False,
         "id": "sid-a",
+        "cwd": None,
         "last_active": 20.0,
         "message_count": 1,
         "model": "model-a",
@@ -17751,7 +17995,7 @@ def test_session_most_recent_returns_first_non_denied(monkeypatch):
     """Drops `tool` rows like session.list does, returns the first hit."""
 
     class _DB:
-        def list_sessions_rich(self, *, source=None, limit=200, order_by_last_active=False, compact_rows=False):
+        def list_sessions_rich(self, *, source=None, limit=200, order_by_last_active=False, compact_rows=False, project_root=None):
             return [
                 {"id": "tool-1", "source": "tool", "title": "noise", "started_at": 100},
                 {"id": "tui-1", "source": "tui", "title": "real", "started_at": 99},
@@ -17760,7 +18004,7 @@ def test_session_most_recent_returns_first_non_denied(monkeypatch):
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
 
     resp = server.handle_request(
-        {"id": "1", "method": "session.most_recent", "params": {}}
+        {"id": "1", "method": "session.most_recent", "params": {"project_root": "/work/a"}}
     )
 
     assert resp["result"]["session_id"] == "tui-1"
@@ -17770,7 +18014,7 @@ def test_session_most_recent_returns_first_non_denied(monkeypatch):
 
 def test_session_most_recent_returns_null_when_only_tool_rows(monkeypatch):
     class _DB:
-        def list_sessions_rich(self, *, source=None, limit=200, order_by_last_active=False, compact_rows=False):
+        def list_sessions_rich(self, *, source=None, limit=200, order_by_last_active=False, compact_rows=False, project_root=None):
             return [{"id": "tool-1", "source": "tool", "started_at": 1}]
 
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
@@ -17823,7 +18067,7 @@ def test_session_most_recent_folds_db_exception_into_null_result(monkeypatch):
     'no answer' (Copilot review on #17130)."""
 
     class _BrokenDB:
-        def list_sessions_rich(self, *, source=None, limit=200, order_by_last_active=False, compact_rows=False):
+        def list_sessions_rich(self, *, source=None, limit=200, order_by_last_active=False, compact_rows=False, project_root=None):
             raise RuntimeError("db locked")
 
     monkeypatch.setattr(server, "_get_db", lambda: _BrokenDB())
@@ -18835,7 +19079,7 @@ def test_notification_poller_delivers_completion(monkeypatch):
 
     sess = _session(agent=_Agent())
     server._sessions["sid_poll"] = sess
-    monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+    inline_prompt_threads(monkeypatch, _ImmediateThread)
     monkeypatch.setattr(server, "_emit", lambda *a, **kw: emitted.append(a))
     monkeypatch.setattr(server, "make_stream_renderer", lambda cols: None)
     monkeypatch.setattr(server, "render_message", lambda raw, cols: None)
@@ -18903,7 +19147,7 @@ def test_notification_poller_skips_consumed(monkeypatch):
 
     sess = _session(agent=_Agent())
     server._sessions["sid_skip"] = sess
-    monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+    inline_prompt_threads(monkeypatch, _ImmediateThread)
     monkeypatch.setattr(server, "_emit", lambda *a, **kw: None)
     monkeypatch.setattr(server, "make_stream_renderer", lambda cols: None)
     monkeypatch.setattr(server, "render_message", lambda raw, cols: None)
@@ -21237,8 +21481,8 @@ def test_clarify_callback_uses_configured_timeout(monkeypatch):
     [(0, None), (-1, None), (42, 42)],
 )
 def test_clarify_timeout_seconds_maps_non_positive_to_unlimited(monkeypatch, configured, expected):
-    """A ``<= 0`` clarify timeout means unlimited and reaches the server request as None
-    (wait(None) waits forever) rather than an immediate wait(0) skip."""
+    """Legacy non-positive values reach the native boundary as None, not immediate expiry.
+    ServerRequest still applies its finite human cap; None does not mean an infinite native wait."""
     monkeypatch.setattr("tools.clarify_gateway.get_clarify_timeout", lambda: configured)
 
     assert server._clarify_timeout_seconds() == expected
@@ -21394,7 +21638,7 @@ def test_prompt_submit_passes_persist_user_message_to_agent(monkeypatch):
 
     server._sessions["sid"] = _session(agent=_Agent())
     try:
-        monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+        inline_prompt_threads(monkeypatch, _ImmediateThread)
         monkeypatch.setattr(server, "_get_usage", lambda _a: {})
         monkeypatch.setattr(server, "render_message", lambda _t, _c: "")
         monkeypatch.setattr(server, "_emit", lambda *a: None)
@@ -21791,7 +22035,7 @@ def test_personality_marker_does_not_shift_truncate_ordinal(monkeypatch):
         history_before = list(session["history"])
         third_index = history_before.index({"role": "user", "content": "third"})
 
-        monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+        inline_prompt_threads(monkeypatch, _ImmediateThread)
         monkeypatch.setattr(server, "_get_usage", lambda _a: {})
         monkeypatch.setattr(server, "render_message", lambda _t, _c: "")
         monkeypatch.setattr(server, "_get_db", lambda: stub_db)
@@ -21887,7 +22131,7 @@ def test_prompt_submit_truncation_archives_instead_of_deleting(monkeypatch):
     )
 
     try:
-        monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
+        inline_prompt_threads(monkeypatch, _ImmediateThread)
         monkeypatch.setattr(server, "_session_info", lambda *a, **k: {})
         monkeypatch.setattr(server, "_emit", lambda *a: None)
         monkeypatch.setattr(server, "_get_usage", lambda _a: {})
@@ -22693,261 +22937,6 @@ def test_prompt_submit_unconfirmed_truncation_refuses_before_target_resolution(
     finally:
         server._sessions.pop(sid, None)
 
-
-def test_persist_live_session_system_prompt_uses_profile_home(monkeypatch, tmp_path):
-    """Issue #50233: _persist_live_session_system_prompt must re-bind
-    HERMES_HOME to the session's profile before rebuilding the system
-    prompt.  Without this, a /model switch rebuilds the prompt with the
-    root profile's SOUL.md and skills instead of the session's profile.
-    """
-    profile_home = tmp_path / "profile-work"
-    profile_home.mkdir()
-    (profile_home / "SOUL.md").write_text(
-        "# Work persona\nYou are a work agent.", encoding="utf-8"
-    )
-
-    built_homes = []
-
-    class FakeAgent:
-        model = "test-model"
-        provider = "test"
-        _cached_system_prompt = None
-        _session_db = None
-
-        def _build_system_prompt(self, system_message=None):
-            from hermes_constants import get_hermes_home
-            home = get_hermes_home()
-            built_homes.append(str(home))
-            soul = (
-                (home / "SOUL.md").read_text(encoding="utf-8-sig")
-                if (home / "SOUL.md").exists()
-                else ""
-            )
-            return f"System prompt from {home}\n{soul}"
-
-    class FakeDB:
-        def update_system_prompt(self, session_id, prompt):
-            pass
-
-    agent = FakeAgent()
-    agent._session_db = FakeDB()
-    session = {
-        "agent": agent,
-        "session_key": "test-key",
-        "profile_home": str(profile_home),
-    }
-
-    server._persist_live_session_system_prompt(session)
-
-    # The system prompt must have been built while the override pointed
-    # to the profile home, not the root ~/.hermes.
-    assert len(built_homes) == 1, f"expected 1 build, got {built_homes}"
-    assert str(profile_home) in built_homes[0], (
-        f"system prompt built with wrong home: {built_homes[0]}"
-    )
-    assert "Work persona" in agent._cached_system_prompt
-
-    # The override must have been reset after the call.
-    from hermes_constants import get_hermes_home_override
-    assert get_hermes_home_override() is None
-
-
-def test_persist_live_session_system_prompt_no_profile_is_unchanged(monkeypatch):
-    """Sessions without a profile_home must not set/clear any override —
-    the function should behave identically to before the fix."""
-    class FakeAgent:
-        model = "test"
-        _cached_system_prompt = None
-        _session_db = None
-
-        def _build_system_prompt(self, system_message=None):
-            return "plain prompt"
-
-    class FakeDB:
-        def update_system_prompt(self, session_id, prompt):
-            pass
-
-    agent = FakeAgent()
-    agent._session_db = FakeDB()
-    session = {
-        "agent": agent,
-        "session_key": "test-key",
-        "profile_home": None,
-    }
-
-    # Should not raise, should still build and cache.
-    server._persist_live_session_system_prompt(session)
-    assert agent._cached_system_prompt == "plain prompt"
-
-
-def test_persist_live_session_system_prompt_restores_pre_existing_override(tmp_path):
-    """reset_hermes_home_override() restores the previous ContextVar state,
-    not just the unset case: when a caller already holds an override, the
-    persist call must scope to the session's profile and then hand the
-    caller's override back, rather than clearing it to None."""
-    from hermes_constants import get_hermes_home_override
-
-    outer_home = tmp_path / "profile-outer"
-    outer_home.mkdir()
-    inner_home = tmp_path / "profile-inner"
-    inner_home.mkdir()
-    (inner_home / "SOUL.md").write_text(
-        "# Inner persona\nYou are the inner agent.", encoding="utf-8"
-    )
-
-    built_homes = []
-
-    class FakeAgent:
-        model = "test-model"
-        provider = "test"
-        _cached_system_prompt = None
-        _session_db = None
-
-        def _build_system_prompt(self, system_message=None):
-            from hermes_constants import get_hermes_home
-            built_homes.append(str(get_hermes_home()))
-            return "inner prompt"
-
-    class FakeDB:
-        def update_system_prompt(self, session_id, prompt):
-            pass
-
-    agent = FakeAgent()
-    agent._session_db = FakeDB()
-    session = {
-        "agent": agent,
-        "session_key": "test-key",
-        "profile_home": str(inner_home),
-    }
-
-    outer_token = set_hermes_home_override(outer_home)
-    try:
-        server._persist_live_session_system_prompt(session)
-
-        # The prompt was built under the session's profile, not the outer one.
-        assert built_homes == [str(inner_home)]
-        # The caller's pre-existing override survived, instead of being reset
-        # to None.
-        assert get_hermes_home_override() == str(outer_home)
-    finally:
-        reset_hermes_home_override(outer_token)
-    assert get_hermes_home_override() is None
-
-
-def test_persist_live_session_system_prompt_binds_session_cwd(monkeypatch, tmp_path):
-    """The prompt rebuild after a live model switch must record the SESSION's
-    working directory, not the process TERMINAL_CWD.
-
-    The function runs on the RPC dispatcher thread (model.switch, config.set
-    model). On that thread the _SESSION_CWD contextvar is not set, so
-    resolve_agent_cwd() falls back to TERMINAL_CWD, which the desktop pins
-    to the home directory. The wrong cwd line then persists into the stored
-    prompt. Later turns restore the stored bytes without change (the
-    prologue rebuilds only when _cached_system_prompt is None), so the
-    poisoned line never self-heals.
-    """
-    session_cwd = tmp_path / "project"
-    session_cwd.mkdir()
-    process_cwd = tmp_path / "home-fallback"
-    process_cwd.mkdir()
-    monkeypatch.setenv("TERMINAL_CWD", str(process_cwd))
-
-    persisted = {}
-
-    class FakeAgent:
-        model = "test-model"
-        provider = "test"
-        session_id = "cwd-test-session"
-        _cached_system_prompt = None
-        _session_db = None
-
-        def _build_system_prompt(self, system_message=None):
-            # The real builder embeds resolve_agent_cwd() via
-            # prompt_builder.build_environment_hints().
-            from agent.runtime_cwd import resolve_agent_cwd
-
-            return f"Current working directory: {resolve_agent_cwd()}"
-
-    class FakeDB:
-        def update_system_prompt(self, session_id, prompt):
-            persisted["prompt"] = prompt
-
-    agent = FakeAgent()
-    agent._session_db = FakeDB()
-    session = {
-        "agent": agent,
-        "session_key": "cwd-test-session",
-        "cwd": str(session_cwd),
-        "explicit_cwd": True,
-        "profile_home": None,
-    }
-
-    # A bare thread has no _SESSION_CWD contextvar — the RPC dispatcher shape.
-    result = {}
-
-    def dispatcher_thread():
-        server._persist_live_session_system_prompt(session)
-        result["cached"] = agent._cached_system_prompt
-
-    t = threading.Thread(target=dispatcher_thread)
-    t.start()
-    t.join()
-
-    expected = f"Current working directory: {session_cwd}"
-    assert result["cached"] == expected, result["cached"]
-    assert persisted["prompt"] == expected, persisted["prompt"]
-
-
-def test_workspace_move_rehomes_running_session(monkeypatch, tmp_path):
-    """An explicit Move-to-project must win for a RUNNING session: the stored
-    row and the live runtime session re-anchor together, never a UI-vs-db
-    disagreement (#86626)."""
-    target = "stored-running-session"
-    new_cwd = tmp_path / "dest-project"
-    new_cwd.mkdir()
-    captured = {}
-
-    class FakeDB:
-        def get_session(self, session_id):
-            return {"id": session_id}
-
-        def update_session_cwd(self, session_id, cwd, branch=None, root=None, replace_git_meta=True):
-            captured["row_update"] = (session_id, cwd)
-
-        def close(self):
-            pass
-
-    import contextlib
-
-    @contextlib.contextmanager
-    def _fake_db(_params, *, writer=False):
-        yield FakeDB()
-
-    monkeypatch.setattr(server, "_profile_db", _fake_db)
-    monkeypatch.setattr(
-        server.git_probe,
-        "branch",
-        lambda cwd: "main",
-    )
-    monkeypatch.setattr(
-        server.git_probe,
-        "common_repo_root",
-        lambda cwd: str(new_cwd),
-    )
-
-    live = {"session_key": target, "running": True, "cwd": str(tmp_path / "old-project")}
-    server._sessions["live-sid"] = live
-    monkeypatch.setattr(server, "_register_session_cwd", lambda _session: None)
-
-    res = server._methods["session.workspace.move"](
-        "rid",
-        {"session_key": target, "cwd": str(new_cwd)},
-    )
-
-    assert "error" not in res, res
-    assert captured["row_update"] == (target, str(new_cwd))
-    assert live["cwd"] == str(new_cwd)
-    assert live.get("explicit_cwd") is True
 
 
 def test_load_cfg_raw_sees_replacement_with_pinned_mtime_and_size(monkeypatch, tmp_path):

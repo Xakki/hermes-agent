@@ -611,9 +611,9 @@ class TestCodexOAuthContextLength:
         assert ctx == 272_000
 
     def test_non_272k_advertisement_is_trusted_verbatim(self):
-        """Any advertised value other than the known-stale 272,000 — higher or
-        lower — is a real server-side change and must NOT be overridden, even
-        for an explicit ``-900k`` opt-in variant."""
+        """Without an explicit catalog maximum, trust any non-stale advertisement
+        even for an explicit ``-900k`` opt-in variant. A missing ceiling is not
+        permission to override a newer server-side limit."""
         from agent.model_metadata import get_model_context_length
 
         for advertised in (372_000, 200_000, 1_050_000):

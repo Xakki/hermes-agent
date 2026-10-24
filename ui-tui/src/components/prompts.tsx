@@ -7,6 +7,7 @@ import { clarifyAnswerText, clarifyRevisitState } from '../lib/text.js'
 import type { Theme } from '../theme.js'
 import type { ApprovalReq, ClarifyReq, ConfirmReq } from '../types.js'
 
+import { InteractionPrompt } from './interactionPrompt.js'
 import { chipRowProps } from './overlayPrimitives.js'
 import { TextInput } from './textInput.js'
 
@@ -148,7 +149,11 @@ export function ApprovalPrompt({ cols = 80, onChoice, req, t }: ApprovalPromptPr
   )
 }
 
-export function ClarifyPrompt({ cols = 80, onCancel, onQuestionAnswer, req, t }: ClarifyPromptProps) {
+export function ClarifyPrompt(props: ClarifyPromptProps) {
+  return props.req.questions.length ? <BatchClarifyPrompt {...props} /> : <InteractionPrompt onAnswer={answer => props.onAnswer ? props.onAnswer(answer) : props.onQuestionAnswer?.('', answer)} onCancel={props.onCancel} req={props.req} t={props.t} />
+}
+
+function BatchClarifyPrompt({ cols = 80, onCancel, onQuestionAnswer, req, t }: ClarifyPromptProps) {
   const T = useT()
   const [sel, setSel] = useState(0)
   const [custom, setCustom] = useState('')
@@ -212,7 +217,7 @@ export function ClarifyPrompt({ cols = 80, onCancel, onQuestionAnswer, req, t }:
 
   const lockActive = (value: string) => {
     if (activeQuestion) {
-      onQuestionAnswer(activeQuestion.qid, value)
+      onQuestionAnswer?.(activeQuestion.qid, value)
       setSel(0)
       setCustom('')
       setTyping(false)
@@ -455,7 +460,8 @@ interface ApprovalPromptProps {
 interface ClarifyPromptProps {
   cols?: number
   onCancel: () => void
-  onQuestionAnswer: (qid: string, s: string) => void
+  onQuestionAnswer?: (qid: string, s: string) => void
+  onAnswer?: (answer: string) => void
   req: ClarifyReq
   t: Theme
 }

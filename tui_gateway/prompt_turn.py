@@ -132,6 +132,10 @@ def _admit_prompt_turn(
             session.pop("_submit_user_row", None)  # no turn runs: the submit-time row stays as the send
         _emit("error", sid, {"message": str(ownership_refusal)})
         return None
+    # Host lookup owns history_lock too. Resolve it before the turn's admission
+    # critical section; scope changes still happen only after generation checks.
+    from tui_gateway.interaction_host import admit_task, get_host
+    interaction = get_host(sid, session)
     with session["history_lock"]:
         if session.get("_closing") or (
             queued_prompt_generation is not None
@@ -154,6 +158,7 @@ def _admit_prompt_turn(
             _start_inflight_turn(
                 session, text, display_kind=display_kind, display_metadata=display_metadata)
         agent = session["agent"]
+        admit_task(sid, session, text, host=interaction)
         if agent is None:
             session["running"] = False
         else:
@@ -455,6 +460,7 @@ def _run_post_turn_followups(
                 return  # the user pressed Stop; the goal resumes after their next prompt
             session["running"] = True
         _dispatch_followup_turn(rid, sid, session, goal_followup, "goal continuation dispatch")
+        return
     # Safety net for completion events that arrived mid-turn.  Ownership is positive-proof
     # and compression-chain aware (same fail-closed gate as the poller): session B must
     # not consume session A's event.  Unclaimable events are requeued for the poller.
@@ -477,6 +483,8 @@ def _run_post_turn_followups(
                 process_registry.completion_queue.put(event)
     except Exception as _drain_exc:
         _hook_failure("completion queue drain", _drain_exc)
+    from tui_gateway.interaction_host import maybe_completion
+    maybe_completion(sid, session, result)
 
 
 @dataclasses.dataclass(slots=True)

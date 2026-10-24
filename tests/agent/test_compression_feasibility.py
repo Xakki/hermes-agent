@@ -217,6 +217,102 @@ def test_near_threshold_probe_clamps_before_first_compaction():
     assert compressor.should_compress(200_000) is True
 
 
+@pytest.mark.parametrize("threshold_percent", [0.75, 0.85])
+@pytest.mark.parametrize("tail_mode", ["lean", "legacy"])
+def test_sol_luna_adaptation_precedes_pressure_and_survives_recomputation(
+    threshold_percent, tail_mode, record_property,
+):
+    """The live 500K/272K mismatch changes the trigger, not the main window."""
+    from agent.conversation_compression import ensure_compression_feasibility_checked
+    from agent.model_metadata import MINIMUM_CONTEXT_LENGTH
+
+    agent = _make_agent(main_context=500_000)
+    agent.model, agent.provider = "gpt-6.1-sol", "openai-codex"
+    agent.base_url = "https://chatgpt.com/backend-api/codex"
+    agent.api_mode = "codex_responses"
+    compressor = agent.context_compressor = ContextCompressor(
+        agent.model, config_context_length=500_000, threshold_percent=threshold_percent,
+        provider=agent.provider, base_url=agent.base_url, api_mode=agent.api_mode,
+        tail_mode=tail_mode, quiet_mode=True,
+    )
+    original_threshold = compressor.threshold_tokens
+    assert original_threshold == int(500_000 * threshold_percent)
+    notices = []
+    agent._emit_status = notices.append
+    agent._compression_feasibility_checked = False
+    client = MagicMock(base_url=agent.base_url, api_key="fixture-key")
+    with patch("agent.auxiliary_client.get_text_auxiliary_client", return_value=(client, "gpt-6-luna")) as get_client, \
+         patch("agent.model_metadata.get_model_context_length", return_value=272_000):
+        ensure_compression_feasibility_checked(agent, MINIMUM_CONTEXT_LENGTH - 1)
+        get_client.assert_not_called()
+        ensure_compression_feasibility_checked(agent, MINIMUM_CONTEXT_LENGTH)
+        ensure_compression_feasibility_checked(agent, 300_000)
+    assert get_client.call_count == 1
+    assert len(notices) == 1
+    assert f"{original_threshold:,}" in notices[0]
+    assert "272,000" in notices[0] and "375,000" in notices[0]
+    assert "threshold:" not in notices[0]
+    assert compressor.context_length == 500_000
+    assert compressor.threshold_tokens == compressor._aux_context_ceiling == 272_000
+    assert compressor.should_compress(272_001)
+    assert not compressor.should_compress(271_999)
+    compressor.update_model(
+        agent.model, 500_000, provider=agent.provider, base_url=agent.base_url, api_mode=agent.api_mode,
+    )
+    assert compressor.threshold_tokens == 272_000
+    assert compressor.context_length == 500_000
+    record_property("original_threshold", original_threshold)
+    record_property("adapted_threshold", compressor.threshold_tokens)
+    record_property("notice_count", len(notices))
+
+
+@pytest.mark.parametrize("tail_mode", ["lean", "legacy"])
+@pytest.mark.parametrize("previous_summary", [False, True])
+@pytest.mark.parametrize("body", ["x", "界"])
+def test_sol_luna_summary_request_has_headroom(
+    tail_mode, previous_summary, body, record_property,
+):
+    """Measure the actual summary-call messages, including template and prior summary.
+
+    CJK exercises the dense one-token-per-character rough estimate rather than assuming
+    that every character cap can be divided by four. No provider request is made.
+    """
+    from agent.model_metadata import estimate_messages_tokens_rough
+
+    compressor = ContextCompressor(
+        "gpt-6.1-sol", config_context_length=500_000, threshold_percent=0.85,
+        summary_model_override="gpt-6-luna", tail_mode=tail_mode, quiet_mode=True,
+    )
+    compressor._aux_context_ceiling = 272_000
+    compressor._apply_threshold_tokens_cap()
+    if previous_summary:
+        compressor._previous_summary = "PRIOR CHECKPOINT\n" + body * 10_000
+    turns = [{"role": "user", "content": "Summarize the completed fixture work."}]
+    turns.extend({"role": "tool", "tool_call_id": f"fixture-{i}", "content": body * 6000} for i in range(100))
+    response = MagicMock()
+    response.choices[0].message.content = "## Historical Task Snapshot\nUser asked for fixture work.\n## Goal\nContinue."
+    response.choices[0].finish_reason = "stop"
+    with patch("agent.context_compressor.call_llm", return_value=response) as call:
+        assert compressor._generate_summary(turns) is not None
+    call.assert_called_once()
+    kwargs = call.call_args.kwargs
+    assert "max_tokens" not in kwargs
+    assert kwargs["task"] == "compression"
+    messages = kwargs["messages"]
+    assert len(messages) == 1 and messages[0]["role"] == "user"
+    prompt = messages[0]["content"]
+    assert ("PRIOR CHECKPOINT" in prompt) is previous_summary
+    assert ("chars elided" in prompt) if tail_mode == "lean" else ("summary input truncated" in prompt)
+    input_tokens = estimate_messages_tokens_rough(messages)
+    target_tokens = compressor._compute_summary_budget(turns)
+    # Leave substantial room for generation/reasoning; no hard output cap is added.
+    assert input_tokens + target_tokens + 32_768 < 272_000
+    record_property("prompt_chars", len(prompt))
+    record_property("rough_input_tokens", input_tokens)
+    record_property("summary_target_tokens", target_tokens)
+    record_property("remaining_window_tokens", 272_000 - input_tokens)
+
+
 # ── Core warning logic ──────────────────────────────────────────────
 
 
@@ -366,7 +462,7 @@ def test_no_unavailable_warning_when_configured_fallback_chain_resolves():
     agent = _make_agent(main_context=200_000, threshold_percent=0.50)
     fallback_client = MagicMock()
     fallback_client.base_url = "https://chatgpt.com/backend-api/codex"
-    fallback_client.api_key = "codex-oauth-token"
+    fallback_client.api_key = 'fixture-1'
 
     messages = []
     agent._emit_status = lambda msg: messages.append(msg)
