@@ -92,6 +92,8 @@ describe('resolveGitStatus', () => {
   it('returns an empty non-repository state when git probing fails', async () => {
     const cwd = mkdtempSync(join(tmpdir(), 'hermes-tui-no-git-'))
     dirs.push(cwd)
+    // Stop discovery here even when TMPDIR is inside a configuration repository.
+    writeFileSync(join(cwd, '.git'), 'gitdir: missing\n')
 
     await expect(resolveGitStatus(cwd)).resolves.toEqual({
       branch: null,

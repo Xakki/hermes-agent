@@ -137,12 +137,19 @@ class GatewayClient:
         """Send one request and await its answer; ``_timeout`` (seconds, never sent on the wire)
         overrides ``DEFAULT_RPC_TIMEOUT`` for a verb that legitimately takes longer (``math.inf``: no
         deadline; the answer, a hang-up or the caller's cancel ends the wait)."""
+        from websockets.exceptions import ConnectionClosed
+
         self.sequence += 1
         rid = self.sequence
         future = asyncio.get_running_loop().create_future()
         self.pending[rid] = future
         try:
-            await self.websocket.send(json.dumps({"jsonrpc": "2.0", "id": rid, "method": method, "params": params}))
+            try:
+                await self.websocket.send(json.dumps({"jsonrpc": "2.0", "id": rid, "method": method, "params": params}))
+            except (ConnectionClosed, OSError) as exc:
+                # A failed send doesn't prove the owner didn't admit the request; never replay it.
+                raise GatewayClientError("Gateway disconnected; turn outcome is unknown. "
+                    "Resume the printed session ID to check whether it completed or was interrupted; do not resend the work.") from exc
             budget = DEFAULT_RPC_TIMEOUT if _timeout is None else _timeout
             return await asyncio.wait_for(future, None if budget == float("inf") else budget)
         finally:
@@ -160,23 +167,27 @@ def _session_ticket(home: Path, endpoint, *, purpose="interactive", scope=None, 
         "profile_id": endpoint.profile_id, "instance_id": endpoint.instance_id, "purpose": purpose,
         **({"scope": scope} if scope else {}), **({"subject": subject} if subject else {}),
     }}).encode() + b"\n"
-    if os.name == "nt":
-        from gateway.runtime_bootstrap_windows import query_runtime_control
-        data = query_runtime_control(home, request, 5)
-    else:
-        deadline = time.monotonic() + 5
-        with connect_private(home, 5) as peer:
-            peer.sendall(request)
-            data = bytearray()
-            while b"\n" not in data:
-                budget = deadline - time.monotonic()
-                if budget <= 0:
-                    raise GatewayClientError("Gateway bootstrap timed out")
-                peer.settimeout(budget)
-                chunk = peer.recv(4096)
-                if not chunk or len(data) + len(chunk) > 65536:
-                    raise GatewayClientError("Invalid gateway bootstrap response")
-                data.extend(chunk)
+    try:
+        if os.name == "nt":
+            from gateway.runtime_bootstrap_windows import query_runtime_control
+            data = query_runtime_control(home, request, 5)
+        else:
+            deadline = time.monotonic() + 5
+            with connect_private(home, 5) as peer:
+                peer.sendall(request)
+                data = bytearray()
+                while b"\n" not in data:
+                    budget = deadline - time.monotonic()
+                    if budget <= 0:
+                        raise TimeoutError
+                    peer.settimeout(budget)
+                    chunk = peer.recv(4096)
+                    if not chunk or len(data) + len(chunk) > 65536:
+                        raise GatewayClientError("Invalid gateway bootstrap response")
+                    data.extend(chunk)
+    except TimeoutError as exc:
+        # This control exchange precedes the WebSocket try block: don't mislabel it as a dial.
+        raise GatewayClientError("Gateway session ticket timed out; no local fallback") from exc
     grant = _identify_response(bytes(data))
     if any(grant.get(k) != v for k, v in {
         "profile_id": endpoint.profile_id, "instance_id": endpoint.instance_id, "runtime_protocol": 1,
@@ -194,6 +205,7 @@ async def connect_gateway(endpoint=None, subject=None):
     from websockets.asyncio.client import connect
     from hermes_constants import get_hermes_home
     from hermes_cli.gateway_runtime import attachable, ensure_gateway_runtime, gateway_profile_home
+    from hermes_cli.web_server_boundary import _LOOPBACK_HOST_VALUES
     from urllib.parse import urlsplit
 
     remote = "" if endpoint is not None else os.environ.get("HERMES_TUI_GATEWAY_URL", "").strip()
@@ -224,12 +236,17 @@ async def connect_gateway(endpoint=None, subject=None):
         endpoint = result.endpoint
         ticket = await asyncio.to_thread(_session_ticket, home, endpoint)
         url, protocols = gateway_ws_target(endpoint, ticket)
+    # Match the native listener: loop stalls must not drop healthy local viewers. An explicit
+    # URL may be an SSH tunnel even on loopback, so it retains websockets' default heartbeat.
+    keepalive: dict = {}
+    if endpoint is not None and urlsplit(url).hostname in _LOOPBACK_HOST_VALUES:
+        keepalive["ping_interval"] = None
     try:
         # The gateway is a loopback (or explicitly named) peer, never something to route through the
         # user's HTTP(S) proxy; websockets>=14 reads HTTP_PROXY/HTTPS_PROXY by default and a proxy that
         # cannot reach 127.0.0.1 turns every launch into a 10 s open timeout.
         async with connect(url, subprotocols=protocols, open_timeout=10, max_size=8 * 1024 * 1024,
-                           proxy=None) as ws:
+                           proxy=None, **keepalive) as ws:
             if protocols and ws.subprotocol != GATEWAY_WS_PROTOCOL:
                 raise GatewayClientError("Gateway protocol mismatch; update/restart required")
             async with GatewayClient(ws) as client:
