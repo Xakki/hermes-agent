@@ -35,6 +35,7 @@ from agent.turn_failure_copy import (
 )
 from agent.turn_retry_state import TurnRetryState
 from agent.turn_recovery_codex import _is_codex_token_expired, _recover_stale_codex_reasoning
+from agent.turn_recovery_pool import _pool_error_context, _refresh_paid_entitlement
 from hermes_constants import display_hermes_home
 from utils import base_url_host_matches
 
@@ -665,20 +666,6 @@ def _recover_initial_request_policy(agent: Any, api_error: Exception, classified
             or (agent.api_mode == "codex_responses" and _reject_all_turns(agent, api_error)))
 
 
-def _refresh_paid_entitlement(agent: Any, classified: Any, retry: TurnRetryState) -> bool:
-    from agent.conversation_loop import _is_nous_inference_route
-
-    if (classified.reason != FailoverReason.billing
-            or not _is_nous_inference_route(getattr(agent, "provider", "") or "", getattr(agent, "base_url", "") or "")
-            or retry.nous_paid_entitlement_refresh_attempted):
-        return False
-    retry.nous_paid_entitlement_refresh_attempted = True
-    if not _try_refresh_nous_paid_entitlement_credentials(agent):
-        return False
-    _vlines(agent, "🔐 Nous paid access verified — refreshed runtime credentials and retrying request...")
-    return True
-
-
 def recover_after_classification(
     agent: Any, api_error: Exception, classified: Any, _retry: TurnRetryState, *,
     status_code: Optional[int], error_context: Any, messages: list[dict[str, Any]],
@@ -691,6 +678,8 @@ def recover_after_classification(
     strip → Anthropic OAuth 1M-beta disable → per-provider 401 credential refresh →
     format-recovery strips.
     Returns ``(retry_now, recovered_with_pool)``; the latter feeds the Nous rate-limit guard."""
+    from agent.conversation_loop import _is_nous_inference_route
+
     # The credit-limited 402 clamp runs before pool rotation, which would bench a credential
     # that still has credit. A ``reasoning.context`` 400 is classified reasoning_mandatory, whose rung
     # would drop the whole reasoning config; omit only the all_turns opt-in, ahead of it.
@@ -711,7 +700,7 @@ def recover_after_classification(
 
     recovered_with_pool, _retry.has_retried_429 = agent._recover_with_credential_pool(
         status_code=status_code, has_retried_429=_retry.has_retried_429,
-        classified_reason=classified.reason, error_context=error_context,
+        classified_reason=classified.reason, error_context=_pool_error_context(agent, classified, error_context),
         billing_unverified=classified.billing_unverified,
     )
     if recovered_with_pool:
@@ -884,9 +873,15 @@ def limit_reset_epoch(agent: Any, api_error: Exception) -> Optional[float]:
         return None
 
 
-def _stamp_limit_reset(result: dict[str, Any], agent: Any, api_error: Exception) -> None:
+# Responses for other failures can still carry rate-limit headers; a reset time only explains a limit.
+_LIMIT_REASONS = frozenset({FailoverReason.rate_limit, FailoverReason.upstream_rate_limit, FailoverReason.billing})
+
+
+def _stamp_limit_reset(result: dict[str, Any], agent: Any, api_error: Exception, classified: Any) -> None:
     """``failure_resets_at`` for structured clients (Desktop card: "Limit resets at HH:mm") and the
     same sentence appended to the chat text every plain surface (CLI/TUI/gateway) renders (#98852)."""
+    if classified.reason not in _LIMIT_REASONS:
+        return
     resets_at = limit_reset_epoch(agent, api_error)
     if resets_at is None:
         return
@@ -899,6 +894,8 @@ def _print_nonretryable_auth_guidance(
     agent: Any, classified: Any, *, status_code: Optional[int], provider: Any, base_url: Any, model: Any,
 ) -> None:
     """Actionable guidance for a terminal auth / billing error."""
+    if (getattr(classified, "error_context", None) or {}).get("usage_window"):
+        return  # a plan limit's refusal line and limit panel are its guidance: no second copy, no portal fetch
     from agent.conversation_loop import _print_billing_or_entitlement_guidance, _print_nous_entitlement_guidance
 
     if classified.reason == FailoverReason.billing and _print_billing_or_entitlement_guidance(
@@ -1050,7 +1047,9 @@ def nonretryable_client_error_result(
     the retry trace, print auth / billing / content-policy / TLS guidance, persist (skipped
     for likely context-overflow 400s so the failure does not grow the session), build result."""
     # Result/guidance helpers stay in the loop module (tests import + patch them there).
-    from agent.conversation_loop import _billing_failure_result, _content_policy_blocked_result
+    from agent.conversation_loop import (
+        _billing_failure_result, _content_policy_blocked_result, _usage_window_refusal,
+    )
 
     if api_kwargs is not None:
         agent._dump_api_request_debug(api_kwargs, reason="non_retryable_client_error", error=api_error)
@@ -1137,6 +1136,7 @@ def nonretryable_client_error_result(
         return _billing_failure_result(
             classified=classified, summary=_nonretryable_summary, messages=messages,
             api_call_count=api_call_count, provider=provider, base_url=base_url, model=model,
+            usage_window=_usage_window_refusal(agent, classified, api_messages),
         )
     if _welcome_hint:
         # A free-tier refusal is fully explained by its own sentence; the raw provider summary
@@ -1161,7 +1161,7 @@ def nonretryable_client_error_result(
     })
     if _keep_partial:
         result["partial"] = True
-    _stamp_limit_reset(result, agent, api_error)
+    _stamp_limit_reset(result, agent, api_error, classified)
     if _welcome_hint and (_kind := _welcome_surface_kind(classified)):
         # The card form: the desktop renders the sign-in as a button, so no "To sign in" tail.
         _stamp_free_tier(result, _kind,
@@ -1208,8 +1208,10 @@ def max_retries_exhausted_result(
             capability="model access", provider=provider, base_url=str(base_url), model=model,
             unverified=classified.billing_unverified,
         )
-        _billing_guidance = _billing_or_entitlement_message(**_billing_kw)
-        _print_billing_or_entitlement_guidance(agent, **_billing_kw)
+        # A plan limit (usage-window 402) carries its own refusal line: no portal fetch, no second copy.
+        if not (classified.error_context or {}).get("usage_window"):
+            _billing_guidance = _billing_or_entitlement_message(**_billing_kw)
+            _print_billing_or_entitlement_guidance(agent, **_billing_kw)
     elif is_rate_limited:
         _reset = reset_hint(api_error)
         agent._emit_diagnostic_status(
@@ -1308,7 +1310,7 @@ def max_retries_exhausted_result(
     if _keep_partial:
         result["final_response"] = _final_response
         result["partial"] = True
-    _stamp_limit_reset(result, agent, api_error)
+    _stamp_limit_reset(result, agent, api_error, classified)
     if _free_tier_kind:
         _stamp_free_tier(result, _free_tier_kind, (
             _welcome_tier_guidance(classified, model=model, in_chat=True, door=False)
@@ -1947,7 +1949,7 @@ def route_classified_error(
     _should_fallback = (
         (is_rate_limited and _wrapped_output_cap_budget is None)
         or (_is_transport_failure and retry_count >= 2)
-    )
+    ) and not (getattr(classified, "error_context", None) or {}).get("usage_window")  # never switch models on a plan limit
     if _should_fallback and agent._fallback_index < len(agent._fallback_chain):
         # No eager fallback while credential pool rotation may recover. Exception: an
         # upstream-aggregator 429 — the pool can't help, always fall back.

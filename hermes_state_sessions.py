@@ -15,15 +15,16 @@ from agent.session_activity import (
     ActivityProvenance, bound_activity_description, normalize_activity_provenance,
 )
 from hermes_state_errors import SessionActiveWriteGuardError
+from hermes_state_session_filters import _cwd_prefix_clause, _project_root_clause, _workspace_key_clause
 from hermes_state_common import (
     _LISTABLE_CHILD_SQL, _RECOVERABLE_END_REASONS,
     _RECOVERABLE_END_REASONS_SQL, _RESET_CHILD_SQL, _RESET_END_REASONS, _legacy_reset_child_sql, _non_continuation_child_sql,
     _shape_preview, _sql_preview_raw, QUEUED_PROMPT_METADATA_KEY,
     _sql_in_window, _sql_json_extract, _sql_session_last_active, _sql_session_last_active_by_id,
     escape_like as _escape_like, _SQL_IN_CHUNK, _id_chunks, _placeholders as _session_ids_placeholders,
-    _source_match_clause, emit_session_deleted,
+    _source_match_clause, emit_session_deleted, launch_stub_filter_sql,
 )
-from hermes_state_compression import _CHAIN_CAP
+from hermes_state_compression import _CHAIN_CAP, _UNSET_CREATED_SQL
 
 # caplog tests pin the "hermes_state" logger name.
 logger = logging.getLogger("hermes_state")
@@ -80,33 +81,6 @@ def _parse_model_config(raw: Any) -> dict[str, Any]:
         except (json.JSONDecodeError, TypeError):
             return {}
     return dict(raw) if isinstance(raw, dict) else {}
-
-
-def _cwd_prefix_clause(cwd_prefix: str) -> tuple[str, list[str]]:
-    prefix = cwd_prefix.rstrip("/\\") or cwd_prefix
-    # ``_``/``%`` are LIKE wildcards but ordinary path characters: unescaped, a
-    # prefix also matches sibling directories. The ``=`` arm keeps the raw prefix.
-    esc = _escape_like(prefix)
-    return (
-        "(s.cwd = ? OR s.cwd LIKE ? ESCAPE '\\' OR s.cwd LIKE ? ESCAPE '\\')",
-        [prefix, f"{esc}/%", f"{esc}\\\\%"],
-    )
-
-
-def _workspace_key_clause(key: str) -> tuple[str, list[str]]:
-    """WHERE for ``workspace_key(row) == key``: git_repo_root equals ``key``, or (rows predating
-    per-session git metadata) cwd is at/under ``key``."""
-    prefix = key.rstrip("/\\") or key
-    cwd_clause, cwd_params = _cwd_prefix_clause(prefix)
-    return (
-        f"(s.git_repo_root = ? OR (COALESCE(s.git_repo_root, '') = '' AND {cwd_clause}))",
-        [prefix, *cwd_params],
-    )
-
-
-def _project_root_clause(project_root: str) -> tuple[str, list[str]]:
-    root = (project_root or "").strip().rstrip("/\\") or (project_root or "").strip()
-    return "s.project_root = ?", [root]
 
 
 def _where_sql(clauses: list[str], lead: str = "") -> str:
@@ -285,6 +259,14 @@ _UPSERT_KEEP_EXISTING_SQL = ",\n".join(
         # Immutable provenance: stamped once at creation, never overwritten by later upserts.
         "created_source",
     )
+) + ",\n" + (
+    # Accounting may insert before the creator ('unknown') and a routing write carries 'local':
+    # neither is creation provenance (_UNSET_CREATED_SQL), so a later creator replaces them and
+    # 'local' never replaces anything. A real source, once stamped, is preserved (#56439).
+    "                       created_source = CASE WHEN "
+    + _UNSET_CREATED_SQL.format(col="sessions.created_source")
+    + " THEN COALESCE(NULLIF(excluded.created_source, 'local'), sessions.created_source)"
+    " ELSE sessions.created_source END"
 )
 
 
@@ -839,6 +821,15 @@ class SessionSessionsMixin:
             (session_id,),
         )
         return self._session_row_dict(row) if row else None
+
+    def get_session_list_row(self, session_id: str) -> Optional[dict[str, Any]]:
+        """Picker columns only: the live listing skips ``get_session``'s prompt/tool JOIN and flush."""
+        row = self._read_one(
+            "SELECT id, source, title, started_at, ended_at, message_count, model, hidden, archived "
+            "FROM sessions WHERE id = ?",
+            (session_id,),
+        )
+        return dict(row) if row else None
 
     def get_recent_session_model_route(self, session_id: str) -> Optional[dict[str, Any]]:
         """Most recently used main-loop model route as one coherent per-call tuple
@@ -1551,12 +1542,13 @@ class SessionSessionsMixin:
     def search_sessions(
         self, source: str | Sequence[str] | None = None, limit: int = 20, offset: int = 0,
         workspace_key: str | None = None, project_root: str | None = None,
-        local_created_sources: Sequence[str] | None = None,
+        local_created_sources: Sequence[str] | None = None, skip_launch_stubs: bool = False,
     ) -> list[dict[str, Any]]:
         """Sessions MRU-first with a computed ``last_active``; ``workspace_key`` scopes to one workspace
         so ``hermes -c``/``--resume`` picks its last session. ``source`` may be one label or several.
-        ``local_created_sources`` restricts ``source='local'`` rows before LIMIT/OFFSET."""
-        where_clauses = []
+        ``local_created_sources`` restricts ``source='local'`` rows before LIMIT/OFFSET, and
+        ``skip_launch_stubs`` drops empty launch stubs (launch_stub_filter_sql) before it too."""
+        where_clauses = [launch_stub_filter_sql(self)] if skip_launch_stubs else []
         params: list = []
         if source:
             sources = [source] if isinstance(source, str) else list(source)
@@ -1583,13 +1575,15 @@ class SessionSessionsMixin:
     def session_count(
         self, source: str | None = None, sources: list[str] | None = None, cwd_prefix: str | None = None,
         min_message_count: int = 0, include_archived: bool = False, archived_only: bool = False,
-        exclude_children: bool = False, exclude_sources: list[str] | None = None, project_root: str | None = None, include_subagents: bool = False,
+        exclude_children: bool = False, exclude_sources: list[str] | None = None, include_subagents: bool = False,
+        local_created_sources: Sequence[str] | None = None, project_root: str | None = None,
     ) -> int:
         """Count sessions with list_sessions_rich's filters so a paired "load more" total matches."""
         where_clauses, params = _session_filter_where(
             exclude_children=exclude_children, source=source, sources=sources,
             exclude_sources=exclude_sources, cwd_prefix=cwd_prefix, min_message_count=min_message_count,
             archived_only=archived_only, include_archived=include_archived, include_subagents=include_subagents,
+            local_created_sources=local_created_sources,
         )
         if project_root:
             clause, clause_params = _project_root_clause(project_root)

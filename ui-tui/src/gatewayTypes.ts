@@ -313,6 +313,7 @@ export interface SessionUsageResponse {
   cost_status?: 'estimated' | 'exact'
   cost_usd?: number
   credits_lines?: string[]
+  credits_usage_window?: boolean
   input?: number
   model?: string
   output?: number
@@ -502,6 +503,12 @@ export interface ToolsConfigureResponse {
 
 // ── MCP ──────────────────────────────────────────────────────────────
 
+export interface SessionExportResponse {
+  content: string
+  filename?: string
+  format: string
+}
+
 export interface ReloadMcpResponse {
   status?: string
   message?: string
@@ -520,7 +527,6 @@ export interface ProcessStopResponse {
 }
 
 export interface BrowserManageResponse {
-  browser_use?: boolean
   connected?: boolean
   messages?: string[]
   url?: string
