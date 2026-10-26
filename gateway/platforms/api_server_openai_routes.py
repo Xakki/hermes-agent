@@ -871,18 +871,17 @@ class OpenAICompatRoutesMixin:
                 db = await self._ensure_session_db_async()
                 if db is not None:
                     session = await asyncio.to_thread(db.get_session, provided_session_id)
-                    if not session:
-                        return _error_response(f"Session not found: {provided_session_id}", 404, code="session_not_found")
-                    if (scope_error := self._session_scope_error(session)) is not None:
+                    if session and (scope_error := self._session_scope_error(session)) is not None:
                         return scope_error
                     # #98619/#13437: a client-addressed id from before a compression rotation
                     # must adopt the live continuation tip — history loads from it, the turn and
                     # the wake target bind it, and a detached delegation delivery row persisted
                     # on the tip is what this continuation consumes. Same canonical resolution
                     # the delivery writer (gateway/wake.py) and /v1/runs use; fails open.
-                    from gateway.platforms.api_server_runs import _resolve_live_session_id
-                    session_id = await _resolve_live_session_id(self, provided_session_id)
-                    history = await asyncio.to_thread(db.get_messages_as_conversation, session_id)
+                    if session:
+                        from gateway.platforms.api_server_runs import _resolve_live_session_id
+                        session_id = await _resolve_live_session_id(self, provided_session_id)
+                        history = await asyncio.to_thread(db.get_messages_as_conversation, session_id)
             except Exception as e:
                 logger.warning("Failed to load session history for %s: %s", session_id, e)
                 history = []

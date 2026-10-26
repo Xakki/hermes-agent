@@ -61,7 +61,6 @@ def decide(session: InteractionSession, token: DecisionToken) -> bool:
             try:
                 # model_switch bodies are installed against the server's runtime globals.
                 from tui_gateway import server
-                import fcntl
                 from tools.bot_relay import acquire_turn_lock
                 with (acquire_turn_lock(home, "interaction-decision", timeout_seconds=0),
                       server._session_profile_runtime_scope({"profile_home": str(home)})):

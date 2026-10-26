@@ -1156,7 +1156,7 @@ def _pull_updates(
                 git_cmd, branch, movement_baseline, in_place_update=in_place_update,
                 _windows_gateway_resume=_windows_gateway_resume)
             try:
-                _m()._sync_with_upstream_if_needed(
+                upstream_synced = _m()._sync_with_upstream_if_needed(
                     git_cmd, _m().PROJECT_ROOT, assume_yes=assume_yes, input_fn=gw_input_fn,
                     checkout_move=_moves_for(_windows_gateway_resume))
             except UpstreamTargetBroken as broken:  # refused before its move: the update rolls back
@@ -1175,7 +1175,7 @@ def _pull_updates(
             _windows_gateway_resume=_windows_gateway_resume)
         if sync_upstream:
             # Only a validated update is published to the fork (#97052 sync, after the commit point).
-            _push_synced_fork(git_cmd, _m().PROJECT_ROOT)
+            _push_synced_fork(git_cmd, _m().PROJECT_ROOT, merged_upstream=upstream_synced)
         update_succeeded = True
     finally:
         if auto_stash_ref is not None:
@@ -1335,6 +1335,7 @@ class _CheckoutPlan:
     rollback_branch: str | None = None
     # The switch changed the running code with no new commits to count (commit_count == -1).
     switched_without_new_commits: bool = False
+    publish_fork: bool = False
 
 
 def _apply_parked_branch_guard(
@@ -1499,7 +1500,8 @@ def _prepare_checkout_for_update(
         parked_branch_switched=parked_branch_switched, prompt_for_restore=prompt_for_restore,
         switch_block_reason=switch_block_reason, upstream_checked=upstream_checked,
         pre_sync_sha=moved_from_sha, rollback_branch=rollback_branch,
-        switched_without_new_commits=switched_without_new_commits)
+        switched_without_new_commits=switched_without_new_commits,
+        publish_fork=is_fork and branch == "main" and not release_tag)
 
 
 @dataclass
@@ -1736,6 +1738,9 @@ def _finish_already_up_to_date(
     # A parked branch the update switched off stays on the target: re-parking on the stale branch
     # recreates the incident. No other checkout left current_branch (in-place and release updates
     # never switch), so there is nothing to switch back to.
+    if _plan.publish_fork:
+        _rollback_if_pulled_syntax_error(git_cmd, _capture_head_sha(git_cmd, _m().PROJECT_ROOT))
+        _push_synced_fork(git_cmd, _m().PROJECT_ROOT)
     if _plan.auto_stash_ref is not None:
         _m()._restore_stashed_changes(
             git_cmd, _m().PROJECT_ROOT, _plan.auto_stash_ref, prompt_user=_plan.prompt_for_restore,

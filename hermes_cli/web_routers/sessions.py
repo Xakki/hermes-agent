@@ -43,8 +43,22 @@ _session_db_path_for_profile = late("_session_db_path_for_profile", "hermes_cli.
 _NOT_FOUND = "Session not found"
 
 def _active_project_root(profile):
-    from tui_gateway import server
-    root = server._active_project_root({"profile": profile} if profile else {}, None)
+    from hermes_cli import projects_db
+    from hermes_cli.web_routers.files import _fs_default_cwd
+    from hermes_constants import get_hermes_home
+    from tui_gateway.git_probe import canonical_project_root
+
+    home = _cron_profile_home(profile)[1] if profile else get_hermes_home()
+    path = Path(home) / 'projects.db'
+    selected = None
+    if path.is_file():
+        with projects_db.connect_closing(path) as conn:
+            active_id = projects_db.get_active_id(conn)
+            selected = projects_db.get_project(conn, active_id) if active_id else None
+        if active_id and (selected is None or selected.archived or not selected.primary_path):
+            raise HTTPException(status_code=400, detail="No trusted active project")
+    # The profile's persisted selection/configuration is authority; cwd_prefix is only a filter.
+    root = canonical_project_root(selected.primary_path if selected else _fs_default_cwd(profile))
     if not root:
         raise HTTPException(status_code=400, detail="No trusted active project")
     return root
@@ -206,8 +220,8 @@ def get_sessions(
         raise HTTPException(status_code=400, detail="order must be one of: created, recent")
     profile_name = _cron_profile_home(profile)[0] if profile else None
     try:
-        db = _open_session_db_for_profile(profile, read_only=True)
         project_root = _active_project_root(profile)
+        db = _open_session_db_for_profile(profile, read_only=True)
         try:
             min_message_count = max(0, min_messages)
             archived_only = archived == "only"

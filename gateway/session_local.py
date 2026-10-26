@@ -337,9 +337,11 @@ def stage_local_session(authority, actor, params, *, trusted_policy=None, truste
     entry = SessionEntry(route, sid, now, now, origin=source, platform=Platform.LOCAL)
     # Prefill is read now, at creation (main's CLI: at startup), and held only if this attempt commits.
     from gateway.session_worker_construct import stage_session_prefill
+    from tui_gateway.git_probe import canonical_project_root
     staged = stage_session_prefill(authority, policy, {
         'profile_id': authority.profile_id, 'principal_id': actor.subject, 'request_id': request_id,
-        'session_id': sid, 'route': route, 'entry': entry.to_dict(), 'policy': asdict(policy)})
+        'session_id': sid, 'route': route, 'entry': entry.to_dict(), 'policy': asdict(policy),
+        'project_root': canonical_project_root(policy.cwd)})
     # Owner memory, never stored: an overlapping create's commit judges this request's own map by the
     # winner's committed rules, as a sequential retry is.
     staged.client_request = client_request
