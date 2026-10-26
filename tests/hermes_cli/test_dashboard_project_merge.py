@@ -12,7 +12,7 @@ def test_bulk_dashboard_lists_only_owned_project(monkeypatch, tmp_path, surface)
         db.create_session(sid, source="cli", project_root=root)
     monkeypatch.setattr(sessions, "_active_project_root", lambda profile: "/owned", raising=False)
     monkeypatch.setattr(sessions, "_open_session_db_for_profile", lambda *a, **kw: db)
-    monkeypatch.setattr(profiles, "_trusted_active_project_root", lambda: "/owned", raising=False)
+    monkeypatch.setattr(profiles, "_trusted_active_project_root", lambda profile: "/owned", raising=False)
     monkeypatch.setattr(profiles, "_profile_targets", lambda *a: [("default", tmp_path)])
     monkeypatch.setattr(profiles, "_read_profile_db", lambda name, home, errors, read: read(db))
     try:
@@ -37,8 +37,31 @@ def test_profile_pr_scan_never_reads_foreign_transcripts(monkeypatch, tmp_path):
             scanned.extend(ids)
             return []
 
-    monkeypatch.setattr(profiles, "_trusted_active_project_root", lambda: "/owned", raising=False)
+    monkeypatch.setattr(profiles, "_trusted_active_project_root", lambda profile: "/owned", raising=False)
     monkeypatch.setattr(profiles, "_scoped_profile_targets", lambda *a: [("default", tmp_path)])
     monkeypatch.setattr(profiles, "_read_profile_db", lambda name, home, errors, read: read(Store()))
     profiles.post_profiles_sessions_pull_requests(profiles.SessionPrScanBody(ids=["owned", "foreign"]))
     assert scanned == ["owned"]
+
+
+def test_profile_pr_scan_uses_each_profiles_project(monkeypatch, tmp_path):
+    from hermes_cli.web_routers import profiles
+
+    scanned = {}
+
+    class Store:
+        def __init__(self, name):
+            self.name = name
+
+        def get_session(self, sid):
+            return {"project_root": "/" + sid}
+
+        def find_pr_url_messages(self, ids):
+            scanned[self.name] = ids
+            return []
+
+    monkeypatch.setattr(profiles, "_trusted_active_project_root", lambda name: "/" + name)
+    monkeypatch.setattr(profiles, "_scoped_profile_targets", lambda *a: [("one", tmp_path), ("two", tmp_path)])
+    monkeypatch.setattr(profiles, "_read_profile_db", lambda name, home, errors, read: read(Store(name)))
+    profiles.post_profiles_sessions_pull_requests(profiles.SessionPrScanBody(ids=["one", "two", "foreign"]))
+    assert scanned == {"one": ["one"], "two": ["two"]}

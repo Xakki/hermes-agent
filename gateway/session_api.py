@@ -148,7 +148,7 @@ def bind_api_session(authority, session_id, *, hosted_dispatch=None, declared_ke
 
 
 def bind_api_steps(authority, session_id, *, hosted_dispatch=None, declared_key=None, caller_key=None,
-                   walked_from=None):
+                   walked_from=None, project_root=None):
     """``bind_api_session`` as write steps (``run_steps``): the binding transaction is yielded.
 
     ``caller_key`` is this request's validated ``X-Hermes-Session-Key`` even when an explicit
@@ -254,9 +254,9 @@ def bind_api_steps(authority, session_id, *, hosted_dispatch=None, declared_key=
         held = json.loads(existing[0])['session_id'] if existing is not None else session_id
         if held != session_id and not _heal_replacement(conn, session_id, held):
             raise RuntimeStoreError('admission_conflict')
-        conn.execute('''INSERT INTO sessions(id,source,title,hidden,started_at) VALUES(?,?,?,?,?)
+        conn.execute('''INSERT INTO sessions(id,source,title,hidden,started_at,project_root) VALUES(?,?,?,?,?,?)
                         ON CONFLICT(id) DO NOTHING''', (session_id, storage_source, title,
-                                                       int(storage_source == 'bot_room'), now.timestamp()))
+                                                       int(storage_source == 'bot_room'), now.timestamp(), project_root))
         conn.execute('UPDATE sessions SET session_key=?,chat_id=?,user_id=?,chat_type=?,origin_json=? WHERE id=?',
                      (route, session_id, source.user_id, 'dm', _json(source.to_dict()), session_id))
         conn.execute("INSERT INTO gateway_routing(scope,session_key,entry_json,updated_at) VALUES('',?,?,?) "

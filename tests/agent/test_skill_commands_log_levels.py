@@ -27,20 +27,19 @@ def _write_skill_md(tmp_path, name):
 
 def test_core_command_collision_skip_logs_at_info(caplog, tmp_path):
     """A skill whose slug collides with a core command logs its skip at INFO."""
-    skill_md = _write_skill_md(tmp_path, "git_helper")  # slugifies to a core command name
+    skill_md = _write_skill_md(tmp_path, "help")  # registered core command
 
     with caplog.at_level(logging.INFO, logger="agent.skill_commands"):
         commands = {}
         _scan_skill_md(
             skill_md, disabled=set(), seen_names=set(), commands=commands,
-            resolve_command=lambda slug: object(),  # any core command counts as a collision
         )
 
     assert commands == {}  # skip behavior unchanged
     records = [r for r in caplog.records if "collides with a core Hermes command" in r.getMessage()]
     assert len(records) == 1
     assert records[0].levelno == logging.INFO
-    assert "git_helper" in records[0].getMessage()
+    assert "help" in records[0].getMessage()
     assert not any(r.levelno >= logging.WARNING for r in records)
 
 
@@ -51,10 +50,8 @@ def test_duplicate_skill_slug_stays_warning(caplog, tmp_path):
 
     with caplog.at_level(logging.INFO, logger="agent.skill_commands"):
         commands, seen = {}, set()
-        _scan_skill_md(first, disabled=set(), seen_names=seen, commands=commands,
-                       resolve_command=lambda slug: None)
-        _scan_skill_md(second, disabled=set(), seen_names=seen, commands=commands,
-                       resolve_command=lambda slug: None)
+        _scan_skill_md(first, disabled=set(), seen_names=seen, commands=commands)
+        _scan_skill_md(second, disabled=set(), seen_names=seen, commands=commands)
 
     assert commands["/git-helper"]["name"] == "git_helper"  # first wins, unchanged
     records = [r for r in caplog.records if "already claimed" in r.getMessage()]

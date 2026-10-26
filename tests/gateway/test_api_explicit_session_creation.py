@@ -19,7 +19,6 @@ async def test_explicit_id_creates_then_continues_and_rejects_foreign_targets(ap
     root, neighbor = tmp_path / 'project', tmp_path / 'neighbor'
     root.mkdir()
     neighbor.mkdir()
-    monkeypatch.chdir(root)
     api._trusted_project_root = str(root)
     api._api_key = 'synthetic-api-key-long-enough'
     seen = []
@@ -41,6 +40,7 @@ async def test_explicit_id_creates_then_continues_and_rejects_foreign_targets(ap
 
     app = web.Application(middlewares=[auth])
     app.router.add_post('/v1/chat/completions', api._handle_chat_completions)
+    app.router.add_get('/api/sessions', api._handle_list_sessions)
     headers = {'Authorization': 'Bearer ' + api._api_key, 'X-Hermes-Session-Id': 'new-id'}
     async with TestClient(TestServer(app)) as client:
         async def post(text, **changes):
@@ -51,6 +51,10 @@ async def test_explicit_id_creates_then_continues_and_rejects_foreign_targets(ap
         assert response.headers['X-Hermes-Session-Id'] == 'new-id'
         row = owner.db.get_session('new-id')
         assert row['source'] == 'api_server'
+        assert row['project_root'] == str(root)
+        listing = await client.get('/api/sessions', headers=headers)
+        assert listing.status == 200, await listing.text()
+        assert 'new-id' in [session['id'] for session in (await listing.json())['data']]
         response = await post('second')
         assert response.status == 200, await response.text()
         assert seen == [('new-id', 'first'), ('new-id', 'second')]

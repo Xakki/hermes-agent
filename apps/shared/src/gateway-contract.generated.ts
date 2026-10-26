@@ -293,6 +293,7 @@ export interface BillingMutationResult {
 }
 export interface BillingKeepGoingOnCreditsParams {
   profile?: string | null
+  project_root?: string | null
   enabled?: boolean
 }
 export interface BillingStepUpParams {
@@ -735,6 +736,7 @@ export interface FreeTierAckNoticeResult {
 }
 export interface FreeTierClaimNudgeParams {
   profile?: string | null
+  project_root?: string | null
   kind?: 'trial' | 'connector'
 }
 export interface FreeTierClaimNudgeResult {

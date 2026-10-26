@@ -131,20 +131,21 @@ export const resolveGitStatus = async (cwd: string): Promise<GitStatus> => {
     return EMPTY
   }
 
-  const [branchOutput, commitOutput, statusOutput, stagedDiff, unstagedDiff] = await Promise.all([
+  const [branchOutput, commitOutput, statusOutput, stagedDiff, unstagedDiff, rootOutput] = await Promise.all([
     runGit(cwd, ['branch', '--show-current']),
     runGit(cwd, ['rev-parse', '--short', 'HEAD']),
     runGit(cwd, ['status', '--porcelain=v2', '-z', '--untracked-files=all']),
     runGit(cwd, ['diff', '--cached', '--numstat', '--']),
-    runGit(cwd, ['diff', '--numstat', '--'])
+    runGit(cwd, ['diff', '--numstat', '--']),
+    runGit(cwd, ['rev-parse', '--show-toplevel'])
   ])
 
-  if (statusOutput === null) {
+  if (statusOutput === null || rootOutput === null) {
     return EMPTY
   }
 
   const { files, untracked } = parseStatus(statusOutput)
-  const untrackedLines = await untrackedTextLines(cwd, untracked)
+  const untrackedLines = await untrackedTextLines(rootOutput.replace(/\r?\n$/, ''), untracked)
 
   return {
     branch: branchOutput?.trim() || commitOutput?.trim() || null,

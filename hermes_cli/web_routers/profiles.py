@@ -447,9 +447,9 @@ def _sidebar_singleflight_cache(func):
     return wrapped
 
 
-def _trusted_active_project_root():
+def _trusted_active_project_root(profile):
     from hermes_cli.web_routers.sessions import _active_project_root
-    return _active_project_root(None)
+    return _active_project_root(profile)
 
 
 def _csv_list(value: Optional[str]) -> list[str]:
@@ -472,8 +472,6 @@ def get_profiles_sessions(
         raise HTTPException(status_code=400, detail="archived must be one of: exclude, only, include")
     if order not in ("created", "recent"):
         raise HTTPException(status_code=400, detail="order must be one of: created, recent")
-    active_project_root = _trusted_active_project_root()
-
     targets = ([_cron_profile_home(profile)] if profile and profile != "all"
                else _profile_targets("GET /api/profiles/sessions"))
 
@@ -482,7 +480,7 @@ def get_profiles_sessions(
     filters = dict(
         source=source or None, sources=_csv_list(sources) or None,
         exclude_sources=_csv_list(exclude_sources) or None, min_message_count=max(0, min_messages),
-        include_archived=archived == "include", archived_only=archived == "only", project_root=active_project_root)
+        include_archived=archived == "include", archived_only=archived == "only")
     # Over-fetch per profile so the merged+sorted window is correct for the requested page.
     # ``limit`` is already bounded to 500 by FastAPI; the offset is caller-controlled
     # pagination state, so include it instead of capping the source window at 500.
@@ -495,11 +493,13 @@ def get_profiles_sessions(
     errors: list[dict[str, str]] = []
     now = time.time()
     for name, home in targets:
+        active_project_root = _trusted_active_project_root(name)
         def _read(db, name=name, home=home):
             include_subagents, exclude = subagent_listing_scope(
                 home, source=filters["source"], sources=filters["sources"],
                 exclude_sources=filters["exclude_sources"])
-            scoped = {**filters, "exclude_sources": exclude, "include_subagents": include_subagents}
+            scoped = {**filters, "exclude_sources": exclude, "include_subagents": include_subagents,
+                      "project_root": active_project_root}
             rows = db.list_sessions_rich(
                 limit=per_profile, offset=0, order_by_last_active=order == "recent",
                 # Same SQL-level blob skip as /api/sessions.
@@ -780,7 +780,6 @@ def post_profiles_sessions_pull_requests(body: SessionPrScanBody, profile: Optio
     its PR is invisible to the branch join — but ``gh pr create`` ran in the conversation
     (see ``_pr_url_from_tool_output``). Read-only across every profile."""
     wanted = list(dict.fromkeys(s for s in (body.ids or []) if s))[:2000]
-    active_project_root = _trusted_active_project_root()
     if not wanted:
         return {"pull_requests": {}, "scanned": []}
 
@@ -795,6 +794,7 @@ def post_profiles_sessions_pull_requests(body: SessionPrScanBody, profile: Optio
                 found[pr["session_id"]] = {"number": parsed[0], "url": parsed[1]}
 
     for name, home in _scoped_profile_targets("POST /api/profiles/sessions/pull-requests", profile):
+        active_project_root = _trusted_active_project_root(name)
         _read_profile_db(name, home, None, _read)
 
     # ``scanned``: every id looked at, so the caller can remember "nothing there".

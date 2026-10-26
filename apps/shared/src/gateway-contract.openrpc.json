@@ -6436,6 +6436,18 @@
             "default": null,
             "title": "Profile"
           },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
+          },
           "enabled": {
             "default": false,
             "title": "Enabled",
@@ -18966,6 +18978,18 @@
             ],
             "default": null,
             "title": "Profile"
+          },
+          "project_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Project Root"
           },
           "kind": {
             "default": "trial",

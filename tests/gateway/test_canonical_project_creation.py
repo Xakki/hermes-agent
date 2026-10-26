@@ -41,6 +41,8 @@ async def test_cli_create_retry_resume_and_project_listing(tmp_path, monkeypatch
         first = await call('session.create', **request)
         other = await call('session.create', request_id='b', source='cli', cwd=str(b))
         sid = first['session_id']
+        live = await call('session.list')
+        assert next(row for row in live['sessions'] if row['id'] == other['session_id'])['cwd'] == str(b)
         # row_cwd is display-only and may be empty; execution policy still owns project A.
         row = authority.db.get_session(sid)
         assert row['cwd'] is None
