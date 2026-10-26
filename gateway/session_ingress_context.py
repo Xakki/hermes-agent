@@ -58,6 +58,15 @@ def _relay_seal(transport, source, provenance):
                     hashlib.sha256).hexdigest()
 
 
+def reseal_relay(adapter, source, provenance):
+    """*provenance* bound to the stored *source* dict instead; only for a seal the caller verified."""
+    from gateway.session import SessionSource
+    stored = SessionSource.from_dict(source)
+    stored.is_bot = source['is_bot']
+    base = {key: value for key, value in provenance.items() if key != 'relay'}
+    return {**base, 'relay': _relay_seal(adapter._transport, stored, base)}
+
+
 def register_transport_home(runner, profile, home):
     """Called when the server creates a callback, never from event home fields."""
     homes = getattr(runner, '_native_transport_homes', None)
@@ -88,6 +97,9 @@ def carry_callback(event, rewritten):
         bound = bound_var.get()
         if bound is not None and bound[1] is event and rewritten.source is event.source:
             bound_var.set((bound[0], rewritten, *bound[2:]))
+
+
+_PREFIX_PRODUCERS = ('webhook', 'api_server', 'msgraph_webhook')
 
 
 def _binding(runner, source, profile):
@@ -135,16 +147,17 @@ def _binding(runner, source, profile):
             source.platform.value, guild_id=source.scope_id, chat_id=source.chat_id,
             thread_id=source.thread_id, parent_chat_id=source.parent_chat_id,
             adapter_profile=profile, user_id=source.user_id)]
-        if matches:
+        if source.profile and source.platform.value in _PREFIX_PRODUCERS:
+            # ``/p/<profile>/`` producers address a profile explicitly on the HOST's listener; that
+            # URL prefix names the profile and wins over ``profile_routes`` (webhook.py /
+            # api_server.py stamp it; a bare producer source carries the routed name itself).
+            runtime_profile = source.profile
+        elif matches:
             rank = max(route.specificity for route in matches)
             best = [route for route in matches if route.specificity == rank]
             if len(best) != 1:
                 raise RuntimeStoreError('admission_conflict')
             runtime_profile = best[0].profile
-        elif source.profile and source.profile in homes and source.platform.value in ('webhook', 'api_server', 'msgraph_webhook'):
-            # ``/p/<profile>/`` producers address a served profile explicitly on the HOST's
-            # listener; that URL prefix is the route (webhook.py / api_server.py stamp it).
-            runtime_profile = source.profile
         else:
             runtime_profile = owner_name
         if (source.profile or primary) != runtime_profile or runtime_profile not in homes:

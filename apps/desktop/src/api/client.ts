@@ -9,7 +9,7 @@ import { map, type MapStore } from 'nanostores'
 
 import type { HermesApiRequest } from '@/global'
 
-import { CANONICAL_GATEWAY_PROTOCOL, CanonicalDesktopProtocol, canonicalProfile, canonicalPromptParams, canonicalSessionKey, recordCanonicalOwner, splitRewindSubmit } from './canonical-protocol'
+import { CanonicalDesktopProtocol, canonicalProfile, canonicalPromptParams, canonicalSessionKey, openGatewaySocket, recordCanonicalOwner, splitRewindSubmit } from './canonical-protocol'
 
 // Desktop startup fires a burst of read-only data calls (config, profiles,
 // model info/options, cron) the moment the backend passes readiness. On a
@@ -327,6 +327,10 @@ export class HermesGateway extends JsonRpcGatewayClient {
     })
   }
 
+  protected override isDesktopLocal(): boolean {
+    return this.canonical
+  }
+
   override async connect(wsUrl: string): Promise<void> {
     this.connectionGeneration++
     this.canonical = new URL(wsUrl).searchParams.has('native_dial')
@@ -413,6 +417,12 @@ export class HermesGateway extends JsonRpcGatewayClient {
     // The attach may have identified the named launch profile behind an
     // implicit route. Its revision and generation are cached under that owner.
     params = this.routeCanonicalParams(method, params)
+
+    // Answered locally only once the owner's route is known: a named launch profile's
+    // retained rewind is keyed under its name, which a redial forgets until the attach.
+    const local = this.protocol.localAnswer(method, params)
+
+    if (local) { return local as T }
 
     let prepared = this.protocol.prepare(method, params)
     const wireMethod = this.protocol.wire(method, prepared)
@@ -518,17 +528,7 @@ export class HermesGateway extends JsonRpcGatewayClient {
       onUnhandledRequest: request =>
         console.warn(`[gateway] Hermes Desktop has no server-request registry for ${request.method} (${request.id})`),
       requestTimeoutMs: DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS,
-      socketFactory: url => {
-        const parsed = new URL(url)
-
-        if (!parsed.searchParams.has('native_dial')) {return new WebSocket(url)}
-        const ticket = parsed.searchParams.get('ticket')
-
-        if (!ticket) {throw new Error('Native gateway requires a fresh private ticket')}
-        parsed.searchParams.delete('ticket')
-
-        return new WebSocket(parsed.toString(), [CANONICAL_GATEWAY_PROTOCOL, `hermes-gateway-ticket.${ticket}`])
-      }
+      socketFactory: openGatewaySocket
     })
     this.onEvent(event => {
       if (!this.canonical) { return }
