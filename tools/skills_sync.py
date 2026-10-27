@@ -446,7 +446,8 @@ def sync_skills(quiet: bool = False) -> dict:
         del st.manifest[name]
     _seed_category_descriptions(
         bundled_dir,
-        {_compute_relative_dest(src, bundled_dir).parent for _, src in bundled_skills} if essential_only else None)
+        {_compute_relative_dest(src, bundled_dir).parent for name, src in bundled_skills
+         if name not in external_index} if essential_only else None)
     _write_manifest(st.manifest)
     return {
         "copied": st.copied, "updated": st.updated, "skipped": st.skipped, "user_modified": st.user_modified,
