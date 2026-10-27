@@ -86,6 +86,8 @@ class CanonicalSessionHandle(Result):
 class CanonicalPendingAdmission(AdmissionStatus):
     input_id: str
     text: str
+    display_kind: Literal['process_complete', 'async_delegation_complete', 'internal_notification'] | None = None
+    display_text: str | None = None
     # The queued-row verbs the owner serves for this row: ``steer`` (``prompt.steer_queued``) and
     # ``replace`` (``prompt.replace_queued``). Absent from an owner that predates them.
     controls: list[Literal['steer', 'replace']] | None = None
@@ -168,6 +170,7 @@ class CanonicalListParams(ProfileParams):
 
 class CanonicalSessionListRow(Result):
     session_id: str
+    cwd: str | None = None
     id: str
     title: str
     source: str | None

@@ -17,54 +17,16 @@ import { ZERO } from '../domain/usage.js'
 import { estimateTokensRough } from '../lib/text.js'
 import type { Msg } from '../types.js'
 
+import { buildCtx } from './gatewayEventFixture.js'
+
 // Mock the external-URL opener so the billing.step_up.verification test can
 // assert it's invoked without spawning a real browser process.
+const ref = <T>(current: T) => ({ current })
 const openExternalUrlMock = vi.fn((_url: string) => true)
 vi.mock('../lib/openExternalUrl.js', () => ({
   openExternalUrl: (url: string) => openExternalUrlMock(url)
 }))
 
-const ref = <T>(current: T) => ({ current })
-
-const buildCtx = (appended: Msg[]) =>
-  ({
-    composer: {
-      dequeue: () => undefined,
-      queueEditRef: ref<null | number>(null),
-      sendQueued: vi.fn(),
-      setInput: vi.fn()
-    },
-    gateway: {
-      gw: { request: vi.fn(async () => null) },
-      rpc: vi.fn(async () => null)
-    },
-    session: {
-      STARTUP_RESUME_ID: '',
-      colsRef: ref(80),
-      newSession: vi.fn(),
-      resetSession: vi.fn(),
-      resumeById: vi.fn(),
-      setCatalog: vi.fn()
-    },
-    submission: {
-      submitRef: { current: vi.fn() }
-    },
-    system: {
-      bellOnComplete: false,
-      sys: vi.fn()
-    },
-    transcript: {
-      appendMessage: (msg: Msg) => appended.push(msg),
-      panel: (title: string, sections: any[]) =>
-        appended.push({ kind: 'panel', panelData: { sections, title }, role: 'system', text: '' }),
-      setHistoryItems: vi.fn()
-    },
-    voice: {
-      setProcessing: vi.fn(),
-      setRecording: vi.fn(),
-      setVoiceEnabled: vi.fn()
-    }
-  }) as any
 
 /** Deliver one server→client request (`tui_gateway/server_requests.py`) to the TUI's request handler. */
 const serverRequest = (method: string, params: Record<string, unknown>, id = `srq-${method}`) => {
@@ -85,6 +47,19 @@ const serverRequest = (method: string, params: Record<string, unknown>, id = `sr
 }
 
 describe('createGatewayEventHandler', () => {
+  it('projects real solver phases without a human overlay or a status-restore timer', () => {
+    resetOverlayState()
+    resetUiState()
+    const handler = createGatewayEventHandler(buildCtx([]))
+
+    handler({ type: 'status.update', payload: { kind: 'interaction', text: 'Solver decision: up to 600s from handoff; human wait ended.' } })
+    expect(getUiState().status).toContain('600s from handoff')
+    expect(getOverlayState().clarify).toBeNull()
+    handler({ type: 'status.update', payload: { kind: 'interaction', text: 'Solver blocked; no action selected and no human timer restarted.' } })
+    expect(getUiState().status).toContain('Solver blocked')
+    expect(getOverlayState().clarify).toBeNull()
+  })
+
   beforeEach(() => {
     resetOverlayState()
     resetUiState()
@@ -1325,6 +1300,10 @@ describe('createGatewayEventHandler', () => {
     createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
 
     await vi.waitFor(() => expect(resumeById).toHaveBeenCalledWith('sess-most-recent'))
+    expect(ctx.gateway.rpc).toHaveBeenCalledWith('session.most_recent', {
+      current_session_id: null,
+      project_root: process.env.HERMES_CWD || process.cwd()
+    })
     expect(newSession).not.toHaveBeenCalled()
   })
 

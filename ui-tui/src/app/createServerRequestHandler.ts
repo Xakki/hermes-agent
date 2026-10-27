@@ -1,8 +1,9 @@
 import type { ServerRequest } from '@hermes/shared/json-rpc-channel'
 
 import { t } from '../i18n/runtime.js'
-import type { ClarifyQuestion } from '../types.js'
+import type { ClarifyQuestion, ClarifyReq } from '../types.js'
 
+import { refreshApprovalPrompt } from './approvalRequestQueue.js'
 import { patchOverlayState } from './overlayStore.js'
 import { rememberServerRequest } from './serverRequestStore.js'
 
@@ -52,7 +53,7 @@ export function createServerRequestHandler(ctx: ServerRequestHandlerContext): (r
             question: str(q.question).trim()
           }))
 
-        if (!questions.length) {
+        if (!questions.length && !str(p.question)) {
           request.respond({})
 
           return true
@@ -67,25 +68,17 @@ export function createServerRequestHandler(ctx: ServerRequestHandlerContext): (r
               )
             : {}
 
-        patchOverlayState({ clarify: { answers, questions, requestId: request.id } })
-        open(request, t('session.status.waitingForInput'))
+        patchOverlayState({ clarify: { answers, questions, question: str(p.question), choices: strList(p.choices),
+          actionMetadata: (Array.isArray(p.action_metadata) ? p.action_metadata : []) as ClarifyReq["actionMetadata"],
+          interaction: p.interaction as ClarifyReq["interaction"], receivedAt: Date.now(), requestId: request.id } })
+        open(request, t("session.status.waitingForInput"))
 
         return true
       }
 
       case 'approval': {
-        patchOverlayState({
-          approval: {
-            // Only an explicit false drops the permanent-allow option.
-            allowPermanent: p.allow_permanent !== false,
-            choices: strList(p.choices) ?? undefined,
-            command: str(p.command),
-            description: str(p.description) || t('session.request.dangerousCommand'),
-            requestId: request.id,
-            smartDenied: p.smart_denied === true
-          }
-        })
-        open(request, t('session.status.approvalNeeded'))
+        open(request, t("session.status.approvalNeeded"))
+        refreshApprovalPrompt()
 
         return true
       }

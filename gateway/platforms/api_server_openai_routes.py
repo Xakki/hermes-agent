@@ -740,6 +740,10 @@ def _parse_conversation_history(raw_history: Any) -> tuple:
 class OpenAICompatRoutesMixin:
     """/v1/chat/completions and /v1/responses handlers + SSE writers."""
 
+    def _session_scope_error(self, session: dict[str, Any]) -> Optional[Any]:
+        """Implemented by the adapter that owns the active project authority."""
+        raise NotImplementedError
+
     def _select_request_route(
         self, body: dict[str, Any], *, session_id, gateway_session_key, model_alias) -> tuple:
         """Resolve the model_routes alias + per-request overrides ->
@@ -860,31 +864,24 @@ class OpenAICompatRoutesMixin:
         # requires a configured API key or any client could read history by guessing ids.
         provided_session_id = request.headers.get("X-Hermes-Session-Id", "").strip()
         if provided_session_id:
-            if not self._api_key:
-                logger.warning(
-                    "Session continuation via X-Hermes-Session-Id rejected: "
-                    "no API key configured.  Set API_SERVER_KEY to enable "
-                    "session continuity.")
-                return _error_response("Session continuation requires API key authentication. "
-                        "Configure API_SERVER_KEY to enable this feature.", 403)
-            # Same guard as the native gateway: ids are interpolated into on-disk filenames.
-            from gateway.session import _is_path_unsafe
-            if re.search(r'[\r\n\x00]', provided_session_id) or _is_path_unsafe(provided_session_id):
-                return _invalid_request("Invalid session ID")
-            if len(provided_session_id) > self._MAX_SESSION_HEADER_LEN:
-                return _invalid_request("Session ID too long")
+            if (header_error := self._chat_session_header_error(provided_session_id)) is not None:
+                return header_error
             session_id = provided_session_id
             try:
                 db = await self._ensure_session_db_async()
                 if db is not None:
+                    session = await asyncio.to_thread(db.get_session, provided_session_id)
+                    if session and (scope_error := self._session_scope_error(session)) is not None:
+                        return scope_error
                     # #98619/#13437: a client-addressed id from before a compression rotation
                     # must adopt the live continuation tip — history loads from it, the turn and
                     # the wake target bind it, and a detached delegation delivery row persisted
                     # on the tip is what this continuation consumes. Same canonical resolution
                     # the delivery writer (gateway/wake.py) and /v1/runs use; fails open.
-                    from gateway.platforms.api_server_runs import _resolve_live_session_id
-                    session_id = await _resolve_live_session_id(self, provided_session_id)
-                    history = await asyncio.to_thread(db.get_messages_as_conversation, session_id)
+                    if session:
+                        from gateway.platforms.api_server_runs import _resolve_live_session_id
+                        session_id = await _resolve_live_session_id(self, provided_session_id)
+                        history = await asyncio.to_thread(db.get_messages_as_conversation, session_id)
             except Exception as e:
                 logger.warning("Failed to load session history for %s: %s", session_id, e)
                 history = []

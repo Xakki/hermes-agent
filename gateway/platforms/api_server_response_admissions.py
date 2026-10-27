@@ -129,7 +129,7 @@ async def _bind_successor(adapter, session_id, run_kwargs):
         try:
             await run_steps_off_loop(authority, bind_api_steps(
                 authority, session_id, walked_from=run_kwargs['walked_from'],
-                caller_key=run_kwargs['gateway_session_key']))
+                caller_key=run_kwargs['gateway_session_key'], project_root=adapter._trusted_project_root))
         except RuntimeStoreError:
             raise
         except Exception as exc:

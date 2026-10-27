@@ -14,6 +14,7 @@ import { computeWheelStep, initWheelAccelForHost } from '../lib/wheelAccel.js'
 import { closeWidget, dispatchWidgetInput } from '../sdk/host.js'
 
 import { $agentDockCollapsed } from './agentRoster.js'
+import { answerApprovalRequest } from './approvalRequestQueue.js'
 import { getInputSelection } from './inputSelectionStore.js'
 import {
   type GatewayRpc,
@@ -277,8 +278,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
           .then(r => r && fresh() && settle())
       }
 
-      respondToServerRequest(overlay.approval.requestId, { choice: 'deny' })
-      settle()
+      answerApprovalRequest(overlay.approval.requestId, 'deny')
 
       return
     }

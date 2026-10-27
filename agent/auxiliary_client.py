@@ -358,43 +358,11 @@ def _field(obj: Any, key: str, default: Any = None) -> Any:
     return default if val is None else val
 
 
-def _anthropic_event_has_content(event: Any) -> bool:
-    """Whether an Anthropic stream event carries a non-empty payload."""
-    event_type = _field(event, "type")
-    if event_type == "content_block_delta":
-        delta = _field(event, "delta")
-        return any(bool(_field(delta, f)) for f in ("text", "thinking", "partial_json", "signature", "citation"))
-    if event_type == "content_block_start":
-        block = _field(event, "content_block")
-        return _field(block, "type") == "tool_use" and any(bool(_field(block, f)) for f in ("id", "name"))
-    return False
-
-
-def _anthropic_aux_stream_event_hook() -> Callable[[Any], None]:
-    """Per-event callback for the Anthropic aux wire: progress only for substantive payloads
-    (keepalives must not keep a stalled summary alive), stop at the host deadline or explicit
-    cancel. The ``TimeoutError`` text must say "timed out" so ``_is_timeout_error`` classifies it."""
-    host_deadline = _current_aux_stream_deadline()
-    started = time.monotonic()
-
-    def _on_event(event: Any) -> None:
-        if _anthropic_event_has_content(event):
-            _notify_aux_provider_response()
-        else:
-            _notify_aux_timing_response()
-        if _aux_interrupt_cancel_requested():
-            raise AuxiliaryExplicitCancellation()
-        if host_deadline is not None and time.monotonic() >= host_deadline:
-            raise TimeoutError(
-                "Anthropic auxiliary stream timed out at the host compression "
-                f"deadline after {time.monotonic() - started:.0f}s (the caller already stopped waiting)")
-
-    return _on_event
-
 
 # A dead stream fails at the no-progress window (first token AND between tokens); a live
-# stream re-arms per event, bounded by _aux_stream_total_ceiling().
-_AUX_STREAM_NO_PROGRESS_TIMEOUT_SECONDS = 60.0
+# stream re-arms per event, bounded by _aux_stream_total_ceiling(). Smaller task/host budgets
+# still clamp this shared maximum.
+_AUX_STREAM_NO_PROGRESS_TIMEOUT_SECONDS = 300.0
 
 
 @contextlib.contextmanager
@@ -1182,10 +1150,9 @@ class _CodexStreamGuard:
             self.no_progress_timeout = _AUX_STREAM_NO_PROGRESS_TIMEOUT_SECONDS
         # Progress-aware stream deadlines (supersedes the old single absolute kill at ``total_timeout``).
         # Three regimes: 1. First token: the stream must produce its first substantive payload within
-        # ``no_progress_timeout`` (60s default) or we fail fast and let the caller's normal retry/fallback
-        # chain run — a dead (or keepalive-only zombie) Codex stream no longer holds the full 300s
-        # compression budget before falling back (masoria report, Aug 2026: 3 stacked 300s waits -> 20+ min
-        # stuck on "Summarizing"). 2. Streaming: every substantive event re-arms the deadline by
+        # ``no_progress_timeout`` (300s shared maximum, shortened by a smaller per-task timeout) or we
+        # fail into the caller's normal retry/fallback chain. The host deadline and total ceiling still
+        # bound the whole request. 2. Streaming: every substantive event re-arms the deadline by
         # ``no_progress_timeout`` — a live stream is never killed by an absolute total, so a long reasoning
         # summary that is actually producing tokens completes instead of timing out at 300s and falling back
         # (#54915's original complaint, fixed properly). Keepalive/lifecycle frames do NOT re-arm, mirroring
@@ -1790,13 +1757,15 @@ class _AnthropicCompletionsAdapter:
                 if not isinstance(existing, dict):
                     existing = {}
                 anthropic_kwargs["extra_body"] = {**existing, **passthrough}
+        from agent.auxiliary_anthropic_events import stream_event_hook
+
         response = create_anthropic_message(
             self._client,
             anthropic_kwargs,
             # Record provider-response timing every event, but tick forward progress only for
             # substantive payloads so keepalives can't hold a stalled summary open. None keeps
             # the fast get_final_message path.
-            on_stream_event=(_anthropic_aux_stream_event_hook() if _aux_progress_active() else None),
+            on_stream_event=(stream_event_hook() if _aux_progress_active() else None),
         )
         _nr = get_transport("anthropic_messages").normalize_response(response, strip_tool_prefix=self._is_oauth)
         usage = None
@@ -2704,7 +2673,8 @@ def _relay_sync_stream(
     kwargs = prepare_chat_messages(client, kwargs)
     # The bypass runs inside the provider callback, AFTER Relay has seen (and possibly
     # rewritten) the real conversation; applying it to `kwargs` would hand Relay an empty one.
-    create = lambda request: client.chat.completions.create(**bypass_chat_sdk_request_transform(request, client))
+    from agent.auxiliary_budget import bounded_create
+    create = lambda request: bounded_create(client, bypass_chat_sdk_request_transform(request, client))
     route = _relay_auxiliary_metadata(provider=provider, api_mode=api_mode)
     if route is None:
         return create(kwargs)
@@ -7110,6 +7080,7 @@ def _create_with_progress_once(
     ``force_stream``, where a stream-only provider rejects the plain call by definition, so the original
     error is surfaced to the normal recovery chains instead.
     """
+    from agent.auxiliary_budget import bounded_create
     kwargs = bypass_chat_sdk_request_transform(kwargs, client)
     _notify_aux_dispatch()
     # Dispatch alone is not forward progress: a 401/retry/fallback dispatch must not
@@ -7117,13 +7088,13 @@ def _create_with_progress_once(
     # total ceiling instead of idling out (#114938). Progress ticks only for
     # substantive stream payloads or a completed usable response.
     if (not _aux_progress_active() and not force_stream) or _client_streams_internally(client):
-        response = client.chat.completions.create(**kwargs)
+        response = bounded_create(client, kwargs)
         if not _client_streams_internally(client):
             _notify_aux_provider_response()
         return response
     stream_kwargs, model, total_ceiling = _stream_request_plan(kwargs, client)
     try:
-        chunks = client.chat.completions.create(**stream_kwargs)
+        chunks = bounded_create(client, stream_kwargs)
     except Exception as exc:
         # Genuine provider failures aren't streaming's fault — surface unchanged so the
         # recovery chains see the same error as a plain call.
@@ -7135,7 +7106,7 @@ def _create_with_progress_once(
         logger.debug("Auxiliary %s: streamed request failed (%s); retrying non-streaming",
                      task or "call", exc)
         _notify_aux_dispatch()
-        response = client.chat.completions.create(**kwargs)
+        response = bounded_create(client, kwargs)
         _notify_aux_provider_response()
         return response
     # Some shims (MoA quiet mode, defensive adapters) return a complete response despite
@@ -7817,7 +7788,8 @@ def _next_fallback_after_quarantine(
         failed_base_url=route.base_info, failure_scope=failure_scope)
     if task_chain_only:
         return fb
-    if fb[0] is None and is_auto:
+    from agent.auxiliary_budget import decision_budget_active
+    if fb[0] is None and (is_auto or decision_budget_active()):
         fb = _try_main_fallback_chain(
             task, resolved_provider or "auto", reason=reason, failed_model=failed_model,
             failed_base_url=route.base_info, failure_scope=failure_scope)
@@ -7883,7 +7855,8 @@ def _ladder_provider_fallback(first_err: Exception, route: _LadderRoute):
     fb_client, fb_model, fb_label = _try_configured_fallback_chain(
         task, resolved_provider or "auto", reason=reason, failed_model=_chain_failed_model,
         failed_base_url=route.base_info, failure_scope=_chain_failure_scope)
-    if fb_client is None and is_auto:
+    from agent.auxiliary_budget import decision_budget_active
+    if fb_client is None and (is_auto or decision_budget_active()):
         fb_client, fb_model, fb_label = _try_main_fallback_chain(
             task, resolved_provider or "auto", reason=reason, failed_model=_chain_failed_model,
             failed_base_url=route.base_info, failure_scope=_chain_failure_scope)

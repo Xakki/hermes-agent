@@ -30,6 +30,7 @@ import { bootSeededPin, invalidateBootBackground, writeBootTheme } from '../lib/
 import { defaultThemeForCurrentBackground, fromSkin, skinIsLight, type Theme, themeToneHex } from '../theme.js'
 import type { Msg, SessionInfo, SubagentProgress } from '../types.js'
 
+import { refreshApprovalPrompt } from './approvalRequestQueue.js'
 import { applyConnectionRequest, applyConnectionUpdate } from './connectionOperationStore.js'
 import { applyDelegationStatus, getDelegationState } from './delegationStore.js'
 import { createBillingVerificationPresenter, createFreeTierChallengePresenter } from './gatewayBrowserLinks.js'
@@ -44,7 +45,7 @@ import { reportGatewayStartTimeout } from './gatewayStartTimeout.js'
 import type { GatewayEventHandlerContext, NoticeLevel } from './interfaces.js'
 import { applyControlSnapshot } from './loopStatus.js'
 import { getOverlayState, patchOverlayState, SENSITIVE_PROMPTS } from './overlayStore.js'
-import { markBubbleShown, newlyStartedRows } from './pendingBubbles.js'
+import { markBubbleShown, newlyStartedRows, showProducerNotice } from './pendingBubbles.js'
 import { flashGoodVibes, flashPet } from './petFlashStore.js'
 import { forgetServerRequest } from './serverRequestStore.js'
 import { noteCanonicalCompletion } from './slash/canonicalSessionCommands.js'
@@ -661,7 +662,10 @@ function applySessionInfo(payload: unknown, { appendMessage, setHistoryItems, se
   // authority starts it, so it lands after the previous assistant reply.
   for (const started of newlyStartedRows(current?.pending_submissions, incoming.pending_submissions)) {
     markBubbleShown(started.input_id)
-    appendMessage({ role: 'user', text: started.user })
+
+    if (!showProducerNotice(started, started.admission_id, undefined, appendMessage)) {
+      appendMessage({ role: 'user', text: started.user })
+    }
   }
 
   // A replayed snapshot can be the only terminal signal after reconnect.
@@ -1126,7 +1130,11 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           return
         }
 
-        return rpc<SessionMostRecentResponse>('session.most_recent', {}).then(r => {
+        const activeState = getUiState()
+        return rpc<SessionMostRecentResponse>('session.most_recent', {
+          current_session_id: activeState.sid,
+          project_root: activeState.info?.project?.primary_path || process.env.HERMES_CWD || process.cwd()
+        }).then(r => {
           const target = r?.session_id
 
           if (target) {
@@ -1176,6 +1184,34 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   const handledBeforeSwitch = (ev: AnyGatewayEvent) =>
     settleSharedPrompt(ev) || refreshSlashCatalogOnSkillsChange(ev, rpc, setCatalog)
 
+  const handleConnectionAndSkin = (ev: AnyGatewayEvent): boolean => {
+    switch (ev.type) {
+      case 'connection.request':
+        if (ev.payload) { applyConnectionRequest(ev.payload) }
+
+        return true
+      case 'connection.update':
+        if (ev.payload) {
+          for (const line of applyConnectionUpdate(ev.payload)) { sys(line) }
+        }
+
+        return true
+      case 'skin.changed':
+        if (ev.payload) { applySkin(ev.payload) }
+
+        return true
+      default:
+        return false
+    }
+  }
+
+  const handleMessageStart = (ev: Extract<AnyGatewayEvent, { type: 'message.start' }>) => {
+    showProducerNotice(ev.payload ?? {}, (ev as { admission_id?: string }).admission_id,
+      getUiState().info?.pending_submissions, appendMessage)
+    resetAgentsNudgeTurnState()
+    turnController.startMessage()
+  }
+
   return (ev: AnyGatewayEvent) => {
     const sid = getUiState().sid
 
@@ -1198,35 +1234,16 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       return
     }
 
+    if (handleConnectionAndSkin(ev)) {
+      return
+    }
+
     switch (ev.type) {
-      case 'connection.request':
-        if (ev.payload) {
-          applyConnectionRequest(ev.payload)
-        }
-
-        return
-
-      case 'connection.update':
-        if (ev.payload) {
-          // The settling frame is the only record of how each app ended; the card is gone by then.
-          for (const line of applyConnectionUpdate(ev.payload)) {
-            sys(line)
-          }
-        }
-
-        return
-
       case 'gateway.ready':
         handleReady(ev.payload?.skin)
 
         return
 
-      case 'skin.changed':
-        if (ev.payload) {
-          applySkin(ev.payload)
-        }
-
-        return
 
       case 'free_tier.challenge':
         showChallenge(ev.payload)
@@ -1287,8 +1304,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
 
       case 'message.start':
-        resetAgentsNudgeTurnState()
-        turnController.startMessage()
+        handleMessageStart(ev)
 
         return
       case 'status.update': {
@@ -1316,6 +1332,12 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         }
 
         setStatus(p.text)
+
+        if (p.kind === 'interaction') {
+          turnController.clearStatusTimer()
+
+          return
+        }
 
         if (p.kind === 'compressing' || p.kind === 'compacting') {
           sys(p.text)
@@ -1621,7 +1643,13 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           sys(timeoutNotice)
         }
 
+        const approvalCancelled = ev.payload?.method === 'approval' || getOverlayState().approval?.requestId === id
         forgetServerRequest(id)
+
+        if (approvalCancelled) {
+          refreshApprovalPrompt()
+        }
+
         patchOverlayState(prev => {
           const next = { ...prev }
           let changed = false

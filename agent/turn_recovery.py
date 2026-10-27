@@ -35,6 +35,7 @@ from agent.turn_failure_copy import (
 )
 from agent.turn_retry_state import TurnRetryState
 from agent.turn_recovery_codex import _is_codex_token_expired, _recover_stale_codex_reasoning
+from agent.turn_recovery_pool import _pool_error_context, _refresh_paid_entitlement
 from hermes_constants import display_hermes_home
 from utils import base_url_host_matches
 
@@ -541,6 +542,41 @@ def _recover_format_errors(
     return False
 
 
+def _recover_lingering_codex_token_expired(
+    agent: Any, _retry: TurnRetryState, *, status_code: Optional[int], error_context: Any,
+    messages: list[dict[str, Any]], auth_refresh_was_attempted: bool,
+) -> bool:
+    """Drop stale reasoning replay after the one-shot Codex/xAI OAuth refresh failed."""
+    if (
+        status_code != 401
+        or str(error_context.get("reason") or "").strip().lower() != "token_expired"
+        or agent.api_mode != "codex_responses"
+        or agent.provider not in {"openai-codex", "xai-oauth"}
+        or not auth_refresh_was_attempted
+        or _retry.invalid_encrypted_content_retry_attempted
+        or not bool(getattr(agent, "_codex_reasoning_replay_enabled", True))
+        or not any(
+            isinstance(message, dict)
+            and message.get("role") == "assistant"
+            and isinstance(message.get("codex_reasoning_items"), list)
+            and message.get("codex_reasoning_items")
+            for message in messages
+        )
+    ):
+        return False
+    _retry.invalid_encrypted_content_retry_attempted = True
+    replay_stats = agent._disable_codex_reasoning_replay(messages)
+    _vlines(
+        agent,
+        f"⚠️  Codex/xAI OAuth remained token_expired after refresh — disabled replay and "
+        f"stripped {replay_stats['items']} item(s) from {replay_stats['messages']} message(s), retrying...",
+    )
+    logger.warning(
+        "%sLingering token_expired recovery: disabled replay and stripped %d items from %d messages",
+        agent.log_prefix, replay_stats["items"], replay_stats["messages"],
+    )
+    return True
+
 _WELCOME_ROUTE_HEAL_COPY = {
     "anon_on_paid_host": "Reconnected to the free model's own route.",
     "named_on_welcome_host": "Reconnected to your Nous account's own route.",
@@ -613,33 +649,21 @@ def _clamp_to_affordable_budget(agent: Any, api_error: Exception, classified: An
 
 
 def _reject_all_turns(agent: Any, api_error: Exception) -> bool:
+    # Unrelated auth/replay failures must reach their own recovery without resolving a transport.
+    if getattr(api_error, "status_code", None) not in (400, None):
+        return False
+    text = str(api_error).lower()
+    if "reasoning.context" not in text and "all_turns" not in text:
+        return False
     reject = getattr(agent._get_transport(), "reject_all_turns", None)
     return bool(reject(api_error)) if callable(reject) else False
 
 
-def _pool_error_context(agent, classified: Any, error_context: Any) -> Any:
-    """What the credential pool sees: a plan limit (usage-window 402) benches only the refused model on the
-    credential, until its reset; every other failure passes the error context through unchanged."""
-    if not (getattr(classified, "error_context", None) or {}).get("usage_window"):
-        return error_context
-    return {**(error_context if isinstance(error_context, dict) else {}), "usage_window": True,
-            **_usage_window_reset_context(agent)}
-
-
-def _usage_window_reset_context(agent) -> dict[str, float]:
-    """``{"reset_at": epoch s}`` for a usage-window 402: when the refused allowance frees up, from the usage
-    headers the 402 carried (the API's error body has no reset). Empty when the state names none, so the
-    pool keeps its default bench."""
-    try:
-        from agent.credits_tracker import window_stop_resets_at_ms
-        from agent.plan_limits import current_model_is_top_tier
-        state = getattr(agent, "_credits_state", None)
-        resets_ms = (window_stop_resets_at_ms(state, model_is_top_tier=current_model_is_top_tier(agent))
-                     if state is not None else None)
-    except Exception:
-        logger.debug("usage-window reset unavailable for the pool", exc_info=True)
-        return {}
-    return {"reset_at": resets_ms / 1000} if isinstance(resets_ms, (int, float)) and resets_ms > 0 else {}
+def _recover_initial_request_policy(agent: Any, api_error: Exception, classified: Any, retry: TurnRetryState) -> bool:
+    """Try pre-rotation policy recovery in its established short-circuit order."""
+    return (_recover_welcome_tier(agent, classified, retry)
+            or _clamp_to_affordable_budget(agent, api_error, classified, retry)
+            or (agent.api_mode == "codex_responses" and _reject_all_turns(agent, api_error)))
 
 
 def recover_after_classification(
@@ -659,9 +683,7 @@ def recover_after_classification(
     # The credit-limited 402 clamp runs before pool rotation, which would bench a credential
     # that still has credit. A ``reasoning.context`` 400 is classified reasoning_mandatory, whose rung
     # would drop the whole reasoning config; omit only the all_turns opt-in, ahead of it.
-    if _recover_welcome_tier(agent, classified, _retry) or _clamp_to_affordable_budget(
-        agent, api_error, classified, _retry
-    ) or (agent.api_mode == "codex_responses" and _reject_all_turns(agent, api_error)):
+    if _recover_initial_request_policy(agent, api_error, classified, _retry):
         return True, False
 
     # 401 ``token_expired`` while the transcript still carries ``codex_reasoning_items`` is a
@@ -673,19 +695,8 @@ def recover_after_classification(
     ):
         return True, False
 
-    if (
-        classified.reason == FailoverReason.billing
-        # A usage-window 402 is the plan's own limit: refreshing credentials cannot lift it.
-        and not (getattr(classified, "error_context", None) or {}).get("usage_window")
-        and _is_nous_inference_route(
-            getattr(agent, "provider", "") or "", getattr(agent, "base_url", "") or ""
-        )
-        and not _retry.nous_paid_entitlement_refresh_attempted
-    ):
-        _retry.nous_paid_entitlement_refresh_attempted = True
-        if _try_refresh_nous_paid_entitlement_credentials(agent):
-            _vlines(agent, "🔐 Nous paid access verified — refreshed runtime credentials and retrying request...")
-            return True, False
+    if _refresh_paid_entitlement(agent, classified, _retry):
+        return True, False
 
     recovered_with_pool, _retry.has_retried_429 = agent._recover_with_credential_pool(
         status_code=status_code, has_retried_429=_retry.has_retried_429,
@@ -795,7 +806,14 @@ def recover_after_classification(
             _vlines(agent, "🔕 OAuth subscription doesn't support the 1M-context beta — disabled for this session and retrying...")
             return True, recovered_with_pool
 
+    codex_auth_refresh_was_attempted = _retry.codex_auth_retry_attempted
     if _refresh_credentials_after_401(agent, api_error, _retry, status_code):
+        return True, recovered_with_pool
+
+    if _recover_lingering_codex_token_expired(
+        agent, _retry, status_code=status_code, error_context=error_context, messages=messages,
+        auth_refresh_was_attempted=codex_auth_refresh_was_attempted,
+    ):
         return True, recovered_with_pool
 
     if _recover_format_errors(agent, api_error, classified, _retry, messages, api_messages):

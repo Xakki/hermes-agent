@@ -42,6 +42,28 @@ _session_db_path_for_profile = late("_session_db_path_for_profile", "hermes_cli.
 
 _NOT_FOUND = "Session not found"
 
+def _active_project_root(profile):
+    from hermes_cli import projects_db
+    from hermes_cli.web_routers.files import _fs_default_cwd
+    from hermes_constants import get_hermes_home
+    from tui_gateway.git_probe import canonical_project_root
+
+    home = _cron_profile_home(profile)[1] if profile else get_hermes_home()
+    path = Path(home) / 'projects.db'
+    selected = None
+    if path.is_file():
+        with projects_db.connect_closing(path) as conn:
+            active_id = projects_db.get_active_id(conn)
+            selected = projects_db.get_project(conn, active_id) if active_id else None
+        if active_id and (selected is None or selected.archived or not selected.primary_path):
+            raise HTTPException(status_code=400, detail="No trusted active project")
+    # The profile's persisted selection/configuration is authority; cwd_prefix is only a filter.
+    root = canonical_project_root(selected.primary_path if selected else _fs_default_cwd(profile))
+    if not root:
+        raise HTTPException(status_code=400, detail="No trusted active project")
+    return root
+
+
 # CRITICAL — every literal-path route on ``manage_router`` MUST be declared
 # BEFORE the templated ``/api/sessions/{session_id}`` family. Starlette matches
 # in registration order and ``{session_id}`` is unconstrained, so e.g.
@@ -198,6 +220,7 @@ def get_sessions(
         raise HTTPException(status_code=400, detail="order must be one of: created, recent")
     profile_name = _cron_profile_home(profile)[0] if profile else None
     try:
+        project_root = _active_project_root(profile)
         db = _open_session_db_for_profile(profile, read_only=True)
         try:
             min_message_count = max(0, min_messages)
@@ -213,7 +236,7 @@ def get_sessions(
                 source=source or None, sources=source_list or None,
                 exclude_sources=exclude_list or None, cwd_prefix=(cwd_prefix or None),
                 min_message_count=min_message_count, include_archived=include_archived,
-                archived_only=archived_only, include_subagents=include_subagents)
+                archived_only=archived_only, include_subagents=include_subagents, project_root=project_root)
             sessions = db.list_sessions_rich(
                 limit=limit,
                 offset=offset,
@@ -356,6 +379,12 @@ async def search_sessions(
 
             def add_lineage_result(raw_sid: str, payload: dict) -> None:
                 if not raw_sid:
+                    return
+                ownership = db.get_session(raw_sid)
+                if not ownership or not ownership.get("project_root"):
+                    return
+                from tui_gateway.git_probe import canonical_project_root
+                if canonical_project_root(ownership["project_root"]) != _active_project_root(profile):
                     return
                 root = compression_root(raw_sid)
                 if root in seen or len(seen) >= safe_limit:

@@ -138,7 +138,8 @@ def session_inventory(authority, policy, agent, cwd):
     from tui_gateway import git_probe
     info: dict = {"tools": {}, "skills": {}, "mcp_servers": [], "version": "", "release_date": "",
                   "update_behind": None, "update_command": "",
-                  "branch": git_probe.branch(cwd) if cwd else "", "project": _project(cwd)}
+                  "branch": git_probe.branch(cwd) if cwd else "", "project": _project(cwd),
+                  "input_history_key": git_probe.input_history_key(cwd)}
     with owner_scope(authority):
         config = policy.config(authority, secrets=False) if policy is not None else {}
         if agent is not None:

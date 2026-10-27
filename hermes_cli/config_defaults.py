@@ -3,7 +3,7 @@
 Pure-data leaf module — must not import from hermes_cli.config. Comments are the user-facing
 docs of config.yaml.
 """
-
+from hermes_cli.interaction_defaults import INTERACTION_DEFAULTS
 
 #: Image every container terminal backend (docker/modal/daytona, the singularity plugin) uses unless the
 #: user pins one. LEGACY_SANDBOX_IMAGES are the plain defaults that preceded the desktop stack
@@ -29,8 +29,8 @@ def _aux(timeout, *, reasoning_effort=True, **extra):
     d.update(extra)
     return d
 
-
 DEFAULT_CONFIG = {
+    "interaction": INTERACTION_DEFAULTS,
     "model": "",
     "providers": {},
     "fallback_providers": [],

@@ -64,6 +64,8 @@ class AdmissionReceipt:
 class PendingAdmission(AdmissionReceipt):
     input_id: str
     text: str
+    display_kind: Literal['process_complete', 'async_delegation_complete', 'internal_notification'] | None = None
+    display_text: str | None = None
     # The queued-row verbs this owner serves for the row (``steer`` / ``replace``); empty otherwise.
     controls: list[str] = field(default_factory=list)
     # A queued admission in transfer to the running turn (``prompt.steer_queued``): it reads ``started``

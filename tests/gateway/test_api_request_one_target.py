@@ -17,6 +17,8 @@ async def test_same_chat_key_on_another_session_is_refused_not_rerun(api, owner)
         return 'ok'
     owner.runner._handle_message = handle
     api._api_key = KEY
+    for sid in ('first-session', 'second-session'):
+        owner.db.create_session(sid, 'api_server', project_root=api._trusted_project_root)
     app = web.Application()
     app.router.add_post('/v1/chat/completions', api._handle_chat_completions)
     body = {'messages': [{'role': 'user', 'content': 'charge the card'}]}

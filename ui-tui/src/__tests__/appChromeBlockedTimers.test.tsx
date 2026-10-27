@@ -34,14 +34,14 @@ const mounted: Array<() => void> = []
  * Teardown is registered up front so a failing assertion still unmounts the
  * tree — a leaked instance would keep re-arming timers into the next test.
  */
-const mountTree = (tree: React.ReactElement, { interactive = false } = {}) => {
+const mountTree = (tree: React.ReactElement, { interactive = false, cols = 120 } = {}) => {
   const stdout = new PassThrough()
   const stdin = new PassThrough()
   const stderr = new PassThrough()
 
   let output = ''
 
-  Object.assign(stdout, { columns: 120, isTTY: false, rows: 20 })
+  Object.assign(stdout, { columns: cols, isTTY: false, rows: 20 })
   // PromptZone's prompts call `useInput`, which needs raw mode; without it Ink
   // swaps the whole tree for an error panel and stops updating.
   Object.assign(
@@ -49,9 +49,13 @@ const mountTree = (tree: React.ReactElement, { interactive = false } = {}) => {
     interactive ? { isTTY: true, ref: () => {}, setRawMode: () => {}, unref: () => {} } : { isTTY: false }
   )
   Object.assign(stderr, { isTTY: false })
-  stdout.on('data', chunk => {
-    output += chunk.toString()
-  })
+  stdout.write = ((chunk: string | Uint8Array, encodingOrCallback?: BufferEncoding | (() => void), callback?: () => void) => {
+    output += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString()
+    const done = typeof encodingOrCallback === 'function' ? encodingOrCallback : callback
+    done?.()
+
+    return true
+  }) as typeof stdout.write
 
   const instance = renderSync(tree, {
     patchConsole: false,
@@ -111,6 +115,14 @@ const oneSecondTimers = (spy: IntervalSpy) => armedDelays(spy).filter(delay => d
 /** The handlers of every 1s clock armed so far — `() => setNow(Date.now())`. */
 const oneSecondTicks = (spy: IntervalSpy) =>
   spy.mock.calls.filter(call => call[1] === 1000).map(call => call[0] as () => void)
+
+describe('StatusRule YOLO warning narrow-terminal visibility', () => {
+  it.each([24, 32, 44])('renders the active warning at %i columns', async cols => {
+    const rule = mountTree(<StatusRule {...idleProps} cols={cols} yolo />, { cols })
+
+    await vi.waitFor(() => expect(rule.output()).toContain('⚠ YOLO'))
+  })
+})
 
 // ── AppLayout harness ────────────────────────────────────────────────
 //
@@ -410,6 +422,23 @@ describe('status-chrome timers track the current overlay model', () => {
 // above ComposerPane) and FloatingOverlays (absolute, growing upward), then
 // assert on what is actually on screen rather than on the store alone.
 describe('AppLayout status-rule visibility', () => {
+  it('updates the YOLO badge from live session-info store changes', async () => {
+    const layout = mountLayout({}, { info: { yolo: true } })
+
+    await vi.waitFor(() => expect(layout.output()).toContain('⚠ YOLO'))
+
+    layout.clear()
+    patchUiState({ info: { yolo: false } })
+    await vi.waitFor(() => {
+      expect(layout.output()).not.toBe('')
+      expect(layout.output()).not.toContain('⚠ YOLO')
+    })
+
+    layout.clear()
+    patchUiState({ info: { yolo: true } })
+    await vi.waitFor(() => expect(layout.output()).toContain('⚠ YOLO'))
+  })
+
   it('keeps the status rule on screen AND its clock advancing under a flow-layout approval prompt', async () => {
     const layout = mountLayout({ approval: { command: 'rm -rf /', requestId: 'a-1' } as OverlayState['approval'] })
 

@@ -7,7 +7,7 @@ from hermes_state_runtime import RuntimeStoreError
 
 _IDENTITY_FIELDS = frozenset({
     'user_id', 'session_key', 'chat_id', 'chat_type', 'thread_id',
-    'parent_session_id', 'cwd', 'profile_name', 'git_repo_root', 'origin_json', 'display_name',
+    'parent_session_id', 'cwd', 'profile_name', 'git_repo_root', 'origin_json', 'display_name', 'project_root',
 })
 _CREATE_FIELDS = _IDENTITY_FIELDS | {'source', 'model', 'model_config', 'system_prompt'}
 _CONSTRUCTOR_CONFIG = frozenset({'max_iterations', 'max_tokens', 'reasoning_config', 'yolo_mode'})
@@ -204,7 +204,7 @@ def insert_session_row_in_transaction(
         system_prompt=None, user_id=None, session_key=None, chat_id=None,
         chat_type=None, thread_id=None, parent_session_id=None, cwd=None,
         profile_name=None, git_repo_root=None, origin_json=None, display_name=None,
-        transport_profile=None):
+        transport_profile=None, project_root=None):
     """Connection-taking body of the keep-existing constructor upsert.
 
     The ordinary constructor should delegate here too. Worker identity is
@@ -226,9 +226,9 @@ def insert_session_row_in_transaction(
            id, source, created_source, user_id, session_key, chat_id, chat_type, thread_id,
            model, model_config, system_prompt, system_prompt_hash,
            parent_session_id, cwd, profile_name, transport_profile, git_repo_root,
-           origin_json, display_name, started_at
+           origin_json, display_name, project_root, started_at
         )
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
                source = CASE
                    WHEN sessions.source = 'unknown'
@@ -270,7 +270,7 @@ def insert_session_row_in_transaction(
             session_id, source, source, user_id, session_key, chat_id, chat_type, thread_id, model,
             json.dumps(model_config) if model_config else None, system_prompt_hash,
             parent_session_id, cwd, profile_name, transport_profile, git_repo_root, origin_json,
-            display_name, time.time(),
+            display_name, project_root, time.time(),
         ),
     )
     if system_prompt_hash is not None:

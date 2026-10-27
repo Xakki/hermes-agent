@@ -6,6 +6,7 @@
 /** Any method the desktop may route to a named profile (``requestGatewayForProfile`` adds ``profile``). */
 export interface ProfileParams {
   profile?: string | null
+  project_root?: string | null
 }
 /** ``_serialize_usage_model`` — also embedded as ``usage`` in the billing / subscription states, where the fail-open form is a bare ``{available: false}`` (no ``ok``). */
 export interface UsageModel {
@@ -163,6 +164,7 @@ export interface SubscriptionTierOption {
 }
 export interface SubscriptionPreviewParams {
   profile?: string | null
+  project_root?: string | null
   subscription_type_id?: string | null
 }
 /** ``_serialize_subscription_preview`` on success; ``effect`` drives the confirm copy. */
@@ -190,6 +192,7 @@ export type SubscriptionChangeEffect = 'charge_now' | 'scheduled' | 'no_op' | 'b
 /** Either a target tier (downgrade / same-price change) or ``cancel`` (period-end cancellation). */
 export interface SubscriptionChangeParams {
   profile?: string | null
+  project_root?: string | null
   subscription_type_id?: string | null
   cancel?: boolean
 }
@@ -207,6 +210,7 @@ export interface BillingPendingChangeResult {
 }
 export interface SubscriptionUpgradeParams {
   profile?: string | null
+  project_root?: string | null
   subscription_type_id?: string | null
   idempotency_key?: string | null
 }
@@ -229,6 +233,7 @@ export interface SubscriptionUpgradeResult {
 }
 export interface BillingChargeParams {
   profile?: string | null
+  project_root?: string | null
   amount_usd?: number | string | null
   idempotency_key?: string | null
 }
@@ -248,6 +253,7 @@ export interface BillingChargeResult {
 }
 export interface BillingChargeStatusParams {
   profile?: string | null
+  project_root?: string | null
   charge_id?: string | null
 }
 /** Single status read (pending | settled | failed); the caller drives the poll cadence. */
@@ -268,6 +274,7 @@ export interface BillingChargeStatusResult {
 }
 export interface BillingAutoReloadParams {
   profile?: string | null
+  project_root?: string | null
   enabled?: boolean
   threshold?: number | string | null
   top_up_amount?: number | string | null
@@ -286,10 +293,12 @@ export interface BillingMutationResult {
 }
 export interface BillingKeepGoingOnCreditsParams {
   profile?: string | null
+  project_root?: string | null
   enabled?: boolean
 }
 export interface BillingStepUpParams {
   profile?: string | null
+  project_root?: string | null
   session_id?: string | null
 }
 /** ``granted`` false when the server downscopes (also on every error envelope). */
@@ -327,6 +336,7 @@ export interface ActiveSubagent {
 }
 export interface DelegationPauseParams {
   profile?: string | null
+  project_root?: string | null
   paused?: boolean
 }
 export interface DelegationPauseResult {
@@ -335,6 +345,7 @@ export interface DelegationPauseResult {
 export interface SubagentSteerParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   subagent_id: string
   text: string
 }
@@ -348,6 +359,7 @@ export type SteerStatus = 'queued' | 'rejected'
 export interface HandoffRequestParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   platform: string
 }
 export interface HandoffRequestResult {
@@ -360,6 +372,7 @@ export interface HandoffRequestResult {
 export interface SessionParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
 }
 /** ``state`` is pending | running | completed | failed, or '' when nothing was requested. */
 export interface HandoffStateResult {
@@ -370,6 +383,7 @@ export interface HandoffStateResult {
 export interface HandoffFailParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   error?: string | null
 }
 /** ``failed`` false when the watcher already claimed the row; ``state`` is what it is now. */
@@ -381,6 +395,7 @@ export interface HandoffFailResult {
 export interface MessageReactParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   row_id?: number | null
   newest_role?: string | null
   emoji?: string | null
@@ -401,6 +416,7 @@ export interface MessageReaction {
 }
 export interface PetCancelParams {
   profile?: string | null
+  project_root?: string | null
   token?: string | null
 }
 export interface PetCancelResult {
@@ -419,6 +435,7 @@ export interface PetGenProvider {
 /** ``prompt`` or a ``referenceImage`` data URL is required (the handler answers 4004 without one). */
 export interface PetGenerateParams {
   profile?: string | null
+  project_root?: string | null
   prompt?: string | null
   referenceImage?: string | null
   count?: number | null
@@ -436,6 +453,7 @@ export interface PetDraft {
 }
 export interface PetHatchParams {
   profile?: string | null
+  project_root?: string | null
   token: string
   name: string
   cancelToken?: string | null
@@ -470,6 +488,7 @@ export interface PetSpritePayload {
 }
 export interface ProjectFactsParams {
   profile?: string | null
+  project_root?: string | null
   cwd?: string | null
 }
 /** ``facts`` null outside a workspace (or when detection failed). */
@@ -487,6 +506,7 @@ export interface ProjectFacts {
 /** ``key`` selects one getter from ``_CONFIG_GETTERS``; ``cwd`` feeds the ``project`` getter, ``session_id`` lets ``reasoning`` / ``fast`` answer with the session's live pin. */
 export interface ConfigGetParams {
   profile?: string | null
+  project_root?: string | null
   key: string
   cwd?: string | null
   session_id?: string | null
@@ -518,6 +538,7 @@ export interface ConfigProviderRef {
 /** ``key`` picks the setter (``_CONFIG_SETTERS``, ``details_mode.<section>``, display toggles); ``value`` is the raw word/string the setter normalises (falsy non-strings are reported back in the error). ``scope`` applies to ``yolo`` / ``reasoning``; ``confirm_expensive_model`` to ``model``. */
 export interface ConfigSetParams {
   profile?: string | null
+  project_root?: string | null
   key: string
   value?: unknown
   session_id?: string | null
@@ -552,6 +573,7 @@ export interface SessionLiveInfo {
   tools?: Record<string, string[]>
   skills?: Record<string, string[]>
   cwd?: string
+  input_history_key?: string | null
   branch?: string | null
   project?: ProjectRef | null
   terminal_backend?: string
@@ -639,6 +661,7 @@ export interface SetupStatusResult {
 }
 export interface SetupRuntimeCheckParams {
   profile?: string | null
+  project_root?: string | null
   provider?: string | null
 }
 /** ``ok=False`` + ``error`` when the resolved model can't be served; ``free_tier_route`` says the selected route is the welcome host. */
@@ -692,6 +715,7 @@ export interface FreeTierChallengePayload {
 }
 export interface FreeTierChallengeResultParams {
   profile?: string | null
+  project_root?: string | null
   url: string
   attempt?: number
   outcome: 'done' | 'failed' | 'closed' | 'timeout' | 'refused' | 'error' | 'unsupported'
@@ -712,6 +736,7 @@ export interface FreeTierAckNoticeResult {
 }
 export interface FreeTierClaimNudgeParams {
   profile?: string | null
+  project_root?: string | null
   kind?: 'trial' | 'connector'
 }
 export interface FreeTierClaimNudgeResult {
@@ -727,6 +752,7 @@ export interface SharedMetricsConsentResult {
 /** ``send`` is ignored unless ``enabled``; ``first_run`` marks the Desktop first-run answer. */
 export interface SharedMetricsSetParams {
   profile?: string | null
+  project_root?: string | null
   enabled: boolean
   send?: boolean
   first_run?: boolean
@@ -734,6 +760,7 @@ export interface SharedMetricsSetParams {
 /** ``command`` is the raw typed name (no leading ``/``, no args); the backend canonicalizes it against the published registry. ``session_id`` scopes the count to that session's profile. */
 export interface SharedMetricsSlashCommandParams {
   profile?: string | null
+  project_root?: string | null
   command: string
   session_id?: string | null
 }
@@ -743,6 +770,7 @@ export interface SharedMetricsSlashCommandResult {
 /** ``elapsed_ms`` = the client's own launch (TUI process start / Desktop app start) to ready (TUI gateway ready / Desktop backend attached), measured once per launch by the client. The client names its surface because a Desktop may attach to a URL/cloud backend where ``HERMES_DESKTOP`` is unset; without it the backend falls back to its own client detection. ``launch_id`` is an opaque per-launch token the backend latches on (never recorded), so a reconnect re-sending the same launch counts once while a new launch counts again. */
 export interface SharedMetricsStartupLatencyParams {
   profile?: string | null
+  project_root?: string | null
   elapsed_ms: number
   surface?: 'desktop_attach' | 'tui' | null
   launch_id?: string | null
@@ -753,6 +781,7 @@ export interface SharedMetricsStartupLatencyResult {
 /** One Desktop PACKAGED self-update (electron-updater / App Installer / Store). Source-checkout hand-offs run ``hermes update`` and are counted from its receipt, never here. Raw words; the backend buckets them: ``outcome`` success|failed|noop|refused, ``failed_stage`` download|verify|apply|restart, ``mechanism`` the updater strategy kind, ``duration_ms`` wall time, ``from_commit_date`` the updated-from build's commit time (epoch seconds) when known. */
 export interface SharedMetricsUpdateRunParams {
   profile?: string | null
+  project_root?: string | null
   outcome: string
   failed_stage?: string | null
   mechanism?: string | null
@@ -765,6 +794,7 @@ export interface SharedMetricsUpdateRunResult {
 /** ``area`` is a Desktop surface id (``command_palette``, ``terminal_pane``, ``settings_<view>`` …); the backend collapses anything outside its closed set to ``other``. */
 export interface SharedMetricsDesktopFeatureUseParams {
   profile?: string | null
+  project_root?: string | null
   area: string
 }
 export interface OkResult {
@@ -773,18 +803,21 @@ export interface OkResult {
 /** ``kind`` notice_dismissed|error_toast|renderer_crash|backend_disconnect|slow_frame; ``detail`` a closed code-defined word for that kind (notice id, error category, crash reason, drop reason, frame duration bucket), never message text. */
 export interface SharedMetricsDesktopFrictionParams {
   profile?: string | null
+  project_root?: string | null
   kind: string
   detail: string
 }
 /** ``step`` a Desktop first-run step id; ``event`` reached|completed|abandoned. */
 export interface SharedMetricsDesktopOnboardingParams {
   profile?: string | null
+  project_root?: string | null
   step: string
   event: string
 }
 /** ``signal`` quick_close|cancelled|setting_off_default|rage_click|undo|feature_disabled; ``target`` a closed code-defined id for that signal (area, flow, action, undo path, feature toggle); ``setting`` a config key for setting_off_default only (the value is never sent — the backend compares it to the default). */
 export interface SharedMetricsDesktopDislikeParams {
   profile?: string | null
+  project_root?: string | null
   signal: string
   target?: string
   setting?: string | null
@@ -792,6 +825,7 @@ export interface SharedMetricsDesktopDislikeParams {
 /** One finished UTC day of Desktop use, aggregated on the client. ``day`` (YYYY-MM-DD) only latches a resend and is never recorded; the raw counts are bucketed by the backend. */
 export interface SharedMetricsDesktopDailyParams {
   profile?: string | null
+  project_root?: string | null
   day: string
   bot_count?: number
   modes?: SharedMetricsDesktopModeDay[]
@@ -812,6 +846,7 @@ export interface SharedMetricsDesktopDailyResult {
 }
 export interface ModelOptionsParams {
   profile?: string | null
+  project_root?: string | null
   session_id?: string | null
   explicit_only?: boolean
   include_unconfigured?: boolean
@@ -910,6 +945,7 @@ export interface ImageGenerateResult {
 }
 export interface SessionControlReadParams {
   profile?: string | null
+  project_root?: string | null
   session_id: string
 }
 export interface SessionControlReadResult {
@@ -994,6 +1030,7 @@ export interface HeartbeatSnapshot {
 /** ``action`` is validated by the handler (unknown / gate actions answer ``4004``), so it stays a string on the wire; ``SessionControlAction`` lists the accepted set. */
 export interface SessionControlParams {
   profile?: string | null
+  project_root?: string | null
   session_id: string
   action: string
   args?: SessionControlArgs | null
@@ -1017,6 +1054,7 @@ export interface SessionControlDispatch {
 }
 export interface VerificationStatusParams {
   profile?: string | null
+  project_root?: string | null
   session_id?: string | null
   session_key?: string | null
   cwd?: string | null
@@ -1050,6 +1088,7 @@ export interface VerificationEvidenceRow {
 }
 export interface ConnectionOperationParams {
   profile?: string | null
+  project_root?: string | null
   owner: SessionOwner | AccountOwner
   op_id: string
 }
@@ -1148,6 +1187,7 @@ export interface ConnectionWakeResult {
 }
 export interface ConnectionRespondParams {
   profile?: string | null
+  project_root?: string | null
   owner: SessionOwner | AccountOwner
   op_id: string
   result: ConnectionAnswer
@@ -1173,6 +1213,7 @@ export interface ConnectionRespondResult {
 }
 export interface ConnectorsListParams {
   profile?: string | null
+  project_root?: string | null
   owner: SessionOwner | AccountOwner
 }
 export interface ConnectorsListResult {
@@ -1189,6 +1230,7 @@ export interface ConnectorRow {
 }
 export interface ConnectorsConnectParams {
   profile?: string | null
+  project_root?: string | null
   owner: SessionOwner | AccountOwner
   connectors: string[]
   reconnect?: boolean
@@ -1209,6 +1251,7 @@ export interface ConnectorsConnectResult {
 }
 export interface ConnectorToolsParams {
   profile?: string | null
+  project_root?: string | null
   slug: string
   refresh?: boolean
 }
@@ -1245,6 +1288,7 @@ export interface ConnectorCatalogRow {
 }
 export interface ConnectorAccountsParams {
   profile?: string | null
+  project_root?: string | null
   connector?: string | null
 }
 export interface ConnectorAccountsResult {
@@ -1265,6 +1309,7 @@ export interface ConnectorAccountRow {
 export type ConnectorAccountStatus = 'pending' | 'active' | 'failed' | 'expired' | 'revoked' | 'inactive'
 export interface ConnectorAccountsRemoveParams {
   profile?: string | null
+  project_root?: string | null
   connection_id: string
 }
 export interface ConnectorAccountsRemoveResult {
@@ -1274,6 +1319,7 @@ export interface ConnectorAccountsRemoveResult {
 }
 export interface ConnectorAccountsRenameParams {
   profile?: string | null
+  project_root?: string | null
   connection_id: string
   alias: string
 }
@@ -1341,6 +1387,7 @@ export interface ConnectorPolicyEffectiveDeny {
 }
 export interface ConnectorPolicySetParams {
   profile?: string | null
+  project_root?: string | null
   change: ToolsChange | ConnectorChange
   expected_revision: string
 }
@@ -1402,6 +1449,7 @@ export interface DisplayThumbnailResult {
 }
 export interface DisplayStopParams {
   profile?: string | null
+  project_root?: string | null
   force?: boolean | null
 }
 export interface DisplayStopResult {
@@ -1427,6 +1475,7 @@ export interface DisplayStopResult {
 }
 export interface DisplayObserveParams {
   profile?: string | null
+  project_root?: string | null
   viewer_id?: string | null
 }
 export interface DisplayObserveResult {
@@ -1454,6 +1503,7 @@ export interface DisplayObserveResult {
 }
 export interface DisplaySwitchSandboxImageParams {
   profile?: string | null
+  project_root?: string | null
   approve?: boolean
 }
 export interface DisplaySwitchSandboxImageResult {
@@ -1484,6 +1534,7 @@ export interface DisplayInstallResult {
 }
 export interface DisplayLeaseAcquireParams {
   profile?: string | null
+  project_root?: string | null
   viewer_id: string
   reason?: string | null
 }
@@ -1492,11 +1543,13 @@ export interface DisplayLeaseResult {
 }
 export interface DisplayLeaseReleaseParams {
   profile?: string | null
+  project_root?: string | null
   viewer_id?: string | null
   force?: boolean | null
 }
 export interface GroupsCapabilitiesParams {
   profile?: string | null
+  project_root?: string | null
 }
 export interface GroupsCapabilitiesResult {
   protocol_version: number
@@ -1547,6 +1600,7 @@ export interface RoomLinkEndpoint {
 }
 export interface GroupsListParams {
   profile?: string | null
+  project_root?: string | null
   include_disbanded?: boolean | null
   limit?: number | null
   offset?: number | null
@@ -1604,6 +1658,7 @@ export interface RoomActor {
 }
 export interface GroupsCreateParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   name: string
   members: RoomMemberInput[]
@@ -1623,6 +1678,7 @@ export interface GroupsCreateResult {
 }
 export interface GroupsStateParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   include_disbanded?: boolean | null
 }
@@ -1652,6 +1708,7 @@ export interface PeerRouteStatus {
 }
 export interface GroupsSendParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   event_id?: string | null
   payload: Record<string, unknown>
@@ -1664,6 +1721,7 @@ export interface GroupsSendResult {
 }
 export interface GroupsRenameParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   event_id: string
   name: string
@@ -1673,6 +1731,7 @@ export interface GroupsRenameResult {
 }
 export interface GroupsLogParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   since_seq?: number | null
   limit?: number | null
@@ -1692,6 +1751,7 @@ export interface RoomAuthority {
 }
 export interface GroupsDisbandParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   cancel_id?: string | null
 }
@@ -1707,6 +1767,7 @@ export interface RoomTombstone {
 }
 export interface GroupsStopParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   cancel_id?: string | null
 }
@@ -1715,6 +1776,7 @@ export interface GroupsStopResult {
 }
 export interface GroupsApproveParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   member_id: string
   task_id: string
@@ -1730,6 +1792,7 @@ export interface GroupsApproveResult {
 }
 export interface GroupsRetryParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   task_id: string
   member_id?: string | null
@@ -1750,6 +1813,7 @@ export interface RoomTaskReceipt {
 }
 export interface GroupsReplicateParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   room_name: string
   members: RoomMemberInput[]
@@ -1764,6 +1828,7 @@ export interface GroupsReplicateResult {
 }
 export interface GroupsReplicaStateParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
 }
 export interface GroupsReplicaStateResult {
@@ -1779,6 +1844,7 @@ export interface GroupsReplicaStateResult {
 }
 export interface GroupsPromoteParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   confirm?: boolean | null
   reason?: string | null
@@ -1794,6 +1860,7 @@ export interface GroupsPromoteResult {
 }
 export interface GroupsDemoteParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   observed_gateway_id: string
   observed_epoch: number
@@ -1806,6 +1873,7 @@ export interface GroupsDemoteResult {
 }
 export interface GroupsPeerInviteParams {
   profile?: string | null
+  project_root?: string | null
   room_id?: string | null
   home_install_id?: string | null
   authority_gateway_id?: string | null
@@ -1822,6 +1890,7 @@ export interface GroupsPeerInviteResult {
 }
 export interface GroupsPeerRevokeParams {
   profile?: string | null
+  project_root?: string | null
   grant: string
 }
 export interface GroupsPeerRevokeResult {
@@ -1829,6 +1898,7 @@ export interface GroupsPeerRevokeResult {
 }
 export interface GroupsPeerRegisterParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   member_id: string
   target_url: string
@@ -1847,6 +1917,7 @@ export interface GroupsPeerRegisterResult {
 }
 export interface BotRelayRosterSyncParams {
   profile?: string | null
+  project_root?: string | null
   agents?: RelayAgentRow[] | null
 }
 /** A roster row the Desktop pushes (``tools/bot_relay.py::_normalize_roster_row``); invalid rows are dropped server-side, so the shape stays open. */
@@ -1865,6 +1936,7 @@ export interface BotRelayRosterSyncResult {
 }
 export interface BotRelayOutboxDrainParams {
   profile?: string | null
+  project_root?: string | null
 }
 export interface BotRelayOutboxDrainResult {
   envelopes: RelayEnvelope[]
@@ -1894,6 +1966,7 @@ export interface BotRelayDeliverResult {
 }
 export interface BotRelayReplyParams {
   profile?: string | null
+  project_root?: string | null
   id: string
   reply?: string | null
   error?: string | null
@@ -1911,6 +1984,7 @@ export interface LanguageOption {
 }
 export interface I18nCatalogParams {
   profile?: string | null
+  project_root?: string | null
   lang: string
   surface?: LocaleSurface
 }
@@ -1961,6 +2035,7 @@ export interface MachineInfo {
 /** ``word`` is the token under the cursor (``@`` prefix = context reference); ``cwd`` / ``session_id`` pick the directory the listing resolves against. */
 export interface CompletePathParams {
   profile?: string | null
+  project_root?: string | null
   word?: string | null
   cwd?: string | null
   session_id?: string | null
@@ -2013,6 +2088,7 @@ export interface ModelDisconnectResult {
 }
 export interface ProfilesListParams {
   profile?: string | null
+  project_root?: string | null
   include_sessions?: boolean | string | null
 }
 /** ``bot_mode_protocol`` tells clients this backend injects the teammate protocol itself; ``install_id`` (as on ``/api/status``) names the machine that answered. */
@@ -2071,6 +2147,7 @@ export interface ProfileCanonicalSession {
 /** ``clone_from`` omitted = fresh profile + bundled skills; ``mirror_credentials`` defaults on so a headless bot has a provider. */
 export interface ProfilesCreateParams {
   profile?: string | null
+  project_root?: string | null
   name: string
   description?: string | null
   clone_from?: string | null
@@ -2101,6 +2178,7 @@ export interface ProfileMirrored {
 }
 export interface ProfileNameParams {
   profile?: string | null
+  project_root?: string | null
   name?: string | null
 }
 /** Editor snapshot; ``toolsets_pinned`` says whether ``tools.enabled_toolsets`` is explicit. */
@@ -2137,6 +2215,7 @@ export interface McpServerEntry {
 /** Sections are independent; ``ui_meta_expected_revisions`` is a per-key compare-and-swap. */
 export interface ProfilesConfigureParams {
   profile?: string | null
+  project_root?: string | null
   name?: string | null
   ui_meta?: Record<string, unknown> | null
   ui_meta_expected_revisions?: Record<string, number> | null
@@ -2175,6 +2254,7 @@ export interface UiMetaConflict {
 /** ``data`` is a data URL or bare base64 (PNG/JPEG/WebP, sniffed); ``clear`` deletes instead. */
 export interface ProfilesSetAssetParams {
   profile?: string | null
+  project_root?: string | null
   name?: string | null
   asset?: string | null
   data?: string | null
@@ -2188,6 +2268,7 @@ export interface ProfilesSetAssetResult {
 }
 export interface ProfilesGetAssetParams {
   profile?: string | null
+  project_root?: string | null
   name?: string | null
   asset?: string | null
 }
@@ -2233,6 +2314,7 @@ export interface OnboardingStartResult {
 export interface OnboardingSkipParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
 }
 export interface OnboardingSkipResult {
   skipped: boolean
@@ -2265,6 +2347,7 @@ export interface VaultSource {
 }
 export interface VaultSourceSetParams {
   profile?: string | null
+  project_root?: string | null
   name?: string | null
   enabled?: boolean | null
 }
@@ -2275,6 +2358,7 @@ export interface VaultSourceSetResult {
 /** The master password is consumed by the manager CLI and never stored or logged. */
 export interface VaultUnlockParams {
   profile?: string | null
+  project_root?: string | null
   name?: string | null
   password?: string | null
 }
@@ -2284,6 +2368,7 @@ export interface VaultUnlockResult {
 }
 export interface VaultLockParams {
   profile?: string | null
+  project_root?: string | null
   name?: string | null
 }
 export interface VaultLockResult {
@@ -2292,6 +2377,7 @@ export interface VaultLockResult {
 /** ``secret`` goes straight into the encrypted store; the result carries only the new id. */
 export interface VaultAddParams {
   profile?: string | null
+  project_root?: string | null
   kind?: VaultKind | null
   label?: string | null
   origin?: string | null
@@ -2303,6 +2389,7 @@ export interface VaultAddResult {
 }
 export interface VaultRemoveParams {
   profile?: string | null
+  project_root?: string | null
   id?: string | null
 }
 export interface VaultRemoveResult {
@@ -2310,6 +2397,7 @@ export interface VaultRemoveResult {
 }
 export interface SessionForeignListParams {
   profile?: string | null
+  project_root?: string | null
   source?: ForeignSource | null
   offset?: number | null
   limit?: number | null
@@ -2335,6 +2423,7 @@ export interface ForeignSessionRow {
 }
 export interface SessionForeignIdParams {
   profile?: string | null
+  project_root?: string | null
   id?: string | null
 }
 /** Bounded to the last 40 turns / 8000 chars each; ``already_imported`` is the local id. */
@@ -2387,6 +2476,7 @@ export interface FailedDelegation {
 export interface SubagentIdParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   subagent_id: string
 }
 export interface SubagentInterruptResult {
@@ -2429,6 +2519,7 @@ export interface ProjectFolder {
 /** Any method addressed at one stored project (``5062`` when the id resolves to nothing). */
 export interface ProjectIdParams {
   profile?: string | null
+  project_root?: string | null
   id: string
 }
 export interface ProjectResult {
@@ -2437,6 +2528,7 @@ export interface ProjectResult {
 /** ``use`` also activates the new project. */
 export interface ProjectsCreateParams {
   profile?: string | null
+  project_root?: string | null
   name: string
   folders?: string[] | null
   slug?: string | null
@@ -2453,6 +2545,7 @@ export interface OptionalProjectResult {
 /** Absent keys are left untouched; ``''`` clears ``color`` / ``icon``. */
 export interface ProjectsUpdateParams {
   profile?: string | null
+  project_root?: string | null
   id: string
   name?: string | null
   description?: string | null
@@ -2462,6 +2555,7 @@ export interface ProjectsUpdateParams {
 }
 export interface ProjectsAddFolderParams {
   profile?: string | null
+  project_root?: string | null
   id: string
   path: string
   label?: string | null
@@ -2469,17 +2563,20 @@ export interface ProjectsAddFolderParams {
 }
 export interface ProjectFolderParams {
   profile?: string | null
+  project_root?: string | null
   id: string
   path: string
 }
 export interface ProjectsArchiveParams {
   profile?: string | null
+  project_root?: string | null
   id: string
   restore?: boolean
 }
 /** No ``id`` (or null) clears the active project. */
 export interface ProjectsSetActiveParams {
   profile?: string | null
+  project_root?: string | null
   id?: string | null
 }
 export interface ActiveIdResult {
@@ -2488,6 +2585,7 @@ export interface ActiveIdResult {
 /** Absent ``cwd`` resolves the gateway's default completion cwd. */
 export interface ProjectsForCwdParams {
   profile?: string | null
+  project_root?: string | null
   cwd?: string | null
 }
 export interface ProjectsForCwdResult {
@@ -2498,6 +2596,7 @@ export interface ProjectsForCwdResult {
 /** ``scan`` asks the host to walk the policy roots itself (remote-gateway desktop). */
 export interface ProjectsDiscoverReposParams {
   profile?: string | null
+  project_root?: string | null
   scan?: boolean
 }
 export interface ProjectsDiscoverReposResult {
@@ -2520,6 +2619,7 @@ export interface RepoDiscoveryPolicy {
 /** Repos as ``{root, label}`` objects or bare root strings; entries without a root are skipped. */
 export interface ProjectsRecordReposParams {
   profile?: string | null
+  project_root?: string | null
   repos?: (RecordRepoItem | string)[] | null
   discovery_policy?: RepoDiscoveryPolicyParams | null
 }
@@ -2543,6 +2643,7 @@ export interface ProjectsRecordReposResult {
 }
 export interface ProjectsTreeParams {
   profile?: string | null
+  project_root?: string | null
   preview_limit?: number | null
   session_limit?: number | null
 }
@@ -2619,6 +2720,7 @@ export interface ProjectTreeSession {
 }
 export interface ProjectsProjectSessionsParams {
   profile?: string | null
+  project_root?: string | null
   project_id: string
   session_limit?: number | null
 }
@@ -2628,6 +2730,7 @@ export interface ProjectsProjectSessionsResult {
 /** ``knownRevision``: the spritesheet revision the caller already holds (send-once bytes). */
 export interface PetInfoParams {
   profile?: string | null
+  project_root?: string | null
   knownRevision?: string | null
 }
 /** ``server._pet_sprite_payload`` behind ``enabled``; every sprite field is absent when the pet display is off, ``spritesheetBase64`` is elided when ``spritesheetUnchanged``. */
@@ -2659,6 +2762,7 @@ export interface PetInfoMetaResult {
 /** ``graphics`` opts into the kitty payload when the TTY speaks it; ``cols`` overrides the width. */
 export interface PetCellsParams {
   profile?: string | null
+  project_root?: string | null
   state?: string | null
   cols?: number | null
   graphics?: boolean
@@ -2681,6 +2785,7 @@ export interface PetCellsResult {
 }
 export interface PetGalleryParams {
   profile?: string | null
+  project_root?: string | null
   localOnly?: boolean
 }
 export interface PetGalleryResult {
@@ -2698,6 +2803,7 @@ export interface PetGalleryEntry {
 }
 export interface PetSlugParams {
   profile?: string | null
+  project_root?: string | null
   slug: string
 }
 export interface PetSlugResult {
@@ -2707,6 +2813,7 @@ export interface PetSlugResult {
 }
 export interface PetRenameParams {
   profile?: string | null
+  project_root?: string | null
   slug: string
   name: string
 }
@@ -2718,6 +2825,7 @@ export interface PetExportResult {
 /** ``url``: spritesheet source for a not-yet-installed pet. */
 export interface PetThumbParams {
   profile?: string | null
+  project_root?: string | null
   slug: string
   url?: string | null
 }
@@ -2728,6 +2836,7 @@ export interface PetThumbResult {
 }
 export interface PetScaleParams {
   profile?: string | null
+  project_root?: string | null
   scale?: unknown
 }
 export interface PetScaleResult {
@@ -2738,6 +2847,7 @@ export interface PetScaleResult {
 export interface PromptSubmitParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   text?: unknown
   display_kind?: string | null
   interrupted?: boolean | null
@@ -2769,6 +2879,7 @@ export type PromptSubmitStatus = 'streaming' | 'queued' | 'steered' | 'redirecte
 export interface ClipboardPasteParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
 }
 /** ``methods_prompt.py::_attached_image_result``: the image is queued for the next turn. */
 export interface AttachedImageResult {
@@ -2787,12 +2898,14 @@ export interface AttachedImageResult {
 export interface ImageAttachParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   path: string
 }
 /** ``content_base64`` (or the ``data`` alias) carries the bytes; ``filename`` / ``ext`` only hint the extension — magic bytes decide. */
 export interface ImageAttachBytesParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   content_base64?: string | null
   data?: string | null
   filename?: string | null
@@ -2802,6 +2915,7 @@ export interface ImageAttachBytesParams {
 export interface PdfAttachParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   path?: string | null
   content_base64?: string | null
   data?: string | null
@@ -2829,6 +2943,7 @@ export interface PdfPage {
 export interface FileAttachParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   path?: string | null
   data_url?: string | null
   name?: string | null
@@ -2851,6 +2966,7 @@ export interface FileAttachResult {
 export interface ImageDetachParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   path: string
 }
 export interface ImageDetachResult {
@@ -2860,6 +2976,7 @@ export interface ImageDetachResult {
 export interface InputDetectDropParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   text?: string | null
 }
 /** ``matched: false`` alone when the text is not a drop; an image drop is queued immediately (``is_image`` + ``count``), a file drop only yields the ``text`` to insert. */
@@ -2877,6 +2994,7 @@ export interface InputDetectDropResult {
 export interface SideAgentParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   text: string
 }
 /** The side agent runs detached; its answer lands on the parent session as an event carrying this ``task_id``. */
@@ -2886,6 +3004,7 @@ export interface TaskIdResult {
 export interface PreviewRestartParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   url: string
   cwd?: string | null
   context?: string | null
@@ -2913,6 +3032,7 @@ export interface RequestAnswerResult {
 export interface ApprovalPendingParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
 }
 export interface ApprovalPendingResult {
   approvals: PendingApproval[]
@@ -2934,6 +3054,7 @@ export interface PendingApproval {
 export interface ApprovalReceivedParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   request_id: string
 }
 export interface ApprovalReceivedResult {
@@ -2943,6 +3064,7 @@ export interface ApprovalReceivedResult {
 export interface ApprovalRespondParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   choice?: string | null
   all?: boolean | null
   request_id?: string | null
@@ -3072,6 +3194,7 @@ export interface WakeFeedResult {
 }
 export interface SessionCreateParams {
   profile?: string | null
+  project_root?: string | null
   cols?: number | null
   source?: string | null
   cwd?: string | null
@@ -3136,6 +3259,7 @@ export interface ToolLabel {
 export type ToolLabelKind = 'connector' | 'mcp' | 'tool'
 export interface SessionBranchStoredParams {
   profile?: string | null
+  project_root?: string | null
   parent_session_id: string
   cols?: number | null
   source?: string | null
@@ -3153,6 +3277,8 @@ export interface SessionBranchStoredResult {
 export interface SessionResumeParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
+  current_session_id?: string | null
   cols?: number | null
   source?: string | null
   lazy?: boolean
@@ -3234,6 +3360,7 @@ export interface AutoContinue {
 export interface SessionActivateParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   cols?: number | null
   omit_messages?: boolean
 }
@@ -3261,9 +3388,11 @@ export interface SessionActivateResult {
 }
 export interface SessionListParams {
   profile?: string | null
+  project_root?: string | null
   title?: string | null
   limit?: number | null
   include_hidden?: boolean
+  current_session_id?: string | null
 }
 export interface SessionListResult {
   sessions: SessionListRow[]
@@ -3272,6 +3401,7 @@ export interface SessionListResult {
 export interface SessionListRow {
   id: string
   resolved_id?: string | null
+  cwd?: string | null
   title?: string
   preview?: string
   started_at?: number
@@ -3282,6 +3412,7 @@ export interface SessionListRow {
 }
 export interface SessionMostRecentParams {
   profile?: string | null
+  project_root?: string | null
 }
 export interface SessionMostRecentResult {
   session_id: string | null
@@ -3291,6 +3422,7 @@ export interface SessionMostRecentResult {
 }
 export interface SessionActiveListParams {
   profile?: string | null
+  project_root?: string | null
   current_session_id?: string | null
 }
 export interface SessionActiveListResult {
@@ -3300,6 +3432,7 @@ export interface SessionActiveListResult {
 export interface SessionActiveItem {
   current: boolean
   id: string
+  cwd?: string | null
   last_active: number
   message_count: number
   model: string
@@ -3315,6 +3448,7 @@ export type LiveSessionStatus = 'idle' | 'starting' | 'waiting' | 'working' | 's
 export interface SessionDeleteParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
 }
 export interface SessionDeleteResult {
   deleted: string
@@ -3322,6 +3456,7 @@ export interface SessionDeleteResult {
 export interface SessionTitleParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   title?: string | null
 }
 export interface SessionTitleResult {
@@ -3352,6 +3487,7 @@ export interface SessionArchiveResult {
 }
 export interface SessionWorkspaceMoveParams {
   profile?: string | null
+  project_root?: string | null
   session_key: string
   cwd: string
 }
@@ -3363,6 +3499,7 @@ export interface SessionWorkspaceMoveResult {
 export interface SessionCwdSetParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   cwd: string
 }
 /** The refreshed ``session.info`` view (full agent view, or the lazy shape). */
@@ -3378,6 +3515,7 @@ export interface SessionCwdSetResult {
   tools?: Record<string, string[]>
   skills?: Record<string, string[]>
   cwd?: string
+  input_history_key?: string | null
   branch?: string | null
   project?: ProjectRef | null
   terminal_backend?: string
@@ -3402,6 +3540,7 @@ export interface SessionCwdSetResult {
 export interface SessionCloseParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
 }
 export interface SessionCloseResult {
   closed: boolean
@@ -3410,6 +3549,7 @@ export interface SessionCloseResult {
 export interface SessionBranchParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   name?: string | null
   count?: number | null
   idempotency_key?: string | null
@@ -3426,6 +3566,7 @@ export interface SessionBranchResult {
 export interface SessionBranchWholeParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   name?: string | null
   idempotency_key?: string | null
 }
@@ -3441,6 +3582,7 @@ export interface SessionBranchWholeResult {
 export interface SessionUndoParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   intent?: UndoIntent | null
 }
 export type UndoIntent = 'retry' | 'undo'
@@ -3450,6 +3592,7 @@ export interface SessionUndoResult {
 export interface SessionSaveParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
 }
 /** Under turn isolation the compute host's result passes through verbatim. */
 export interface SessionSaveResult {
@@ -3459,6 +3602,7 @@ export interface SessionSaveResult {
 export interface SessionStatusParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
 }
 export interface SessionStatusResult {
   output: string
@@ -3466,6 +3610,7 @@ export interface SessionStatusResult {
 export interface SessionHistoryParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
 }
 export interface SessionHistoryResult {
   count: number
@@ -3474,6 +3619,7 @@ export interface SessionHistoryResult {
 export interface SessionUsageParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
 }
 export interface SessionUsageResult {
   model?: string
@@ -3507,6 +3653,7 @@ export interface SessionUsageResult {
 export interface SessionContextBreakdownParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
 }
 /** ``agent.context_breakdown.compute_session_context_breakdown`` (empty categories before the agent builds) plus the per-file context manifest (empty until the agent exists). */
 export interface SessionContextBreakdownResult {
@@ -3538,6 +3685,7 @@ export interface ContextFileSource {
 export interface SessionCompressParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   focus_topic?: string | null
 }
 /** In-process: the before/after summary + replacement transcript. Compute host: its result passes through (hence open) with ``turn_isolation``; a lock held elsewhere answers ``compressed: false``. */
@@ -3573,6 +3721,7 @@ export interface CompressionSummary {
 export interface SessionInterruptParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   expected_hosted_task_id?: string | null
 }
 export interface SessionInterruptResult {
@@ -3584,6 +3733,7 @@ export type InterruptStatus = 'interrupted' | 'not_interrupted'
 export interface SessionCorrectionParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   text: string
 }
 export interface SessionCorrectionResult {
@@ -3593,6 +3743,7 @@ export interface SessionCorrectionResult {
 export type CorrectionStatus = 'queued' | 'redirected' | 'rejected'
 export interface SpawnTreeSaveParams {
   profile?: string | null
+  project_root?: string | null
   subagents: Record<string, unknown>[]
   session_id?: string | null
   started_at?: number | null
@@ -3605,6 +3756,7 @@ export interface SpawnTreeSaveResult {
 }
 export interface SpawnTreeListParams {
   profile?: string | null
+  project_root?: string | null
   session_id?: string | null
   cross_session?: boolean
   limit?: number | null
@@ -3624,6 +3776,7 @@ export interface SpawnTreeEntry {
 }
 export interface SpawnTreeLoadParams {
   profile?: string | null
+  project_root?: string | null
   path: string
 }
 /** The snapshot file as written by ``spawn_tree.save`` (open: the file is the contract). */
@@ -3638,6 +3791,7 @@ export interface SpawnTreeLoadResult {
 export interface TerminalResizeParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   cols?: number | null
 }
 export interface TerminalResizeResult {
@@ -3646,6 +3800,7 @@ export interface TerminalResizeResult {
 export interface SessionEventsSinceParams {
   session_id: string
   profile?: string | null
+  project_root?: string | null
   last_seen?: number | null
   replay_epoch?: string | null
 }
@@ -3659,6 +3814,7 @@ export interface SessionEventsSinceResult {
 }
 export interface SessionEventsStatsParams {
   profile?: string | null
+  project_root?: string | null
 }
 /** ``event_replay.replay_stats``. */
 export interface SessionEventsStatsResult {
@@ -3672,6 +3828,7 @@ export interface SessionEventsStatsResult {
 /** Needs a ``template`` or ``instructions`` / ``input``; a live ``session_id`` lends its model. */
 export interface LlmOneshotParams {
   profile?: string | null
+  project_root?: string | null
   template?: string | null
   instructions?: string | null
   input?: string | null
@@ -4088,6 +4245,7 @@ export type ReloadMcpSession = 'applied' | 'unchanged' | 'busy'
 /** ``query`` is the search text / hub identifier / browse page (digits); ``page`` / ``page_size`` apply to ``browse``. */
 export interface SkillsManageParams {
   profile?: string | null
+  project_root?: string | null
   action?: SkillsAction
   query?: string | null
   page?: number | null
@@ -4275,6 +4433,7 @@ export type McpRuntimeStatus = 'connected' | 'disabled' | 'connecting' | 'failed
 /** ``preset`` (catalog id) and/or ``config`` (url/command/args/env/headers/auth/tools); a ``bearer_token`` is written to the profile's .env, only the header template persists. */
 export interface McpServersAddParams {
   profile?: string | null
+  project_root?: string | null
   name: string
   preset?: string | null
   config?: Record<string, unknown> | null
@@ -4287,6 +4446,7 @@ export interface McpServersAddResult {
 }
 export interface McpServersSetApiKeyParams {
   profile?: string | null
+  project_root?: string | null
   name: string
   value: string
   env_var?: string | null
@@ -4299,6 +4459,7 @@ export interface McpServersSetApiKeyResult {
 }
 export interface McpServerNameParams {
   profile?: string | null
+  project_root?: string | null
   name: string
 }
 /** ``ok: false`` carries ``error``; ``prompts`` / ``resources`` are only counted on success. */
@@ -4322,6 +4483,7 @@ export interface McpServersRemoveResult {
 /** With ``client_redirect_uri`` the CLIENT hosts the loopback and relays the code via ``mcp.servers.oauth.callback``. */
 export interface McpOauthStartParams {
   profile?: string | null
+  project_root?: string | null
   name: string
   client_redirect_uri?: string | null
 }
@@ -4334,6 +4496,7 @@ export interface McpOauthStartResult {
 /** ``session_id`` is the OAuth flow id returned by ``oauth.start`` (not a gateway session). */
 export interface McpOauthFlowParams {
   profile?: string | null
+  project_root?: string | null
   name: string
   session_id: string
 }
@@ -4353,6 +4516,7 @@ export interface McpOauthCancelResult {
 }
 export interface McpOauthCallbackParams {
   profile?: string | null
+  project_root?: string | null
   name: string
   session_id: string
   code?: string | null
@@ -4389,6 +4553,7 @@ export interface PluginToolsetRow {
 /** ``toggle``: ``key``/``name`` + ``enable``; ``install``: ``identifier``/``repo`` or ``catalog_name`` (+ ``force``, ``enable``, ``ref``); ``update``: ``name`` (+ ``accept_capabilities`` to apply a re-pin that widened the plugin after the user confirmed the ``delta``, + ``force`` to apply an update whose security scan returned caution after the user saw the findings); ``remove``: ``name`` (user installs only); ``settings``: ``key`` + ``values`` (``{setting_key: value}``, non-secret schema keys only); ``presence``: ``names`` (catalog names, answered in that order). */
 export interface PluginsManageParams {
   profile?: string | null
+  project_root?: string | null
   action?: PluginsAction
   key?: string | null
   name?: string | null
@@ -4534,6 +4699,7 @@ export interface CatalogPluginPresence {
 }
 export interface PluginCatalogLookupParams {
   profile?: string | null
+  project_root?: string | null
   name: string
 }
 /** ``found`` carries ``entry``. ``unknown`` covers a name the catalog doesn't list and one it removed; ``unavailable`` means neither the live catalog nor the in-tree fallback could be read. */
@@ -4645,6 +4811,7 @@ export interface CanonicalSessionInfo {
   update_command?: string | null
   branch?: string | null
   project?: ProjectRef | null
+  input_history_key?: string | null
   system_prompt?: string | null
   context_length?: number | null
   enabled_toolsets?: string[] | null
@@ -4893,6 +5060,7 @@ export interface WorkerPersistParams {
 export type WorkerPersistResult = Record<string, unknown>
 export interface GroupsAttachmentUploadParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   upload_id: string
   kind: string
@@ -4915,6 +5083,7 @@ export interface RoomAttachment {
 }
 export interface GroupsAttachmentDownloadParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   event_id: string
   attachment_id: string
@@ -4935,6 +5104,7 @@ export interface RoomAttachmentBytes {
 }
 export interface GroupsDiscardParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   member_id: string
   task_id: string
@@ -4946,6 +5116,7 @@ export interface GroupsDiscardResult {
 }
 export interface CanonicalCreateParams {
   profile?: string | null
+  project_root?: string | null
   request_id?: string | null
   source?: 'cli' | 'tui' | 'gui' | 'acp' | 'tool' | 'oneshot'
   cwd?: string | null
@@ -5005,6 +5176,8 @@ export interface CanonicalPendingAdmission {
   execution_generation: number | null
   input_id: string
   text: string
+  display_kind?: 'process_complete' | 'async_delegation_complete' | 'internal_notification' | null
+  display_text?: string | null
   controls?: ('steer' | 'replace')[] | null
   steering?: boolean | null
 }
@@ -5031,6 +5204,7 @@ export interface CanonicalSnapshotInfo {
   update_command?: string | null
   branch?: string | null
   project?: ProjectRef | null
+  input_history_key?: string | null
   system_prompt?: string | null
   context_length?: number | null
   enabled_toolsets?: string[] | null
@@ -5061,6 +5235,7 @@ export interface CanonicalSnapshotInfo {
 }
 export interface CanonicalResumeParams {
   profile?: string | null
+  project_root?: string | null
   session_id?: string
   title?: string | null
   latest?: 'cli' | 'tui' | null
@@ -5075,6 +5250,7 @@ export interface CanonicalResumeParams {
 }
 export interface CanonicalListParams {
   profile?: string | null
+  project_root?: string | null
   scope?: 'live' | 'stored'
   limit?: number
   title?: string | null
@@ -5086,6 +5262,7 @@ export interface CanonicalListResult {
 }
 export interface CanonicalSessionListRow {
   session_id: string
+  cwd?: string | null
   id: string
   title: string
   source: string | null
@@ -5098,6 +5275,7 @@ export interface CanonicalSessionListRow {
 }
 export interface CanonicalControlParams {
   profile?: string | null
+  project_root?: string | null
   session_id: string
   execution_generation: number
 }
@@ -5111,6 +5289,7 @@ export interface CanonicalSessionHandle {
 }
 export interface CanonicalCorrectionParams {
   profile?: string | null
+  project_root?: string | null
   session_id: string
   execution_generation: number
   text: string
@@ -5130,6 +5309,7 @@ export interface CanonicalVoiceStopped {
 }
 export interface CanonicalEventsParams {
   profile?: string | null
+  project_root?: string | null
   session_id: string
   last_sequence?: number
   last_seen?: number
@@ -5158,6 +5338,7 @@ export interface CanonicalReplayEvent {
 }
 export interface CanonicalSubmitParams {
   profile?: string | null
+  project_root?: string | null
   session_id: string
   text: string
   submission_id?: string | null
@@ -5196,6 +5377,7 @@ export interface CanonicalModelOverride {
 export type CanonicalSubmitResult = AdmissionStatus | CanonicalVoiceStopped
 export interface CanonicalApprovalParams {
   profile?: string | null
+  project_root?: string | null
   session_id: string
   execution_generation: number
   prompt_id: string
@@ -5203,12 +5385,14 @@ export interface CanonicalApprovalParams {
 }
 export interface CanonicalSteerQueuedParams {
   profile?: string | null
+  project_root?: string | null
   session_id: string
   admission_id: string
 }
 /** The edited prompt: admitted as a NEW admission (``submission_id``) at the FIFO tail. */
 export interface CanonicalReplaceQueuedParams {
   profile?: string | null
+  project_root?: string | null
   session_id: string
   admission_id: string
   submission_id: string
@@ -5237,6 +5421,7 @@ export interface CanonicalConfigGetResult {
 /** Session controls (``busy`` / ``verbose`` / ``yolo`` / ``show_reasoning`` / ``service_tier``, which need ``session_id``) and the TUI's profile preferences (``gateway/session_tui_config.py``; ``session_id`` optional). ``model`` is recognised only to be refused with ``use_session_mutation_model``: a model pick is the revision-fenced ``session.mutate`` operation, never a config write. */
 export interface CanonicalConfigSetParams {
   profile?: string | null
+  project_root?: string | null
   session_id?: string | null
   key: string
   value?: unknown
@@ -5245,6 +5430,7 @@ export interface CanonicalConfigSetParams {
 }
 export interface CanonicalProfilesParams {
   profile?: string | null
+  project_root?: string | null
   include_sessions?: boolean
 }
 export interface CanonicalProfilesResult {
@@ -5285,6 +5471,7 @@ export interface CanonicalAttachedImageResult {
 }
 export interface CanonicalRoomAttemptParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   member_id: string
   task_id: string
@@ -5292,12 +5479,14 @@ export interface CanonicalRoomAttemptParams {
 }
 export interface CanonicalRoomCreateParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   name: string
   members: RoomMemberInput[]
 }
 export interface CanonicalRoomApproveParams {
   profile?: string | null
+  project_root?: string | null
   room_id: string
   member_id: string
   task_id: string
@@ -5330,14 +5519,32 @@ export interface CanonicalBotDeliverResult {
 /** ``answers`` rides only on a reconnect replay (locks the server already accepted; null = skipped). */
 export interface ClarifyRequestParams {
   session_id: string
-  questions: ClarifyQuestion[]
+  question?: string | null
+  choices?: string[] | null
+  multi_select?: boolean | null
+  questions?: ClarifyQuestion[] | null
   answers?: Record<string, string | null> | null
+  action_metadata?: InteractionActionMetadata[] | null
+  interaction?: InteractionTiming | null
 }
 export interface ClarifyQuestion {
   qid: string
   question: string
   choices?: string[] | null
   multi_select?: boolean
+}
+export interface InteractionActionMetadata {
+  id: string
+  label: string
+  description?: string
+}
+/** Display-only snapshot; the host alone owns deadlines and settlement. */
+export interface InteractionTiming {
+  remaining_seconds: number
+  reminder_remaining_seconds: number
+  reminded?: boolean
+  show_countdown?: boolean
+  phase?: string
 }
 /** ``{answers}`` for the whole set (early locks go through the ``clarify.lock`` RPC); a response without ``answers`` is cancel-all. ``outcome`` (optional): how the viewer's own panel ended, as main's classic CLI reports it (``timed_out`` keeps the answers locked before its deadline). */
 export interface ClarifyResult {

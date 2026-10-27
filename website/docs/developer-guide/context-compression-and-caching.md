@@ -436,10 +436,9 @@ hermes config set compression.codex_gpt55_autoraise_notice false
 
 ### Codex large-context `-900k` picker variants (opt-in)
 
-The ChatGPT Codex backend *advertises* a 272K window for the gpt-5.4, gpt-5.6
-(Sol/Terra/Luna) and GPT-6 (Sol/Terra/Luna) families, but actually accepts ~911K input tokens
-for ChatGPT-subscription accounts (live-verified Aug 2026). Hermes keeps the
-**advertised 272K as the default** for the base slugs — a bigger window means
+The ChatGPT Codex backend can advertise a conservative window (for example,
+272K or 500K) for the eligible gpt-5.4, gpt-5.6 and GPT-6 families. Hermes keeps
+**the advertised window as the default** for the base slugs — a bigger window means
 more tokens per request and much faster subscription-usage burn, so the large
 window is strictly opt-in.
 
@@ -450,12 +449,16 @@ the model id is sent to the backend, and pricing/usage accounting treats them
 as the base model. Slugs that genuinely enforce 272K (gpt-5.5, gpt-5.4-mini)
 have no `-900k` variant. When the authenticated Codex catalog publishes a
 `max_context_window` below 900K for the base slug (e.g. 872K), the `-900k`
-variant resolves to that live maximum instead; 900K remains the offline
-fallback and a published maximum above 900K does not raise it.
+variant resolves within that live maximum even when the advertised default is
+500K rather than the older 272K. A maximum above 900K does not by itself raise
+the verified opt-in window, but an already larger advertised window is preserved
+within the published maximum. Without an explicit maximum, only the known-stale
+272K advertisement is overridden; newer advertisements remain authoritative.
+900K remains the opt-in offline fallback.
 
 Compaction thresholds follow the window: base slugs (272K) get the **85%
 autoraise** described above, while `-900k` variants keep your global
-`compression.threshold` (default 50%, ~450K) — the autoraise exists to stop
+`compression.threshold` (default 50% of the selected window) — the autoraise exists to stop
 wasting a small window, which a 900K window doesn't need.
 
 ### Codex app-server thread compaction

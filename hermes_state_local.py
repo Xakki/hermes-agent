@@ -65,11 +65,11 @@ def commit_local_session(db, *, epoch, receipt):
         from gateway.session_policy import created_surface
         created = created_surface(policy['source'])
         conn.execute('''INSERT INTO sessions(id,source,created_source,user_id,session_key,chat_id,chat_type,
-            model,cwd,profile_name,origin_json,started_at) VALUES(?,?,?,?,?,?,'dm',?,?,?,?,?)
+            model,cwd,profile_name,origin_json,started_at,project_root) VALUES(?,?,?,?,?,?,'dm',?,?,?,?,?,?)
             ON CONFLICT(id) DO NOTHING''',
             (sid, policy['source'], created, receipt['principal_id'], route,
              entry['origin']['chat_id'], policy['model'], _row_cwd(policy), db._own_profile_name(),
-             _json(entry['origin']), started))
+             _json(entry['origin']), started, receipt.get('project_root')))
         conn.execute("INSERT INTO gateway_routing(scope,session_key,entry_json,updated_at) VALUES('',?,?,?)",
                      (route, _json(entry), started))
         conn.execute('INSERT INTO state_meta(key,value) VALUES(?,?)', (key, encoded))

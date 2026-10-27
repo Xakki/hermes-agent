@@ -264,6 +264,39 @@ class TestExternalDirsIndexing:
         assert "ascii-art" in result["copied"]
         assert result["shadowed_by_external"] == []
 
+    @pytest.mark.parametrize(
+        "opted_out,external,expect_description",
+        [(False, False, True), (True, False, True), (True, True, False)],
+    )
+    def test_external_essential_does_not_seed_profile_description(
+        self, tmp_path, opted_out, external, expect_description,
+    ):
+        """Opt-out plus a shared essential must not create a category copy."""
+        home = tmp_path / "profile"
+        skills_dir = home / "skills"
+        bundled = tmp_path / "bundled"
+        shared = tmp_path / "shared"
+        (bundled / "autonomous-ai-agents" / "hermes-agent").mkdir(parents=True)
+        (bundled / "autonomous-ai-agents" / "DESCRIPTION.md").write_text("Category\n")
+        (bundled / "autonomous-ai-agents" / "hermes-agent" / "SKILL.md").write_text(
+            "---\nname: hermes-agent\ndescription: Fixture.\n---\n\nBody.\n"
+        )
+        (shared / "autonomous-ai-agents" / "hermes-agent").mkdir(parents=True)
+        (shared / "autonomous-ai-agents" / "hermes-agent" / "SKILL.md").write_text(
+            "---\nname: hermes-agent\ndescription: Fixture.\n---\n\nBody.\n"
+        )
+        home.mkdir()
+        if opted_out:
+            (home / ".no-bundled-skills").touch()
+        with self._patches(bundled, skills_dir, skills_dir / ".bundled_manifest"):
+            with patch("tools.skills_sync.HERMES_HOME", home):
+                with patch("agent.skill_utils.get_external_skills_dirs", return_value=[shared] if external else []):
+                    result = sync_skills(quiet=True)
+        assert (skills_dir / "autonomous-ai-agents" / "DESCRIPTION.md").exists() is expect_description
+        assert (skills_dir / "autonomous-ai-agents" / "hermes-agent" / "SKILL.md").exists() is (not external)
+        if external:
+            assert "hermes-agent" in result["shadowed_by_external"]
+
 
 class TestRenamedBundledSkillRecovery:
     """Upstream renames/recategorizations must not strand the user's copy.

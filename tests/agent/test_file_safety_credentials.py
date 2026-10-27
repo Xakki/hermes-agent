@@ -196,9 +196,8 @@ def test_identically_named_hermes_files_outside_home_not_blocked(
 ):
     """Hermes-specific filenames (``auth.json``, ``mcp-tokens/``, ``google_oauth.json``)
     outside HERMES_HOME must remain readable — the gate is per-location for
-    those, not per-filename. ``.env`` is the exception: it's blocked anywhere
-    on disk (see test_project_local_env_blocked) because the basename always
-    means \"secret-bearing environment file\" regardless of directory."""
+    those, not per-filename. Project-local ``.env`` is also readable; the
+    owner-selected basename deny outside Hermes homes is only ``.secret``."""
     from agent.file_safety import get_read_block_error
 
     project = tmp_path / "myproject"
@@ -231,9 +230,7 @@ def test_non_secret_auth_subtree_file_not_blocked(fake_home):
 
 
 def test_config_yaml_not_blocked(fake_home):
-    """config.yaml is NOT a credential file — agent should still be
-    able to read it for debugging.  (Writes are denied separately by
-    is_write_denied; reads stay allowed.)"""
+    """config.yaml is readable; independent write policy permits control-file edits."""
     from agent.file_safety import get_read_block_error
 
     cfg = _create(fake_home, "config.yaml")

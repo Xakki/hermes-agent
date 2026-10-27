@@ -478,28 +478,25 @@ def skill_command_collision_note(name: str) -> Optional[str]:
 
 def _scan_skill_md(skill_md: Path, disabled: set, seen_names: set, commands: dict[str, dict[str, Any]]) -> None:
     """Register one SKILL.md in *commands* (no-op when filtered or colliding)."""
-    from tools.skills_tool import _parse_frontmatter, skill_matches_apps, skill_matches_platform, skill_matches_environment
+    from tools.skills_tool import skill_matches_apps, skill_matches_platform, skill_matches_environment
+    from tools.skills_tool_metadata import read_skill_metadata
     if any(part in _SCAN_SKIP_PARTS for part in skill_md.parts):
         return
-    frontmatter, body = _parse_frontmatter(skill_md.read_text(encoding='utf-8-sig'))
+    frontmatter, fallback = read_skill_metadata(skill_md, full=True)
     # OS gate is hard; environment gate (kanban/docker/s6) is offer-time only.
     if not skill_matches_platform(frontmatter) or not skill_matches_environment(frontmatter) or not skill_matches_apps(frontmatter):
         return
     name = frontmatter.get('name', skill_md.parent.name)
     if name in seen_names or name in disabled:
         return
-    description = frontmatter.get('description', '') or next(
-        (line.strip()[:80] for line in body.strip().split('\n') if line.strip() and not line.strip().startswith('#')),
-        '',
-    )
+    description = frontmatter.get('description', '') or fallback
     seen_names.add(name)
     cmd_name = slugify_skill_name(name)
     if not cmd_name:
         return
-    # A collision with a core command (name or alias) skips auto-registration; the skill stays
-    # loadable via /skill <name>. The same predicate feeds the /skills + palette notes.
+    # Keep the upstream collision predicate so /skills and the palette agree; routine collisions are INFO.
     if skill_command_collision_note(name) is not None:
-        logger.warning("Skill %r generates slash command '/%s' which collides with a core Hermes command; "
+        logger.info("Skill %r generates slash command '/%s' which collides with a core Hermes command; "
                        "skipping auto-registration. Use '/skill %s' instead.", name, cmd_name, name)
         return
     # Dedup on the slug too: "git_helper" and "git-helper" normalize the same.
@@ -626,9 +623,10 @@ def get_skill_commands() -> dict[str, dict[str, Any]]:
         current = _skill_dirs_signature()
         if current is None or scanned_at is None or current == scanned_at:
             return cached
-    # Scan outside the lock — file I/O and deferred imports; concurrent scans
-    # are safe since each builds its own map.
-    return scan_skill_commands()
+    # One builder per missing scope; unrelated scopes and deferred imports stay
+    # outside the publication lock. Explicit scan/reload calls still force a scan.
+    from agent.skill_commands_discovery import coalesced_scan
+    return coalesced_scan(key, cached)
 
 
 # Plugin projection cache. The projection re-parses every plugin SKILL.md and sits on the

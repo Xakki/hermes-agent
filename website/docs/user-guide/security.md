@@ -21,6 +21,18 @@ The security model has eight layers:
 7. **Cross-session isolation** — sessions cannot access each other's data or state; cron job storage paths are hardened against path traversal attacks
 8. **Input sanitization** — working directory parameters in terminal tool backends are validated against an allowlist to prevent shell injection
 
+## Interactive sudo password input
+
+Native TUI/Desktop and classic CLI sudo password prompts wait up to **1800
+seconds**. The input stays masked and uses the existing session-scoped native
+credential path; increasing this wait does not extend the sudo cache lifetime or
+authorize another action. An empty answer skips authentication, and an expired
+request cannot accept a late response. Other human approval windows are unchanged.
+
+This is a native sudo input deadline, not `terminal.timeout` or
+`approvals.timeout`. Restart the Hermes process after updating the implementation
+to activate the new deadline; an already-running process retains its loaded code.
+
 ## Dangerous Command Approval
 
 Before executing any command, Hermes checks it against a curated list of dangerous patterns. If a match is found, the user must explicitly approve it.

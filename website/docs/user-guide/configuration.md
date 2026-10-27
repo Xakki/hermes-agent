@@ -3087,14 +3087,16 @@ The delegation provider uses the same credential resolution as CLI/gateway start
 
 ## Clarify
 
-Configure how long Hermes waits for a response to a clarifying question. One value covers every surface — the classic CLI modal, the TUI/Desktop card, and the messaging gateway. The canonical key is `agent.clarify_timeout` (default `3600` seconds; `0` or less = unlimited); a legacy top-level `clarify.timeout` is still honored if explicitly set:
+The compatibility timeout for clarifying questions is `agent.clarify_timeout` (resolver default `3600` seconds); an explicitly set legacy top-level `clarify.timeout` takes precedence. Positive lower values are honored by the classic CLI modal and the TUI/Desktop bridge, but native human waits remain capped at 600 seconds. A compatibility value of `0` or less removes that legacy lower limit; it does **not** make a native human request unbounded.
 
 ```yaml
 agent:
-  clarify_timeout: 3600        # Seconds to wait for user clarification response (0 or less = unlimited)
+  clarify_timeout: 42          # Optional lower wait; native human requests still cannot exceed 600 seconds
 ```
 
-When the timeout expires, the agent unblocks with `"outcome": "timed_out"` (answers the user already locked are kept) and continues on its own. A clarify prompt is never cut by the generic per-tool deadline (`timeouts.tools.sequential_call`); only `agent.clarify_timeout` bounds the wait.
+Interaction-owned prompts also honor their validated `interaction.wait_timeout_seconds` and any earlier owner-supplied deadline; this does not extend solver deadlines or change ownership. The messaging gateway's legacy transport may retain the resolver's longer or unbounded compatibility wait. Thus the resolver's value is an input, not a guarantee of identical effective waits on every surface.
+
+On expiry the native callback returns `"outcome": "timed_out"` and preserves already locked answers. Silence grants no action, scope, or permission. A clarify prompt is not cut by the generic per-tool deadline (`timeouts.tools.sequential_call`); the applicable human-window cap and earlier deadline still apply.
 
 ## Context Files (SOUL.md, AGENTS.md)
 

@@ -64,7 +64,7 @@ function rehashInSubprocess(f) {
     f.payload], { cwd: repo, env: f.env, encoding: 'utf8', timeout: 60000 })
 }
 
-async function signThroughBuilder(f) {
+async function signThroughBuilder(f, signer = config.mac.sign) {
   const packager = {
     config,
     appInfo: { type: 'module' },
@@ -80,7 +80,7 @@ async function signThroughBuilder(f) {
   const opts = await packager.helper.buildSignOptions(
     f.app, identity, declared, path.join(f.root, 'fixture.keychain-db'), Arch.arm64, 'mac')
   // This is the builder's real dispatch, not a test-only invocation of a factory.
-  await MacPackager.prototype.doSign.call(packager, opts, config.mac.sign, identity)
+  await MacPackager.prototype.doSign.call(packager, opts, signer, identity)
 }
 
 function armEnvironment(f) {
@@ -91,7 +91,10 @@ function armEnvironment(f) {
   vi.stubEnv('PYTHONPATH', undefined)
 }
 
-test('builder dispatch refreshes real facts after every payload signature and before the outer seal', async () => {
+// osx-sign interprets os.release() as a Darwin kernel version when selecting
+// hardened-runtime flags. Its real native walk must execute on macOS, not with
+// forged host facts on Linux. The portable adapter contract is exercised below.
+test.runIf(process.platform === 'darwin')('builder dispatch refreshes real facts after every payload signature and before the outer seal', async () => {
   const f = fixture()
   const signed = []
   const commands = []
@@ -141,6 +144,54 @@ test('builder dispatch refreshes real facts after every payload signature and be
     }
   } finally {
     native.mockRestore()
+    vi.unstubAllEnvs()
+    fs.rmSync(f.root, { recursive: true, force: true })
+  }
+}, 30000)
+
+test('builder dispatch refreshes digests at the outer signing boundary on every host', async () => {
+  const f = fixture()
+  const visited = []
+  armEnvironment(f)
+  // Supply only the native signer seam; builder dispatch, policy callbacks and
+  // Python digest recording remain real. Native traversal stays covered above.
+  vi.doMock('@electron/osx-sign', () => ({
+    sign: async opts => {
+      assert.equal(opts.batchCodesignCalls, false)
+      for (const target of [...f.binaries, f.nested, f.ignored, f.app]) {
+        if (opts.ignore(target)) continue
+        const options = opts.optionsForFile(target)
+        assert.equal(path.resolve(options.entitlements), path.join(desktop, 'electron',
+          target === f.app ? 'entitlements.mac.plist' : 'entitlements.mac.inherit.plist'))
+        if (target === f.app) {
+          const expected = JSON.parse(f.py('from pathlib import Path; import sys,json; from pm.store import tree_digest; root=Path(sys.argv[1]); print(json.dumps({name:tree_digest(root/"tools"/name) for name in ("python","chromium")}))'))
+          const facts = JSON.parse(fs.readFileSync(f.facts, 'utf8'))
+          for (const name of Object.keys(expected)) {
+            assert.notEqual(expected[name], f.initial.packages[name].digest)
+            assert.deepEqual(facts.packages[name], { ...f.initial.packages[name], digest: expected[name] })
+          }
+        } else if (fs.statSync(target).isDirectory()) {
+          fs.writeFileSync(path.join(target, 'fixture-signature'), 'signed fixture')
+        } else {
+          fs.appendFileSync(target, 'signed fixture')
+        }
+        visited.push(target)
+      }
+    }
+  }))
+  try {
+    // Import through the test module graph so the native-library seam is
+    // interceptable; the CJS builder config loads its hook outside that graph.
+    const { createMacSigner } = await import('./mac-sign.mjs')
+    await signThroughBuilder(f, createMacSigner({
+      entitlements: path.join(desktop, 'electron/entitlements.mac.plist'),
+      entitlementsInherit: path.join(desktop, 'electron/entitlements.mac.inherit.plist'),
+      hardenedRuntime: true,
+      ignore: file => file === f.ignored
+    }))
+    assert.deepEqual(visited, [...f.binaries, f.nested, f.app])
+  } finally {
+    vi.doUnmock('@electron/osx-sign')
     vi.unstubAllEnvs()
     fs.rmSync(f.root, { recursive: true, force: true })
   }

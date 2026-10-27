@@ -182,6 +182,7 @@ method("session.branch_stored", params=SessionBranchStoredParams, result=Session
 class SessionResumeParams(SessionParams):
     """``session_id`` is the STORED id (or an exact title); the reply's ``session_id`` is the runtime id."""
 
+    current_session_id: str | None = None
     cols: int | None = None
     source: str | None = None
     lazy: bool = False
@@ -222,6 +223,7 @@ class SessionListParams(ProfileParams):
     title: str | None = None  # exact-title lookup (title as identity); windowless
     limit: int | None = None
     include_hidden: bool = False
+    current_session_id: str | None = None
 
 
 class SessionListRow(Result):
@@ -230,6 +232,7 @@ class SessionListRow(Result):
 
     id: str
     resolved_id: str | None = None
+    cwd: str | None = None
     title: str = ""
     preview: str = ""
     started_at: float = 0
@@ -273,6 +276,7 @@ class SessionActiveItem(Result):
 
     current: bool
     id: str
+    cwd: str | None = None
     last_active: float
     message_count: int
     model: str
@@ -783,4 +787,3 @@ class LlmOneshotResult(Result):
 
 method("llm.oneshot", params=LlmOneshotParams, result=LlmOneshotResult,
        doc="Stateless one-shot LLM completion (titles, ideas) on the session's or the task backend.")
-

@@ -97,6 +97,46 @@ _sessions: dict[str, dict] = {}
 _methods: dict[str, callable] = {}
 _db = None
 _db_error: str | None = None
+
+
+def _canonical_project_root(cwd: str | None) -> str | None:
+    return git_probe.canonical_project_root(cwd, root_probe=_git_common_repo_root_for_cwd)
+
+
+def _git_common_repo_root_for_cwd(cwd: str) -> str:
+    """Trusted repository root for a cwd; kept as a patchable authority seam."""
+    return git_probe.common_repo_root(cwd)
+
+
+def _session_project_root(session: dict | None) -> str | None:
+    session = session or {}
+    # The durable project root is authoritative.  Deriving it from cwd is only
+    # a bootstrap fallback for a new in-memory session before its DB row exists.
+    return _canonical_project_root(
+        session.get("project_root") or session.get("cwd") or os.getcwd()
+    )
+
+
+def _active_project_root(params: dict, db) -> str | None:
+    """Resolve project authority from the server-owned request context.
+
+    ``current_session_id`` is only a lookup hint.  A durable row alone is not
+    proof that the caller owns it: the id must resolve to the exact live
+    session bound to this request's transport.  The runtime record is the
+    equivalent authority while a turn is executing.  An unbound or spoofed id
+    fails closed; ``project_root`` is never an authority source.
+    """
+    runtime_session = _current_runtime_session_record.get()
+    if runtime_session is not None:
+        return _session_project_root(runtime_session)
+
+    current_id = str(params.get("current_session_id") or "").strip()
+    if current_id:
+        _transport, current = _current_session_steer_authority(current_id)
+        return _session_project_root(current) if current is not None else None
+    return _canonical_project_root(os.getcwd())
+
+
 _stdout_lock = threading.Lock()
 _cfg_lock = threading.Lock()
 # Shared profile UI metadata is updated concurrently by Desktop, mobile and pool RPCs; its
@@ -729,9 +769,13 @@ def _emit(event: str, sid: str, payload: dict | None = None) -> bool:
 
 from tui_gateway import server_requests as _server_requests
 
+def _observe_native_request(req, actor, event):
+    from tui_gateway.interaction_host import observe_native
+    observe_native(req, actor, event)
+
 _server_requests.bind_sinks(lambda frame: write_json(frame), lambda event, sid, payload: _emit(event, sid, payload),
                             lambda sid: _session_client_answers_requests(sid),
-                            lambda sid: _session_answering_clients(sid))
+                            clients=lambda sid: _session_answering_clients(sid), observe=_observe_native_request)
 
 
 # Live WS peer transports (maintained by tui_gateway.ws): the only route for session-less background
@@ -1084,21 +1128,20 @@ def _enable_gateway_prompts() -> None:
 def _ask(method: str, sid: str, params: dict, timeout: float | None = 300) -> str:
     """Server→client request whose answer is one string under ``value`` (sudo, secret, vault prompts, GUI reads,
     MCP setup). Empty string when the renderer skipped, timed out, or was cancelled."""
+    from hermes_constants import SUDO_PASSWORD_TIMEOUT_SECONDS
     from tui_gateway import server_requests
+    if method in server_requests._HUMAN_METHODS:
+        timeout = SUDO_PASSWORD_TIMEOUT_SECONDS if method == "sudo" else 600
     result = server_requests.send(method, sid, params, timeout=timeout)
     value = (result or {}).get("value", "")
     return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
 
 
-
 def _clarify_timeout_seconds() -> float | None:
-    """Clarify wait for the TUI/desktop bridge from the canonical config (gateway/CLI parity); 300s
-    historical default if config can't be read; ``<= 0`` = unlimited → None (never auto-skip)."""
-    with contextlib.suppress(Exception):
-        from tools.clarify_gateway import get_clarify_timeout
-        timeout = get_clarify_timeout()
-        return timeout if timeout > 0 else None
-    return 300
+    """Legacy configured lower wait; None leaves the native human cap in force."""
+    from tools.clarify_gateway import get_clarify_timeout
+    timeout = get_clarify_timeout()
+    return timeout if timeout > 0 else None
 
 
 def _clarify_block(sid: str, questions: list[dict]) -> dict:
@@ -1593,7 +1636,8 @@ def _session_info(agent, session: dict | None = None) -> dict:
         "yolo": yolo, "approval_mode": approval_mode,
         "tools": dict(mirror.get("tools") or {}) if isinstance(mirror.get("tools"), dict) else {},
         "skills": dict(mirror.get("skills") or {}) if isinstance(mirror.get("skills"), dict) else {},
-        "cwd": cwd, "branch": git_probe.branch(cwd), "project": _project_info_for_cwd(cwd),
+        "cwd": cwd, "input_history_key": git_probe.input_history_key(cwd),
+        "branch": git_probe.branch(cwd), "project": _project_info_for_cwd(cwd),
         "terminal_backend": _effective_terminal_backend(), "personality": str(personality or ""),
         "running": bool(sess.get("running")), "turn_started_at": _turn_started_at(session),
         "title": _session_live_title(sess, session_key) if session_key else "",
@@ -1605,7 +1649,6 @@ def _session_info(agent, session: dict | None = None) -> dict:
     with contextlib.suppress(Exception):
         from hermes_cli import __release_date__
         from hermes_cli.version_info import get_version_info
-
         info.update(version=get_version_info().base_version, release_date=__release_date__)
     live_agent = agent is not None and not sess.get("_compute_host_active")
     if live_agent:

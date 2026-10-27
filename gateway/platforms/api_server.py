@@ -116,6 +116,7 @@ from gateway.platforms import api_server_room_dispatch as _room_dispatch
 from gateway.platforms import api_server_room_grants as _room_grants
 from gateway.platforms import api_server_runs as _api_runs
 from gateway.platforms.api_server_openai_routes import OpenAICompatRoutesMixin
+from gateway.platforms.api_server_request_policy import APIServerRequestPolicyMixin
 from gateway.platforms.api_server_memory_sessions import ApiServerMemorySessions
 from gateway.platforms.api_server_bot_chat import reset_local_title_owner
 from gateway.platforms.base import (
@@ -1033,7 +1034,7 @@ def _run_route_delegate(name: str):
     return _handler
 
 
-class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
+class APIServerAdapter(APIServerRequestPolicyMixin, OpenAICompatRoutesMixin, BasePlatformAdapter):
     """aiohttp server routing OpenAI-format requests through hermes-agent's AIAgent."""
 
     # Stateless request/response (``send()`` is a stub): async-delivery tools must not promise
@@ -1056,6 +1057,11 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform.API_SERVER)
         extra = config.extra or {}
+        # API requests have no transport-bound TUI session. Bind the adapter to
+        # its launch project once; never let a request choose this scope.
+        self._trusted_project_root = self._resolve_trusted_project_root(
+            extra.get("trusted_project_root")
+        )
         self._host, self._port = listen_address(extra)
         self._api_key: str = extra.get("key", _get_scoped_secret("API_SERVER_KEY", ""))
         self._cors_origins: tuple[str, ...] = self._parse_cors_origins(
@@ -1121,6 +1127,7 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         self._metrics_last_request_at: Optional[float] = None
         self._metrics_last_heartbeat_at: Optional[float] = None
 
+
     def active_agent_work_count(self) -> int:
         """All live agent work: pending admissions + in-flight turns + live /v1/runs tasks
         (task-based, since ``_active_run_agents`` has a queued-before-agent gap)."""
@@ -1166,13 +1173,6 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         except Exception:
             return False
 
-    def _draining_response(self) -> Optional[web.Response]:
-        """Return a retryable response while the gateway drains existing work."""
-        if not self._gateway_is_draining():
-            return None
-        return _error_response(
-            "Gateway is draining existing work; retry shortly.", 503, code="gateway_draining",
-            headers={"Retry-After": "1"})
 
     def _activate_admitted_request(self) -> None:
         """Transfer this request's drain reservation to agent bookkeeping."""
@@ -1202,15 +1202,6 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
             if status.get("status") in {"queued", "running", "waiting_for_approval", "stopping"}
         )
 
-    @staticmethod
-    def _parse_cors_origins(value: Any) -> tuple[str, ...]:
-        """Normalize configured CORS origins into a stable tuple."""
-        if not value:
-            return ()
-        items = (
-            value.split(",") if isinstance(value, str)
-            else value if isinstance(value, (list, tuple, set)) else [str(value)])
-        return tuple(str(item).strip() for item in items if str(item).strip())
 
     @staticmethod
     def _resolve_max_concurrent_runs() -> int:
@@ -2510,6 +2501,8 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         session = await asyncio.to_thread(db.get_session, session_id)
         if not session:
             return None, _error_response(f"Session not found: {session_id}", 404, code="session_not_found")
+        if (scope_error := self._session_scope_error(session)) is not None:
+            return None, scope_error
         return session, None
 
     async def _conversation_history_for_session(self, session_id: str) -> list[dict[str, Any]]:
@@ -2550,7 +2543,8 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
             # include_pinned back-fills pins past the recency window; search_query pushes the
             # title needle into SQL (substring) so a hidden/old row is found, exact match below.
             rows = await asyncio.to_thread(
-                db.list_sessions_rich, source=source, limit=limit, offset=offset,
+                db.list_sessions_rich, source=source, project_root=self._trusted_project_root,
+                limit=limit, offset=offset,
                 include_children=include_children, order_by_last_active=True, include_pinned=True,
                 search_query=title_filter, include_hidden=include_hidden)
             if title_filter:
@@ -2632,10 +2626,10 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
                 return None, conflict
             conn.execute(
                 """INSERT INTO sessions (
-                   id, source, model, model_config, system_prompt, started_at
-                ) VALUES (?, ?, ?, ?, ?, ?)""",
+                   id, source, model, model_config, system_prompt, project_root, started_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (session_id, source, model_name, json.dumps(model_config) if model_config else None,
-                 system_prompt, time.time()))
+                 system_prompt, self._trusted_project_root, time.time()))
             if title is not None:
                 clean_title = db.sanitize_title(str(title))
                 if clean_title:

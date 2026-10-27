@@ -6,10 +6,11 @@ would otherwise re-spawn ``git`` on every sidebar open, while the TTL keeps ``gi
 
 from __future__ import annotations
 
+from hashlib import sha256
 import os
 import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 
 from hermes_cli._subprocess_compat import bounded_git_probe
@@ -117,6 +118,28 @@ def common_repo_root(cwd: str) -> str:
         return repo_root(cwd)
 
     return _cache.resolve(f"common:{cwd}", _probe)
+
+
+def canonical_project_root(
+    cwd: str | None, *, root_probe: Callable[[str], str] | None = None,
+) -> str | None:
+    """Resolve a project root without importing the stdio-owning RPC server."""
+    if not cwd:
+        return None
+    try:
+        candidate = os.path.realpath(os.path.abspath(os.path.expanduser(str(cwd))))
+        return (root_probe or common_repo_root)(candidate) or candidate
+    except (OSError, ValueError, RuntimeError):
+        return None
+
+
+def input_history_key(cwd: str | None) -> str | None:
+    """One project key for CLI recall and TUI session metadata."""
+    root = canonical_project_root(cwd)
+    if root is None:
+        return None
+    root = os.path.realpath(root)
+    return sha256(root.encode("utf-8")).hexdigest()
 
 
 def resolve(cwd: str) -> dict | None:

@@ -64,6 +64,14 @@ def _select(description: str, *options: str, **extra: Any) -> dict[str, Any]:
 
 # Manual overrides for fields that need select options or custom types.
 _SCHEMA_OVERRIDES: dict[str, dict[str, Any]] = {
+    "interaction.menu": {
+        "type": "json", "category": "interaction",
+        "description": "Prompt actions as JSON: stable id, label, description, prompt and enabled; array order controls display order. Stop and native mode controls are protected. Changes apply to new sessions.",
+    },
+    "interaction.show_countdown": {
+        "type": "boolean", "category": "interaction",
+        "description": "Show the host-owned human wait countdown; hiding it never selects an action.",
+    },
     "timezone": _select(
         "IANA timezone (e.g. America/New_York). Blank uses the system timezone.",
         *_timezone_options(), searchable=True, clearable=True,

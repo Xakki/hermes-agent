@@ -330,9 +330,25 @@ def _mark_skip_upstream_prompt():
         (get_hermes_home() / SKIP_UPSTREAM_PROMPT_FILE).touch()
 
 
-def _sync_fork_with_upstream(git_cmd: list[str], cwd: Path) -> bool:
-    """Push updated main to origin (sync fork); True on success."""
-    return _git_ok(git_cmd, ["push", "origin", "main", "--force-with-lease"], cwd, network=True)
+def _sync_fork_with_upstream(git_cmd: list[str], cwd: Path, *, merge_upstream: bool = False) -> bool:
+    """Admit an optional divergent merge; the common move/validation stages own its effects."""
+    from hermes_cli.update_cmd import _git_run
+    if not merge_upstream:
+        print("  Skipping upstream sync to preserve your changes.")
+        return False
+    from hermes_cli._early_recovery import git_operation_in_progress
+    if operation := git_operation_in_progress(cwd):
+        print(f"  ✗ A Git {operation} is already in progress — skipping upstream merge.")
+        return False
+    head = _git_stdout(git_cmd, ["rev-parse", "--abbrev-ref", "HEAD"], cwd)
+    if head != "main":
+        print(f"  ✗ HEAD is on '{head or 'unknown'}', not 'main' — skipping upstream merge.")
+        return False
+    status = _git_run(git_cmd, ["status", "--porcelain", "--untracked-files=no"], cwd)
+    if status.returncode != 0 or status.stdout.strip():
+        print("  ✗ Working tree has uncommitted changes — skipping upstream merge.")
+        return False
+    return True
 
 
 def _offer_upstream_remote(git_cmd: list[str], cwd: Path, *, assume_yes: bool, input_fn) -> bool:
@@ -375,9 +391,29 @@ class UpstreamTargetBroken(Exception):
         self.sha, self.path, self.error = sha, path, error
 
 
+def _abort_owned_upstream_merge(git_cmd, cwd: Path, target: str) -> bool:
+    """Abort only the failed merge we started, never another operation's MERGE_HEAD."""
+    from hermes_cli.update_cmd import _git_run
+    try:
+        merge_head = _git_run(git_cmd, ["rev-parse", "-q", "--verify", "MERGE_HEAD"], cwd)
+        if merge_head.returncode != 0:
+            return True  # git failed without starting a merge
+        if merge_head.stdout.strip() != target:
+            return False
+        aborted = _git_run(git_cmd, ["merge", "--abort"], cwd)
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"  ✗ Could not abort the upstream merge: {exc}")
+        return False
+    if aborted.returncode != 0:
+        print(f"  ✗ Could not abort the upstream merge: {aborted.stderr.strip()}")
+        return False
+    print("  ℹ Upstream merge conflicted — aborted; keeping the pulled fork commit.")
+    return True
+
+
 def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path, *, assume_yes: bool = False, input_fn=None,
                                   checkout_move=None) -> bool:
-    """Offer to add ``upstream``, compare origin/main vs upstream/main, ff-pull when strictly behind, then push origin.
+    """Fetch upstream, compare fork tips, and prepare an admitted merge; never publish here.
 
     Returns True only when origin/main was actually verified against upstream/main; False when the check never
     happened, so the caller never reports "up to date" on an origin-only compare. Fetches only upstream/main:
@@ -411,12 +447,11 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path, *, assume_yes: 
         print("  ✗ Could not compare branches. Skipping upstream sync.")
         return False
     if origin_ahead > 0:
-        print(
-            f"\nℹ Your fork has {origin_ahead} commit(s) not on upstream.\n"
-            "  Skipping upstream sync to preserve your changes.\n"
-            "  If you want to merge upstream changes, run:\n    git pull upstream main"
-        )
-        return True
+        print(f"\nℹ Your fork has {origin_ahead} commit(s) not on upstream.")
+        from hermes_cli.config import load_config
+        merge_upstream = bool(load_config().get("updates", {}).get("merge_upstream", False))
+        if not _sync_fork_with_upstream(git_cmd, cwd, merge_upstream=merge_upstream):
+            return False
     if upstream_ahead == 0:
         print("  ✓ Fork is up to date with upstream")
         return True
@@ -438,6 +473,7 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path, *, assume_yes: 
         raise UpstreamTargetBroken(target, *broken)
     refused = _commit.arm_commit_point(git_cmd, cwd, _commit.debt_sha_for_move(pre, target), pre=pre,
                                        target=target, stash=None)
+    merge_attempted = False
     try:
         # The fetch above already brought upstream/main: a local fast-forward (no network, so no
         # credential helper is started under the checkout lock fd a mutator inherits) to the
@@ -445,9 +481,15 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path, *, assume_yes: 
         if refused:
             raise subprocess.CalledProcessError(1, "merge", stderr=refused)  # no marker, no move
         with (checkout_move or _no_move)(upstream):
-            run_git(git_cmd, ["merge", "--ff-only", upstream], cwd=cwd, check=True, **_no_prompt_git_kwargs())
+            merge_attempted = True
+            run_git(git_cmd, ["merge", "--no-edit" if origin_ahead else "--ff-only", upstream],
+                    cwd=cwd, check=True, **_no_prompt_git_kwargs())
     except (OSError, subprocess.SubprocessError) as exc:  # CustodyRefused is an OSError; a timeout too
-        if refused or _commit.settle_failed_tree_move(cwd):
+        abort_ok = True
+        if origin_ahead and merge_attempted and isinstance(exc, subprocess.CalledProcessError):
+            abort_ok = _abort_owned_upstream_merge(git_cmd, cwd, target)
+        settled = refused or _commit.settle_failed_tree_move(cwd)
+        if settled and abort_ok:
             # Back at ``pre``; that is still new code when the origin pull moved first, and disarm
             # then owes the restart for it instead of ``target`` (it hands obligations back only at
             # the run's start commit).
@@ -457,9 +499,13 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path, *, assume_yes: 
         print("  ✗ Failed to pull from upstream. You may need to resolve conflicts manually.")
         if detail := (getattr(exc, "stderr", None) or ("" if isinstance(exc, subprocess.CalledProcessError) else str(exc))):
             print(f"    ({detail})")
+        if not settled or not abort_ok:
+            raise  # an unfinished move must not reach the caller's successful-update path
         return False
     interrupted_pull_marker(cwd).unlink(missing_ok=True)  # git exited 0: whole at what it landed on
-    if (landed := _git_stdout(git_cmd, ["rev-parse", "-q", "--verify", "HEAD"], cwd)) != upstream:
+    landed = _git_stdout(git_cmd, ["rev-parse", "-q", "--verify", "HEAD"], cwd)
+    if landed != upstream and not (origin_ahead and landed and
+            _git_ok(git_cmd, ["merge-base", "--is-ancestor", upstream, landed], cwd)):
         # Not the commit the debt was armed for (O3's check, here): owed for the HEAD it is on, or
         # handed back at the run's start commit; the caller's HEAD check refuses the update.
         _commit.disarm_commit_obligations()
@@ -470,22 +516,27 @@ def _sync_with_upstream_if_needed(git_cmd: list[str], cwd: Path, *, assume_yes: 
     return True
 
 
-def _push_synced_fork(git_cmd: list[str], cwd: Path) -> None:
+def _push_synced_fork(git_cmd: list[str], cwd: Path, *, merged_upstream: bool = False) -> None:
     """Publish an upstream sync to the fork's main once the update is validated.
 
-    Pushes only when local HEAD is upstream/main and strictly ahead of origin/main, i.e. this run
-    (or an earlier one whose push failed) fast-forwarded main from upstream.
+    A validated fast-forward needs no merge opt-in. ``merged_upstream`` also admits the
+    divergent merge this update prepared and passed through the common syntax/rollback guard.
     """
     head = _git_stdout(git_cmd, ["rev-parse", "HEAD"], cwd)
+    if _git_stdout(git_cmd, ["rev-parse", "--abbrev-ref", "HEAD"], cwd) != "main":
+        return
     # Full ref names: a local branch called upstream/main or origin/main must not answer (m2).
     upstream = _git_stdout(git_cmd, ["rev-parse", "-q", "--verify", "refs/remotes/upstream/main^{commit}"], cwd)
     origin = _git_stdout(git_cmd, ["rev-parse", "-q", "--verify", "refs/remotes/origin/main^{commit}"], cwd)
-    if not head or head != upstream or head == origin:
+    if not head or not upstream or head == origin:
+        return
+    if head != upstream and not (merged_upstream and
+            _git_ok(git_cmd, ["merge-base", "--is-ancestor", upstream, head], cwd)):
         return
     if origin and not _git_ok(git_cmd, ["merge-base", "--is-ancestor", origin, head], cwd):
         return
     print("→ Syncing fork...")
-    if _sync_fork_with_upstream(git_cmd, cwd):
+    if _git_ok(git_cmd, ["push", "origin", f"{head}:refs/heads/main"], cwd, network=True):
         print("  ✓ Fork synced with upstream")
     else:
         print(

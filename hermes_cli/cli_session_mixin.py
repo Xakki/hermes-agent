@@ -241,6 +241,8 @@ class CLISessionMixin:
                 msg = t("cli.session.cwd_restored", path=recorded)
             except OSError as e:
                 msg = t("cli.session.cwd_enter_failed", path=recorded, error=e)
+        from hermes_cli.input_history import refresh_input_history
+        refresh_input_history(self)
         _dim_notice(self, msg, quiet)
 
     def _restore_session_yolo(self, session_meta: dict, *, quiet: bool = False) -> None:
@@ -379,15 +381,33 @@ class CLISessionMixin:
         """Return recent CLI sessions for in-chat browsing/resume affordances."""
         if not self._session_db:
             return []
+        import logging
+        logger = logging.getLogger("cli")
         try:
             from hermes_cli.session_listing import query_session_listing
             from hermes_state_sessions import INTERNAL_LISTING_SOURCES
 
-            return query_session_listing(
+            from tui_gateway.git_probe import canonical_project_root
+
+            project_root = canonical_project_root(os.getcwd())
+            rows = query_session_listing(
                 self._session_db, source="cli", current_session_id=self.session_id,
                 include_all_sources=False, include_unnamed=True, limit=limit,
-                exclude_sources=list(INTERNAL_LISTING_SOURCES))
-        except Exception:
+                exclude_sources=[*INTERNAL_LISTING_SOURCES, "kanban", "tool"],
+                project_root=project_root)
+            safe_sources = {"cli", "tui", "desktop", "oneshot", "subagent", "tool", "kanban", "unknown", "cron", "api"}
+            source_counts: dict[str, int] = {}
+            for row in rows:
+                source = str(row.get("source") or "").strip().lower()
+                key = source if source in safe_sources else "other"
+                source_counts[key] = source_counts.get(key, 0) + 1
+            logger.debug("/resume diagnostics visible_count=%d source_counts=%s project_scoped=%s",
+                         len(rows), source_counts, project_root is not None)
+            return rows
+        except Exception as exc:
+            from agent.exception_logging import exception_type_info
+            logger.exception("/resume diagnostics listing_failed error_type=%s", type(exc).__name__,
+                             exc_info=exception_type_info(exc))
             return []
 
     def _show_recent_sessions(self, *, reason: str = "history", limit: int = 10) -> bool:
@@ -566,6 +586,8 @@ class CLISessionMixin:
             _sync_process_session_id, datetime)
         from hermes_cli.cli_model_switch_mixin import _resolve_cli_reasoning
         old_session_id = self.session_id
+        from hermes_cli.interaction_host import invalidate_cli
+        invalidate_cli(self)
         _boundary_snapshot = None
         if self.agent:
             if self.conversation_history:

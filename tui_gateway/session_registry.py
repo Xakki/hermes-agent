@@ -301,6 +301,15 @@ def _start_agent_build(sid: str, session: dict) -> None:
     build_thread.start()
 
 
+def _session_scope_error(params, session, rid):
+    """Reject unowned or cross-project live-session access."""
+    with _profile_db(params) as db:
+        active_root = _active_project_root(params, db)
+    if not active_root or _session_project_root(session) != active_root:
+        return _err(rid, 4008, "session is outside the active project")
+    return None
+
+
 def _sess_nowait(params, rid):
     sid = params.get("session_id") or ""
     s = _sessions.get(sid)
@@ -445,7 +454,8 @@ def _lazy_resume_info(cwd: str, *, model: str = "", provider: str = "", profile:
         model, default_provider = _session_default_route({"profile_home": _profile_home(profile)})
         provider = provider or default_provider
     return {
-        "cwd": cwd, "branch": git_probe.branch(cwd), "project": _project_info_for_cwd(cwd),
+        "cwd": cwd, "input_history_key": git_probe.input_history_key(cwd),
+        "branch": git_probe.branch(cwd), "project": _project_info_for_cwd(cwd),
         **_lazy_info_route({"profile_home": _profile_home(profile)}, {"model": model, "provider": provider} if model else {}),
         "tools": {}, "skills": {}, "lazy": True,
         "desktop_contract": DESKTOP_BACKEND_CONTRACT, "profile_name": _response_profile_name(profile),
@@ -678,6 +688,7 @@ def _session_live_item(sid: str, session: dict, current_sid: str = "") -> dict:
     now = time.time()
     return {
         "current": sid == current_sid, "id": sid,
+        "cwd": session.get("cwd"),
         "last_active": float(session.get("last_active") or session.get("created_at") or now),
         "message_count": len(history),
         "model": str(getattr(agent, "model", "") or _resolve_model()), "preview": preview,
@@ -715,7 +726,8 @@ def _fallback_session_info(session: dict) -> dict:
     # above already follows.
     cwd = _session_cwd(session)
     return {
-        "cwd": cwd, "branch": git_probe.branch(cwd), "project": _project_info_for_cwd(cwd), "lazy": True,
+        "cwd": cwd, "input_history_key": git_probe.input_history_key(cwd),
+        "branch": git_probe.branch(cwd), "project": _project_info_for_cwd(cwd), "lazy": True,
         **_lazy_info_route(session, {}), "skills": {}, "tools": {}, "desktop_contract": DESKTOP_BACKEND_CONTRACT,
     }
 

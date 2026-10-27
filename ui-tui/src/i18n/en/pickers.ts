@@ -109,6 +109,7 @@ export const pickersEn = {
       title: 'Sessions',
       loading: 'loading sessions…',
       modelUnknown: 'model?',
+      directory: 'Directory',
       currentOrDefault: 'current/default',
       liveSessionsOne: (count: number) => `${count} live session`,
       liveSessionsOther: (count: number) => `${count} live sessions`,

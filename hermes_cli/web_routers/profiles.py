@@ -17,6 +17,7 @@ from hermes_cli.web_read_coalescing import coalesced_read
 import inspect
 import json
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -446,6 +447,11 @@ def _sidebar_singleflight_cache(func):
     return wrapped
 
 
+def _trusted_active_project_root(profile):
+    from hermes_cli.web_routers.sessions import _active_project_root
+    return _active_project_root(profile)
+
+
 def _csv_list(value: Optional[str]) -> list[str]:
     return [s.strip() for s in (value or "").split(",") if s.strip()]
 
@@ -466,7 +472,6 @@ def get_profiles_sessions(
         raise HTTPException(status_code=400, detail="archived must be one of: exclude, only, include")
     if order not in ("created", "recent"):
         raise HTTPException(status_code=400, detail="order must be one of: created, recent")
-
     targets = ([_cron_profile_home(profile)] if profile and profile != "all"
                else _profile_targets("GET /api/profiles/sessions"))
 
@@ -488,11 +493,13 @@ def get_profiles_sessions(
     errors: list[dict[str, str]] = []
     now = time.time()
     for name, home in targets:
+        active_project_root = _trusted_active_project_root(name)
         def _read(db, name=name, home=home):
             include_subagents, exclude = subagent_listing_scope(
                 home, source=filters["source"], sources=filters["sources"],
                 exclude_sources=filters["exclude_sources"])
-            scoped = {**filters, "exclude_sources": exclude, "include_subagents": include_subagents}
+            scoped = {**filters, "exclude_sources": exclude, "include_subagents": include_subagents,
+                      "project_root": active_project_root}
             rows = db.list_sessions_rich(
                 limit=per_profile, offset=0, order_by_last_active=order == "recent",
                 # Same SQL-level blob skip as /api/sessions.
@@ -779,13 +786,15 @@ def post_profiles_sessions_pull_requests(body: SessionPrScanBody, profile: Optio
     found: dict[str, dict[str, Any]] = {}
 
     def _read(db):
-        for pr in db.find_pr_url_messages(wanted):
+        owned = [sid for sid in wanted if (db.get_session(sid) or {}).get("project_root") == active_project_root]
+        for pr in db.find_pr_url_messages(owned):
             parsed = _pr_url_from_tool_output(pr["content"])
             if parsed:
                 # Oldest-first, so a later `gh pr create` (the replacement PR) wins.
                 found[pr["session_id"]] = {"number": parsed[0], "url": parsed[1]}
 
     for name, home in _scoped_profile_targets("POST /api/profiles/sessions/pull-requests", profile):
+        active_project_root = _trusted_active_project_root(name)
         _read_profile_db(name, home, None, _read)
 
     # ``scanned``: every id looked at, so the caller can remember "nothing there".

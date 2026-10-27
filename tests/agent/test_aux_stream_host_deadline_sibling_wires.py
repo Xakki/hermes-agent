@@ -143,7 +143,8 @@ def test_anthropic_stream_stops_at_the_host_deadline():
         aux.aux_progress_hook(lambda: ticks.append(1)),
         aux.aux_stream_deadline(time.monotonic() + 0.3),
     ):
-        hook = aux._anthropic_aux_stream_event_hook()
+        from agent.auxiliary_anthropic_events import stream_event_hook
+        hook = stream_event_hook()
         start = time.monotonic()
         with pytest.raises(TimeoutError, match="timed out at the host compression deadline"):
             create_anthropic_message(
@@ -163,7 +164,8 @@ def test_anthropic_stream_honours_an_explicit_hard_cancel():
         aux.aux_progress_hook(lambda: None),
         aux.aux_interrupt_protection(cancel_check=lambda: cancelled["v"]),
     ):
-        hook = aux._anthropic_aux_stream_event_hook()
+        from agent.auxiliary_anthropic_events import stream_event_hook
+        hook = stream_event_hook()
 
         def _flip_after_first(event, _inner=hook):
             cancelled["v"] = True
@@ -181,7 +183,8 @@ def test_anthropic_stream_honours_an_explicit_hard_cancel():
 def test_anthropic_stream_without_host_deadline_runs_to_completion():
     stream = _AnthropicStream(count=5, delay=0)
     with aux.aux_progress_hook(lambda: None):
-        hook = aux._anthropic_aux_stream_event_hook()
+        from agent.auxiliary_anthropic_events import stream_event_hook
+        hook = stream_event_hook()
         message = create_anthropic_message(
             _anthropic_client(stream), {"model": "m", "messages": []},
             on_stream_event=hook,

@@ -271,6 +271,11 @@ def _persisted_session_cwd(session: dict) -> str | None:
     return str(session.get("cwd") or "") or None  # the session's OWN dir, never _session_cwd's gateway-wide fallback
 
 
+def _persisted_project_root(session: dict) -> str | None:
+    cwd = _persisted_session_cwd(session)
+    if not cwd:
+        return None
+    return git_probe.common_repo_root(cwd) or cwd
 def _is_remote_launch_cwd(session: dict | None) -> bool:
     """A cwd nobody picked for a session whose terminal does not run in host directories: an ssh session's, or a
     sandbox backend's (modal, daytona, singularity, sprites, ...) when it is a directory on THIS host: the gateway's
@@ -596,10 +601,8 @@ def _ensure_session_db_row(session: dict) -> bool:
             db.create_session(
                 key, source=_session_source(session), model=row_model, model_config=model_config or None,
                 parent_session_id=session.get("parent_session_id") or None, cwd=_persisted_session_cwd(session),
-                # The login this session was opened under, in the same ``<provider>:<id>`` form the agent is
-                # built with — the row is the only place the identity reaches the store, and the upsert can't
-                # add it later (user_id is set at insert). None (no password provider, legacy token, stdio)
-                # leaves the column empty exactly as before.
+                project_root=_persisted_project_root(session),
+                # The login identity is stored at session creation; absent for legacy-token and stdio auth.
                 user_id=_session_auth_user_id(session),
                 # Self-describing rows: aggregators merging several profile DBs can't rely on which file a row came
                 # from; a NULL is only repaired by the one-shot backfill.

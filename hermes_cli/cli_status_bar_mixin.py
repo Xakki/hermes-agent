@@ -457,9 +457,28 @@ class CLIStatusBarMixin:
         if not title or width < 24:
             return None
         title_width = max(6, min(30, width // 3))
-        badge = f" {cls._trim_status_bar_text(title, title_width - 2)} "
+        title = cls._trim_session_title(title, title_width - 2)
+        badge = f" {title} "
         suffix_width = cls._status_bar_display_width(" ─") + cls._status_bar_display_width(badge)
         return badge, max(0, width - suffix_width)
+
+    @classmethod
+    def _trim_session_title(cls, title: str, max_width: int) -> str:
+        """Cap only the displayed title at 18 characters and its allocated cell width."""
+        if len(title) <= 18 and cls._status_bar_display_width(title) <= max_width:
+            return title
+        marker = "…"
+        marker_width = cls._status_bar_display_width(marker)
+        if max_width < marker_width:
+            return ""
+        out, used = [], 0
+        for char in title:
+            char_width = cls._status_bar_display_width(char)
+            if len(out) >= 17 or used + char_width + marker_width > max_width:
+                break
+            out.append(char)
+            used += char_width
+        return "".join(out).rstrip() + marker
 
     @classmethod
     def _right_align_status_title(cls, text: str, title: str, width: int) -> str:

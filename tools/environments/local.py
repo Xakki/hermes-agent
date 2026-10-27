@@ -293,12 +293,24 @@ def _filter_secret_env(
             out[key] = value
 
 
+def _inject_yolo_env(env: dict) -> None:
+    """Bridge launch authority, never a mutable env flag or the target profile's settings."""
+    from tools.approval import is_approval_bypass_active
+
+    for key in list(env):
+        if key.upper() == "HERMES_YOLO_MODE":
+            del env[key]
+    if is_approval_bypass_active():
+        env["HERMES_YOLO_MODE"] = "1"
+
+
 def _finalize_child_env(env: dict) -> dict:
     """Guards shared by every spawn surface: profile-home propagation, session-context
     bridging, Hermes-owned PYTHONPATH + venv-marker strip, MSYS defaults, delegate_task
     Kanban scrub. Returns the (possibly new) dict."""
     _apply_profile_home(env)
     _inject_session_context_env(env)
+    _inject_yolo_env(env)
     _strip_hermes_owned_pythonpath_and_runtime_markers(env)
     _apply_windows_msys_bash_env_defaults(env)
     from agent.delegation_context import delegated_child_subprocess_env
@@ -382,8 +394,9 @@ def build_subprocess_env(
     """Single factory for child-process envs. ``base=None`` snapshots ``os.environ``.
     ``scrub_secrets=True`` -> :func:`_sanitize_subprocess_env` (profile home inherent,
     ``inherit_profile_home`` ignored). ``scrub_secrets=False`` keeps the base
-    byte-for-byte (git credential flows, ``bws``/``op``); ``inherit_profile_home``
+    otherwise unchanged (git credential flows, ``bws``/``op``); ``inherit_profile_home``
     bridges HERMES_HOME + HOME and ``extra`` is applied last so caller overrides win.
+    Exception: ``HERMES_YOLO_MODE`` is normalized after overrides from launch authority.
     ``strip_launch_profile`` drops the LAUNCH profile's ``.env`` residue from the base first
     (:func:`strip_launch_profile_env`; a no-op unless a routed home is active) so a child that
     acts for a routed profile sees only that profile's declared names, never the launch profile's.
@@ -407,6 +420,7 @@ def build_subprocess_env(
         _apply_profile_home(env)
     if extra:
         env.update(extra)
+    _inject_yolo_env(env)
     from agent.delegation_context import delegated_child_subprocess_env
     return delegated_child_subprocess_env(env)
 
@@ -452,6 +466,8 @@ def served_profile_child_env(
                     "no profile secret scope bound while multiplexing is on; the child would inherit the "
                     "launch profile's credentials. Bind the profile scope (or pass target_home) at the spawn site.")
         env.update((k, v) for k, v in (secrets or {}).items() if v is not None)
+    # Profile residue stripping and secret overlays must not remove or forge launch authority.
+    _inject_yolo_env(env)
     return env
 
 

@@ -1052,9 +1052,6 @@ class CredentialPool(CredentialPoolAdminMixin, CredentialPoolModelCooldownMixin)
             )
             return min(candidates) if candidates else None
 
-    def entries(self) -> list[PooledCredential]:
-        with self._lock:
-            return list(self._entries)
 
     def _is_sole_credential(self) -> bool:
         """DEAD entries never re-enter rotation, so <=1 non-DEAD entry means nothing to rotate to."""

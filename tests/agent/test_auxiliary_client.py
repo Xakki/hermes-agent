@@ -1,6 +1,5 @@
 """Tests for agent.auxiliary_client resolution chain, provider overrides, and model overrides."""
 
-import base64
 import json
 import logging
 import time
@@ -38,30 +37,8 @@ from agent.auxiliary_client import (
     _pool_runtime_base_url,
     _unwrap_data_envelope,
 )
+from tests.agent.auxiliary_client_fixtures import _FakeAnthropicStream, _jwt_with_claims
 
-
-def _jwt_with_claims(claims: dict) -> str:
-    header = base64.urlsafe_b64encode(b'{"alg":"none","typ":"JWT"}').decode().rstrip("=")
-    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
-    return f"{header}.{payload}.sig"
-
-
-class _FakeAnthropicStream:
-    def __init__(self, final_message):
-        self._final_message = final_message
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-    def __iter__(self):
-        # A completed Messages stream ends in message_stop (#121320 gate).
-        yield SimpleNamespace(type="message_stop")
-
-    def get_final_message(self):
-        return self._final_message
 
 
 @pytest.fixture(autouse=True)
@@ -4990,10 +4967,12 @@ class TestNoProgressTimeoutTaskConfigGating:
         """#108104: a REAL config.yaml ``auxiliary.compression.no_progress_timeout`` must set the
         guard's substantive-progress window through the genuine call_llm -> _prepare_aux_request ->
         CodexAuxiliaryClient path (both the first-output and between-output deadlines derive from
-        ``guard.no_progress_timeout``); other tasks keep the 60s default; a non-positive value
+        ``guard.no_progress_timeout``); other tasks keep the canonical guard default; a non-positive value
         is rejected with a warning and falls back to the default."""
         import hermes_yaml as yaml
         from agent import auxiliary_client as aux
+
+        default_window = aux._CodexStreamGuard(SimpleNamespace(close=lambda: None), 600).no_progress_timeout
 
         home = tmp_path / ".hermes"
         home.mkdir()
@@ -5028,17 +5007,20 @@ class TestNoProgressTimeoutTaskConfigGating:
         (home / "config.yaml").write_text(yaml.safe_dump(
             {"auxiliary": {"compression": {"timeout": 600, "no_progress_timeout": 5}}}))
         assert _run("compression") == 5.0
+        assert aux._get_task_no_progress_timeout("compression") == 5.0
         # Per-task: the compression override does not leak into another task (timeout 600 so the
         # min(window, total_timeout) clamp cannot mask the default).
         (home / "config.yaml").write_text(yaml.safe_dump(
             {"auxiliary": {"compression": {"timeout": 600, "no_progress_timeout": 5},
                            "title_generation": {"timeout": 600}}}))
-        assert _run("title_generation") == 60.0
+        assert aux._get_task_no_progress_timeout("title_generation") is None
+        assert _run("title_generation") == default_window
 
         (home / "config.yaml").write_text(yaml.safe_dump(
             {"auxiliary": {"compression": {"timeout": 600, "no_progress_timeout": -3}}}))
         with caplog.at_level(logging.WARNING, logger="agent.auxiliary_client"):
-            assert _run("compression") == 60.0
+            assert _run("compression") == default_window
+            assert aux._get_task_no_progress_timeout("compression") is None
         assert any(r.levelno == logging.WARNING for r in caplog.records)
 
 

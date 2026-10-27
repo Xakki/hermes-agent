@@ -182,7 +182,11 @@ def test_update_and_upstream_network_calls_disable_terminal_prompts(monkeypatch,
 
     def run(cmd, **kwargs):
         calls.append((cmd[1:], kwargs))
-        return subprocess.CompletedProcess(cmd, 0, upstream if "rev-parse" in cmd else "", "")
+        output = ""
+        if "rev-parse" in cmd:
+            output = "main" if "--abbrev-ref" in cmd else (
+                "a" * 40 if "refs/remotes/origin/main^{commit}" in cmd else upstream)
+        return subprocess.CompletedProcess(cmd, 0, output, "")
 
     monkeypatch.setattr(subprocess, "run", run)
     (tmp_path / ".git").mkdir()  # the fork ff's recovery marker lives there: no marker, no move
@@ -191,7 +195,7 @@ def test_update_and_upstream_network_calls_disable_terminal_prompts(monkeypatch,
     from hermes_cli.update_custody import git_subcommand
 
     # The fork push runs only after the update is validated (_push_synced_fork), never inside the sync.
-    update_cmd_git._sync_fork_with_upstream(["git"], tmp_path)
+    update_cmd_git._push_synced_fork(["git"], tmp_path)
     # The fork's fast-forward is local (`merge --ff-only` after the fetch): no credential helper ever
     # runs under the checkout lock fd a mutator inherits (R2).
     network = [(args, kwargs) for args, kwargs in calls if git_subcommand(args) in {"fetch", "pull", "push", "merge"}]
