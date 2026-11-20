@@ -376,15 +376,26 @@ class CLISessionMixin:
         """Return recent CLI sessions for in-chat browsing/resume affordances."""
         if not self._session_db:
             return []
+        from cli import logger
         try:
             from hermes_cli.session_listing import query_session_listing
             from persistence.conversation.sessions import INTERNAL_LISTING_SOURCES
 
-            return query_session_listing(
+            rows = query_session_listing(
                 self._session_db, source="cli", current_session_id=self.session_id,
                 include_all_sources=False, include_unnamed=True, limit=limit,
                 exclude_sources=list(INTERNAL_LISTING_SOURCES))
-        except Exception:
+            safe_sources = {"cli", "tui", "desktop", "oneshot", "subagent", "tool", "kanban", "unknown", "cron", "api"}
+            source_counts: dict[str, int] = {}
+            for row in rows:
+                source = str(row.get("source") or "").strip().lower()
+                key = source if source in safe_sources else "other"
+                source_counts[key] = source_counts.get(key, 0) + 1
+            logger.debug("/resume diagnostics visible_count=%d source_counts=%s",
+                         len(rows), source_counts)
+            return rows
+        except Exception as exc:
+            logger.warning("/resume diagnostics listing_failed error_type=%s", type(exc).__name__)
             return []
 
     def _show_recent_sessions(self, *, reason: str = "history", limit: int = 10) -> bool:

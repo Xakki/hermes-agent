@@ -182,6 +182,7 @@ method("session.branch_stored", params=SessionBranchStoredParams, result=Session
 class SessionResumeParams(SessionParams):
     """``session_id`` is the STORED id (or an exact title); the reply's ``session_id`` is the runtime id."""
 
+    current_session_id: str | None = None
     cols: int | None = None
     source: str | None = None
     lazy: bool = False
@@ -222,6 +223,7 @@ class SessionListParams(ProfileParams):
     title: str | None = None  # exact-title lookup (title as identity); windowless
     limit: int | None = None
     include_hidden: bool = False
+    current_session_id: str | None = None
 
 
 class SessionListRow(Result):

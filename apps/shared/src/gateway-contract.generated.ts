@@ -3296,6 +3296,7 @@ export interface SessionBranchStoredResult {
 export interface SessionResumeParams {
   session_id: string
   profile?: string | null
+  current_session_id?: string | null
   cols?: number | null
   source?: string | null
   lazy?: boolean
@@ -3407,6 +3408,7 @@ export interface SessionListParams {
   title?: string | null
   limit?: number | null
   include_hidden?: boolean
+  current_session_id?: string | null
 }
 export interface SessionListResult {
   sessions: SessionListRow[]
