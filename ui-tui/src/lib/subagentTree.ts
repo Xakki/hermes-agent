@@ -2,6 +2,47 @@ import { t } from '../i18n/runtime.js'
 import type { SubagentAggregate, SubagentNode, SubagentProgress } from '../types.js'
 
 const ROOT_KEY = '__root__'
+const UNKNOWN_MODEL_LABEL = 'unknown model'
+
+export interface SubagentTokenGroup {
+  inputTokens: number
+  model: string
+  outputTokens: number
+  sessionCount: number
+}
+
+const validTokenValue = (value: number | undefined): number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0
+
+/**
+ * Aggregate the raw snapshot exactly once per subagent session. Do not derive
+ * this from tree aggregates: parent nodes already include descendant totals.
+ */
+export function aggregateSubagentTokens(items: readonly SubagentProgress[]): SubagentTokenGroup[] {
+  const groups = new Map<string, SubagentTokenGroup>()
+
+  for (const item of items) {
+    const model = item.model?.trim() || UNKNOWN_MODEL_LABEL
+    const group = groups.get(model) ?? { inputTokens: 0, model, outputTokens: 0, sessionCount: 0 }
+    group.inputTokens += validTokenValue(item.inputTokens)
+    group.outputTokens += validTokenValue(item.outputTokens)
+    group.sessionCount += 1
+    groups.set(model, group)
+  }
+
+  return [...groups.values()].sort(
+    (a, b) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens) || a.model.localeCompare(b.model)
+  )
+}
+
+export function formatSubagentTokenTotal(items: readonly SubagentProgress[]): string {
+  const total = items.reduce(
+    (sum, item) => sum + validTokenValue(item.inputTokens) + validTokenValue(item.outputTokens),
+    0
+  )
+
+  return total > 0 ? `Σ ${fmtTokens(total)} tok` : ''
+}
 
 /**
  * Reconstruct the subagent spawn tree from a flat event-ordered list.
@@ -62,8 +103,8 @@ export function aggregate(item: SubagentProgress, children: readonly SubagentNod
   let descendantCount = 0
   let activeCount = isRunning(item) ? 1 : 0
   let maxDepthFromHere = 0
-  let inputTokens = item.inputTokens ?? 0
-  let outputTokens = item.outputTokens ?? 0
+  let inputTokens = validTokenValue(item.inputTokens)
+  let outputTokens = validTokenValue(item.outputTokens)
   let costUsd = item.costUsd ?? 0
   let filesTouched = (item.filesRead?.length ?? 0) + (item.filesWritten?.length ?? 0)
 

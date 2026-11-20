@@ -30,9 +30,9 @@ import { RESIZE_COALESCE_MS } from '../config/timing.js'
 import { hasLeadGap, prevRenderedMsg } from '../domain/blockLayout.js'
 import { SECTION_NAMES, sectionMode } from '../domain/details.js'
 import { hasPasteChip } from '../domain/pasteExpand.js'
-import { composeTabTitle, fmtProjectCwdBranch, shortCwd } from '../domain/paths.js'
+import { composeTabTitle, fmtAgentStatus, shortCwd } from '../domain/paths.js'
 import { type GatewayClient } from '../gatewayClient.js'
-import { useGitBranch } from '../hooks/useGitBranch.js'
+import { useGitStatus } from '../hooks/useGitStatus.js'
 import { pruneVirtualHeightCache, useVirtualHistory } from '../hooks/useVirtualHistory.js'
 import { t } from '../i18n/runtime.js'
 import { useT } from '../i18n/useT.js'
@@ -1584,14 +1584,11 @@ export function useMainApp(gw: GatewayClient) {
   const appProgress = useMemo(() => ({ showProgressArea }), [showProgressArea])
 
   const cwd = ui.info?.cwd || process.env.HERMES_CWD || process.cwd()
-  const gitBranch = useGitBranch(cwd)
+  const gitStatus = useGitStatus(cwd)
 
   const appStatus = useMemo(
     () => ({
-      // Cap the status-bar cwd/branch label tighter than the shared default so
-      // it doesn't dominate the bar; the status rule reserves the left-side
-      // essentials and truncates this further on narrow terminals.
-      cwdLabel: fmtProjectCwdBranch(cwd, gitBranch, ui.info?.project?.name, 28),
+      cwdLabel: fmtAgentStatus(cwd, gitStatus, ui.info?.project?.name),
       goodVibesTick,
       lastTurnEndedAt: ui.sid ? lastTurnEndedAt : null,
       sessionStartedAt: ui.sid ? sessionStartedAt : null,
@@ -1610,7 +1607,7 @@ export function useMainApp(gw: GatewayClient) {
     }),
     [
       cwd,
-      gitBranch,
+      gitStatus,
       goodVibesTick,
       i18n,
       lastTurnEndedAt,

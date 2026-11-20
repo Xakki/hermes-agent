@@ -43,6 +43,26 @@ export const fmtProjectCwdBranch = (cwd: string, branch: null | string, projectN
   return `${project}${separator}${fmtCwdBranch(cwd, branch, remaining)}`
 }
 
+interface GitStatusLabel {
+  branch: null | string
+  files: number
+  isRepo: boolean
+  lines: number
+}
+
+export const fmtAgentStatus = (
+  cwd: string,
+  git: GitStatusLabel,
+  projectName?: null | string,
+  max = 64
+) => {
+  const dirtyLabel = git.isRepo ? `Δ ${git.files}f/${git.lines}l` : ''
+  const reserved = dirtyLabel.length + (dirtyLabel ? 3 : 0)
+  const workspaceLabel = fmtProjectCwdBranch(cwd, git.branch, projectName, Math.max(12, max - reserved))
+
+  return [workspaceLabel, dirtyLabel].filter(Boolean).join(' · ')
+}
+
 /**
  * Compose the terminal titlebar string:
  *   `<marker> <session name> · <model> · <cwd>`

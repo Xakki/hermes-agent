@@ -15,7 +15,7 @@ import { VERBS } from '../content/verbs.js'
 import { fmtDuration } from '../domain/messages.js'
 import { stickyPromptFromViewport } from '../domain/viewport.js'
 import { messages, t as tr } from '../i18n/runtime.js'
-import { buildSubagentTree, treeTotals, widthByDepth } from '../lib/subagentTree.js'
+import { buildSubagentTree, formatSubagentTokenTotal, treeTotals, widthByDepth } from '../lib/subagentTree.js'
 import { useScrollbarSnapshot, useViewportSnapshot } from '../lib/viewportStore.js'
 import type { Theme } from '../theme.js'
 import type { Msg } from '../types.js'
@@ -368,7 +368,11 @@ export function statusBarSegments(cols: number): StatusBarSegments {
   }
 }
 
-function SpawnHud({ t }: { t: Theme }) {
+export function statusHudFits(availableWidth: number, label: string, prefix = ' │ '): boolean {
+  return availableWidth >= stringWidth(`${prefix}${label}`)
+}
+
+function SpawnHud({ maxWidth, t }: { maxWidth?: number; t: Theme }) {
   // Tight HUD that only appears when the session is actually fanning out.
   // Colour escalates to warn/error as depth or concurrency approaches the cap.
   const delegation = useStore($delegationState)
@@ -419,12 +423,23 @@ function SpawnHud({ t }: { t: Theme }) {
     }
   }
 
+  const tokenTotal = formatSubagentTokenTotal(subagents)
+
+  if (tokenTotal) {
+    pieces.push(tokenTotal)
+  }
+
+  const label = pieces.join(' ')
   const atCap = depthRatio >= 1 || concRatio >= 1
+
+  if (maxWidth != null && !statusHudFits(maxWidth, label, atCap ? ' │ ⚠ ' : undefined)) {
+    return null
+  }
 
   return (
     <Text color={color}>
       {atCap ? ' │ ⚠ ' : ' │ '}
-      {pieces.join(' ')}
+      {label}
     </Text>
   )
 }
@@ -476,6 +491,8 @@ function IdleSince({ endedAt }: { endedAt: number }) {
 // `wire` is the level the route actually sends (session.info.reasoning_effort_wire):
 // a clamped Hermes step such as `ultra` reads `ultra→max`, like the CLI's
 // "ultra (sends max on this route)", never as a distinct wire level (#61634).
+// The effort always renders — including the default `medium` — so the bar
+// states the active reasoning level instead of hiding it.
 const effortLabel = (effort?: string, wire?: string) => {
   const value = String(effort ?? '')
     .trim()
@@ -485,22 +502,15 @@ const effortLabel = (effort?: string, wire?: string) => {
     .trim()
     .toLowerCase()
 
-  if (!value || value === 'medium' || value === 'normal' || value === 'default') {
+  if (!value) {
     return ''
   }
 
   return sent && sent !== value ? `${value}→${sent}` : value
 }
 
-const shortModelLabel = (model: string) =>
-  model
-    .split('/')
-    .pop()!
-    .replace(/^claude[-_]/, '')
-    .replace(/^anthropic[-_]/, '')
-    .replace(/[-_]/g, ' ')
-    .replace(/\b(\d+)\s+(\d+)\b/g, '$1.$2')
-    .trim()
+// The model KEY verbatim (config key, e.g. `gpt-6.2-sol`), provider prefix stripped.
+const shortModelLabel = (model: string) => model.split('/').pop()!.trim()
 
 const modelLabel = (model: string, effort?: string, fast?: boolean, effortWire?: string) =>
   [shortModelLabel(model), effortLabel(effort, effortWire), fast ? tr('status.fast') : ''].filter(Boolean).join(' ')
@@ -871,10 +881,9 @@ export function StatusRule({
             {devCreditsText}
           </Text>
         ) : null}
-        {/* SpawnHud isn't part of the tail budget (its width is dynamic), so it
-            renders last — any overflow truncates the HUD itself rather than the
-            budgeted segments before it. It self-hides when no delegation runs. */}
-        <SpawnHud t={t} />
+        {/* SpawnHud is the lowest-priority tail segment. It receives the
+            remaining budget and self-hides when the dynamic label cannot fit. */}
+        <SpawnHud maxWidth={tailBudget} t={t} />
       </Box>
 
       {rightWidth > 0 ? (
