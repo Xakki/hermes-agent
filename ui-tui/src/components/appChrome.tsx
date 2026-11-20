@@ -492,6 +492,8 @@ function IdleSince({ endedAt }: { endedAt: number }) {
 // `wire` is the level the route actually sends (session.info.reasoning_effort_wire):
 // a clamped Hermes step such as `ultra` reads `ultra→max`, like the CLI's
 // "ultra (sends max on this route)", never as a distinct wire level (#61634).
+// The effort always renders — including the default `medium` — so the bar
+// states the active reasoning level instead of hiding it.
 const effortLabel = (effort?: string, wire?: string) => {
   const value = String(effort ?? '')
     .trim()
@@ -501,22 +503,15 @@ const effortLabel = (effort?: string, wire?: string) => {
     .trim()
     .toLowerCase()
 
-  if (!value || value === 'medium' || value === 'normal' || value === 'default') {
+  if (!value) {
     return ''
   }
 
   return sent && sent !== value ? `${value}→${sent}` : value
 }
 
-const shortModelLabel = (model: string) =>
-  model
-    .split('/')
-    .pop()!
-    .replace(/^claude[-_]/, '')
-    .replace(/^anthropic[-_]/, '')
-    .replace(/[-_]/g, ' ')
-    .replace(/\b(\d+)\s+(\d+)\b/g, '$1.$2')
-    .trim()
+// The model KEY verbatim (config key, e.g. `gpt-6.2-sol`), provider prefix stripped.
+const shortModelLabel = (model: string) => model.split('/').pop()!.trim()
 
 const modelLabel = (model: string, effort?: string, fast?: boolean, effortWire?: string) =>
   [shortModelLabel(model), effortLabel(effort, effortWire), fast ? tr('status.fast') : ''].filter(Boolean).join(' ')
@@ -564,8 +559,10 @@ function usageStatusLabels(usage: Usage) {
   return {
     cacheHitText: typeof usage.cache_hit_pct === 'number' ? `◎ ${usage.cache_hit_pct}%` : '',
     compressions: typeof usage.compressions === 'number' ? usage.compressions : 0,
-    devCreditsText: typeof usage.dev_credits_spent_micros === 'number'
-      ? `Δ ${(usage.dev_credits_spent_micros / 10000).toFixed(1)}¢` : '',
+    devCreditsText:
+      typeof usage.dev_credits_spent_micros === 'number'
+        ? `Δ ${(usage.dev_credits_spent_micros / 10000).toFixed(1)}¢`
+        : '',
     latencyText: typeof usage.avg_latency_s === 'number' ? `◷ ${usage.avg_latency_s.toFixed(1)}s` : '',
     subagentCount: typeof usage.active_subagents === 'number' ? usage.active_subagents : 0,
     tpsText: typeof usage.avg_tps === 'number' ? `↑ ${Math.round(usage.avg_tps)} t/s` : ''
@@ -585,9 +582,7 @@ function statusSlotWidth(
   noticeWidth: number | undefined,
   status: string
 ) {
-  return busy
-    ? busyIndicatorWidth(indicatorStyle, activeTurn)
-    : noticeWidth ?? stringWidth(status)
+  return busy ? busyIndicatorWidth(indicatorStyle, activeTurn) : (noticeWidth ?? stringWidth(status))
 }
 
 export function StatusRule({
@@ -665,7 +660,13 @@ export function StatusRule({
   // yields first. The busy face width depends on the active /indicator style
   // (kaomoji is wide + verb; unicode is a bare 1-col spinner). When a notice
   // occupies the slot it reserves only `noticeReserve` (it shrinks/truncates).
-  const slotWidth = statusSlotWidth(busy, indicatorStyle, turnStartedAt != null, showNotice ? noticeReserve : undefined, status)
+  const slotWidth = statusSlotWidth(
+    busy,
+    indicatorStyle,
+    turnStartedAt != null,
+    showNotice ? noticeReserve : undefined,
+    status
+  )
 
   const essentialWidth =
     stringWidth('─ ') +

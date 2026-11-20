@@ -114,8 +114,17 @@ describe('StatusRule model label', () => {
     // Verbatim (or not-yet-stamped) wire levels make no claim.
     expect(
       textContent(StatusRule({ ...baseProps, modelReasoningEffort: 'high', modelReasoningEffortWire: 'high' }))
-    ).toContain('opus 4.8 high')
-    expect(textContent(StatusRule({ ...baseProps, modelReasoningEffort: 'ultra' }))).toContain('opus 4.8 ultra')
+    ).toContain('opus-4.8 high')
+    expect(textContent(StatusRule({ ...baseProps, modelReasoningEffort: 'ultra' }))).toContain('opus-4.8 ultra')
+  })
+
+  it('always states the effort, including the default medium', () => {
+    expect(textContent(StatusRule({ ...baseProps, modelReasoningEffort: 'medium' }))).toContain('opus-4.8 medium')
+  })
+
+  it('shows the model key verbatim, provider prefix stripped', () => {
+    expect(textContent(StatusRule({ ...baseProps, model: 'anthropic/claude-opus-5.5' }))).toContain('claude-opus-5.5')
+    expect(textContent(StatusRule({ ...baseProps, model: 'openai-codex/gpt-6.2-sol' }))).toContain('gpt-6.2-sol')
   })
 })
 
@@ -318,7 +327,7 @@ describe('StatusRule session count click target', () => {
 
     // Must-keep essentials survive intact …
     expect(rendered).toContain('ready')
-    expect(rendered).toContain('opus 4.8')
+    expect(rendered).toContain('opus-4.8')
     // … while the low-value tail (session count) is dropped, not truncated.
     expect(rendered).not.toContain('3 sessions')
   })
@@ -337,7 +346,7 @@ describe('StatusRule credits notice render priority', () => {
     expect(rendered).toContain('✕ credits exhausted')
     expect(rendered).not.toContain('ready')
     // … but model + context stay visible.
-    expect(rendered).toContain('opus 4.8')
+    expect(rendered).toContain('opus-4.8')
     expect(rendered).toContain('50k')
   })
 
@@ -354,7 +363,7 @@ describe('StatusRule credits notice render priority', () => {
     // Notice must NOT render while busy.
     expect(rendered).not.toContain('⚠ 90% used')
     // Model still visible.
-    expect(rendered).toContain('opus 4.8')
+    expect(rendered).toContain('opus-4.8')
   })
 })
 
