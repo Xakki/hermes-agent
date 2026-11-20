@@ -340,6 +340,7 @@ async def connect_gateway(endpoint=None, subject=None, *, max_size=8 * 1024 * 10
     from hermes_constants import get_hermes_home
     from hermes_cli.gateway_runtime import attachable, ensure_gateway_runtime, gateway_profile_home
     from hermes_cli.gateway_runtime_discovery import DiscoveryError
+    from hermes_cli.web_server_boundary import _LOOPBACK_HOST_VALUES
     from urllib.parse import urlsplit
 
     remote = "" if endpoint is not None else os.environ.get("HERMES_TUI_GATEWAY_URL", "").strip()
@@ -377,12 +378,17 @@ async def connect_gateway(endpoint=None, subject=None, *, max_size=8 * 1024 * 10
             raise GatewayUnavailableError(f"Gateway inaccessible: {exc.reason}" + (f" ({detail})" if detail else ""),
                                           "inaccessible", exc.reason) from exc
         url, protocols = gateway_ws_target(endpoint, ticket)
+    # Match the native listener: loop stalls must not drop healthy local viewers. An explicit
+    # URL may be an SSH tunnel even on loopback, so it retains websockets' default heartbeat.
+    keepalive: dict = {}
+    if endpoint is not None and urlsplit(url).hostname in _LOOPBACK_HOST_VALUES:
+        keepalive["ping_interval"] = None
     try:
         # The gateway is a loopback (or explicitly named) peer, never something to route through the
         # user's HTTP(S) proxy; websockets>=14 reads HTTP_PROXY/HTTPS_PROXY by default and a proxy that
         # cannot reach 127.0.0.1 turns every launch into a 10 s open timeout.
         async with connect(url, subprotocols=protocols, open_timeout=10, max_size=max_size,
-                           proxy=None) as ws:
+                           proxy=None, **keepalive) as ws:
             if protocols and ws.subprotocol != GATEWAY_WS_PROTOCOL:
                 raise GatewayClientError("Gateway protocol mismatch; update/restart required")
             async with GatewayClient(ws) as client:
