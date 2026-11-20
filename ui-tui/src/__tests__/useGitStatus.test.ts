@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -31,6 +31,15 @@ afterEach(() => {
 })
 
 describe('resolveGitStatus', () => {
+  it('counts untracked files from a nested working directory', async () => {
+    const root = initRepo()
+    const cwd = join(root, 'sub')
+    mkdirSync(cwd)
+    writeFileSync(join(cwd, 'new.txt'), 'one\ntwo\n')
+    await expect(resolveGitStatus(root)).resolves.toMatchObject({ files: 1, lines: 2 })
+    await expect(resolveGitStatus(cwd)).resolves.toMatchObject({ files: 1, lines: 2 })
+  })
+
   it('reports the branch and staged, unstaged, and untracked changes', async () => {
     const cwd = initRepo()
     writeFileSync(join(cwd, 'staged.txt'), 'one\ntwo\n')
