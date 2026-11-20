@@ -43,7 +43,9 @@ _SIGNATURE_MAX_DEPTH = 6
 
 def clear_skills_cache() -> None:
     """Drop the scanned catalog so the next listing re-scans (explicit reloads must not wait out the TTL)."""
+    from tools.skills_tool_metadata import clear_skill_metadata_cache
     _SKILLS_CACHE.clear()
+    clear_skill_metadata_cache()
 
 
 def _dir_tree_signature(root, sig, depth=_SIGNATURE_MAX_DEPTH) -> None:
@@ -233,6 +235,7 @@ def _skill_catalog(*, skip_disabled: bool = False, include_hidden: bool = False)
     collecting candidates, so it asks for hidden rows too."""
     from agent.skill_utils import (
         TIER_PROJECT, is_disabled_entry, iter_project_skill_files, iter_skill_index_files, resolve_skill_catalog)
+    from tools.skills_tool_metadata import read_skill_metadata
     cache_key = ("with_disabled" if skip_disabled else "filtered", include_hidden)
     disabled = set() if skip_disabled else _get_disabled_skill_names()
     roots, _ = skill_search_dirs()
@@ -250,11 +253,10 @@ def _skill_catalog(*, skip_disabled: bool = False, include_hidden: bool = False)
             if any(part in _EXCLUDED_SKILL_DIRS for part in skill_md.parts):
                 continue
             try:
-                frontmatter, body = _parse_frontmatter(_read_skill_text(skill_md)[:4000])
+                frontmatter, fallback = read_skill_metadata(skill_md)
                 description = frontmatter.get("description", "")
                 if not description:  # first non-heading body line (a null value stays null)
-                    description = next((ln for ln in map(str.strip, body.strip().split("\n"))
-                                        if ln and not ln.startswith("#")), description)
+                    description = fallback or description
                 scanned.append({
                     "name": frontmatter.get("name", skill_md.parent.name)[:MAX_NAME_LENGTH],
                     "description": _truncate_description(description),
