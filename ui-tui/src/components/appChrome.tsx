@@ -491,6 +491,8 @@ function IdleSince({ endedAt }: { endedAt: number }) {
 // `wire` is the level the route actually sends (session.info.reasoning_effort_wire):
 // a clamped Hermes step such as `ultra` reads `ultra→max`, like the CLI's
 // "ultra (sends max on this route)", never as a distinct wire level (#61634).
+// The effort always renders — including the default `medium` — so the bar
+// states the active reasoning level instead of hiding it.
 const effortLabel = (effort?: string, wire?: string) => {
   const value = String(effort ?? '')
     .trim()
@@ -500,22 +502,15 @@ const effortLabel = (effort?: string, wire?: string) => {
     .trim()
     .toLowerCase()
 
-  if (!value || value === 'medium' || value === 'normal' || value === 'default') {
+  if (!value) {
     return ''
   }
 
   return sent && sent !== value ? `${value}→${sent}` : value
 }
 
-const shortModelLabel = (model: string) =>
-  model
-    .split('/')
-    .pop()!
-    .replace(/^claude[-_]/, '')
-    .replace(/^anthropic[-_]/, '')
-    .replace(/[-_]/g, ' ')
-    .replace(/\b(\d+)\s+(\d+)\b/g, '$1.$2')
-    .trim()
+// The model KEY verbatim (config key, e.g. `gpt-6.2-sol`), provider prefix stripped.
+const shortModelLabel = (model: string) => model.split('/').pop()!.trim()
 
 const modelLabel = (model: string, effort?: string, fast?: boolean, effortWire?: string) =>
   [shortModelLabel(model), effortLabel(effort, effortWire), fast ? tr('status.fast') : ''].filter(Boolean).join(' ')
