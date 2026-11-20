@@ -357,7 +357,7 @@ function TokenTotals({ groups, t }: { groups: ReturnType<typeof aggregateSubagen
   }
 
   return (
-    <OverlaySection count={groups.length} defaultOpen t={t} title="Token usage">
+    <OverlaySection count={groups.length} defaultOpen id="tokenUsage" t={t} title="Token usage">
       {groups.map(group => {
         const total = group.inputTokens + group.outputTokens
 
