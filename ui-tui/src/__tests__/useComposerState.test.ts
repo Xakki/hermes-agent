@@ -19,6 +19,7 @@ describe('looksLikeDroppedPath', () => {
 
   it('recognizes paths with spaces (not backslash-escaped)', () => {
     expect(looksLikeDroppedPath('/var/folders/x/T/TemporaryItems/Screenshot 2026-04-21 at 1.04.43 PM.png')).toBe(true)
+    expect(looksLikeDroppedPath('/Screenshot 2026.png')).toBe(true)
   })
 
   it('rejects empty/whitespace-only input', () => {
