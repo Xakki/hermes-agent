@@ -11,8 +11,12 @@ import { getUiState, patchUiState } from '../uiStore.js'
 import type { SlashRunCtx } from './types.js'
 
 interface MutationGateway {
-  request: (method: string, params?: Record<string, unknown>) => Promise<unknown>
+  request: (method: string, params?: Record<string, unknown>, timeoutMs?: number) => Promise<unknown>
 }
+
+// The owner replies after summarization and commit, which can outlive the generic RPC deadline.
+// Allow the same compression budget as Desktop, with room for publication after the summary.
+const SESSION_COMPRESS_TIMEOUT_MS = 660_000
 
 // Keep the original CAS tuple after a lost reply. Reissuing the same command
 // must query that receipt, not silently authorize another write at a new revision.
@@ -147,7 +151,9 @@ export async function mutateCanonical(
   let result
 
   try {
-    result = asRpcResult(await gw.request('session.mutate', params))
+    result = asRpcResult(await (operation === 'compress'
+      ? gw.request('session.mutate', params, SESSION_COMPRESS_TIMEOUT_MS)
+      : gw.request('session.mutate', params)))
 
     if (!result) {
       throw new Error(t('session.common.invalidResponse', 'session.mutate'))
