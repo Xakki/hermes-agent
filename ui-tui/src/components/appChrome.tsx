@@ -631,7 +631,14 @@ export function StatusRule({
     stringWidth(modelText) +
     (ctxLabel ? stringWidth(' │ ') + stringWidth(ctxLabel) : 0)
 
-  const rightLabel = sessionTitle && ok('title') ? ` ${sessionTitle} ` : cwdLabel
+  const titleLabel = sessionTitle && ok('title') ? ` ${sessionTitle} ` : ''
+  const workspaceSeparator = ' · '
+  const titleWidth = stringWidth(titleLabel)
+  const bothLabels = `${cwdLabel}${workspaceSeparator}${titleLabel}`
+  const workspaceRoom = statusRuleWidths(cols, bothLabels, essentialWidth).rightWidth -
+    titleWidth - stringWidth(workspaceSeparator)
+  const showWorkspace = !!cwdLabel && (!titleLabel || workspaceRoom >= Math.min(12, stringWidth(cwdLabel)))
+  const rightLabel = titleLabel && showWorkspace ? bothLabels : titleLabel || cwdLabel
   const { leftWidth, rightWidth, separatorWidth } = statusRuleWidths(cols, rightLabel, essentialWidth)
 
   // Whole-segment progressive disclosure for the tail: a segment renders only
@@ -890,9 +897,17 @@ export function StatusRule({
         <>
           <Text color={t.color.border}>{separatorWidth >= 3 ? ' ─ ' : ' '}</Text>
           <Box flexShrink={0} width={rightWidth}>
-            <Text bold={!!sessionTitle} color={sessionTitle ? t.color.accent : t.color.label} wrap="truncate-end">
-              {rightLabel}
-            </Text>
+            {showWorkspace && (
+              <Box width={titleLabel ? workspaceRoom : rightWidth} flexShrink={0}>
+                <Text color={t.color.label} wrap="truncate-start">{cwdLabel}</Text>
+              </Box>
+            )}
+            {titleLabel && (
+              <>
+                {showWorkspace && <Text color={t.color.muted}>{workspaceSeparator}</Text>}
+                <Text bold color={t.color.accent} wrap="truncate-end">{titleLabel}</Text>
+              </>
+            )}
           </Box>
         </>
       ) : null}

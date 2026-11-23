@@ -220,14 +220,6 @@ def turn_footer(summary: str) -> str:
 
 # ── live region (prompt_toolkit fragments, redrawn every frame) ─────────────────────────────
 
-def _cwd_label() -> str:
-    cwd = os.getenv("TERMINAL_CWD") or os.getcwd()
-    home = os.path.expanduser("~")
-    short = "~" + cwd[len(home):] if cwd == home or cwd.startswith(home + os.sep) else cwd
-    from hermes_cli.status_bar_git import current_git_branch
-    branch = current_git_branch(cwd)
-    return f"{short} ({branch})" if branch else short
-
 
 def activity_text(cli) -> str:
     """What the agent is doing: the classic spinner's text (kaomoji face or tool emoji included)."""
@@ -349,11 +341,13 @@ def _status_line_fragments(cli) -> list:
     used_left = sum(cli._status_bar_display_width(text) for _, text in left)
     used_right = sum(cli._status_bar_display_width(text) for _, text in right)
     room = width - used_left - used_right - 6
-    if field_set is None and room >= 12:  # cwd takes whatever the hints leave, trimmed from the left
-        cwd = _cwd_label()
-        cwd = cwd if len(cwd) <= room else "…" + cwd[-(room - 1):]
-        left += [(dim, " · "), (dim, cwd)]
-        used_left += 3 + cli._status_bar_display_width(cwd)
+    workspace = cli._status_workspace_label(field_set, room)
+    if workspace:
+        if left:
+            left.append((dim, " · "))
+            used_left += 3
+        left.append((dim, workspace))
+        used_left += cli._status_bar_display_width(workspace)
     if right and used_left + used_right + 2 > width:
         right, used_right = [], 0
     pad = [("", " " * max(1, width - used_left - used_right - 1))] if right else []

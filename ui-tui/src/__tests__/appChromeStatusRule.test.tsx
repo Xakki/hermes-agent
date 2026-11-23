@@ -149,17 +149,17 @@ describe('StatusRule session title', () => {
     }
   })
 
-  it('pins the named session at the far-right edge instead of the cwd label', () => {
+  it('keeps workspace and branch alongside the right-aligned title when they fit', () => {
     const element = StatusRule({
       ...baseProps,
+      cwdLabel: '~/repo/sub (feature/current)',
       sessionTitle: 'weekly-digest'
     })
 
     const rendered = textContent(element)
     const title = findElementWithText(element, 'weekly-digest')
 
-    expect(rendered).toContain('weekly-digest')
-    expect(rendered).not.toContain('~/repo')
+    expect(rendered).toMatch(/~\/repo\/sub \(feature\/current\).*weekly-digest\s*$/)
     // Regression for issue #82465: a raw, full-saturation accent-hue
     // background (e.g. #FFBF00 on DARK_SEEDS) paired with statusFg (a
     // near-white tone never designed to sit on it) rendered at roughly a
@@ -169,6 +169,20 @@ describe('StatusRule session title', () => {
     // fill elsewhere (fills are always softened, e.g. activeRow).
     expect(title?.props.backgroundColor).toBeUndefined()
     expect(title?.props.color).toBe(DEFAULT_THEME.color.accent)
+  })
+
+  it('lets workspace yield before the title, model and status on a narrow terminal', () => {
+    const rendered = textContent(StatusRule({
+      ...baseProps,
+      cols: 35,
+      cwdLabel: '~/projects/repo/sub (feature/current)',
+      sessionTitle: 'digest'
+    }))
+
+    expect(rendered).toContain('ready')
+    expect(rendered).toContain('opus-4.8')
+    expect(rendered).toContain('digest')
+    expect(rendered).not.toContain('feature/current')
   })
 })
 

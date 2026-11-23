@@ -26,6 +26,11 @@ describe('shortCwd', () => {
 
   it('leaves non-HOME paths alone', () => {
     expect(shortCwd('/tmp/work')).toBe('/tmp/work')
+    expect(shortCwd('/Users/bb-other/proj')).toBe('/Users/bb-other/proj')
+  })
+
+  it('renders directory controls as visible replacements on one line', () => {
+    expect(shortCwd('/tmp/one\ntwo\x1b')).toBe('/tmp/one�two�')
   })
 
   it('truncates long paths from the left with ellipsis', () => {
