@@ -70,7 +70,7 @@ it('canonical model, branch and compression use generation-fenced owner mutation
       expected_generation: 4,
       operation,
       payload
-    })
+    }, ...(operation === 'compress' ? [expect.any(Number)] : []))
 
     if (operation === 'model') {
       expect(getUiState().info?.execution_generation).toBe(5)
