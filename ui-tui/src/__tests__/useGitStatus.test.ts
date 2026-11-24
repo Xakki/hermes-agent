@@ -2,10 +2,15 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PassThrough } from 'node:stream'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { renderSync } from '@hermes/ink'
+import { createElement } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { MAX_UNTRACKED_FILE_BYTES, MAX_UNTRACKED_FILES, MAX_UNTRACKED_TOTAL_LINES, resolveGitStatus } from '../hooks/useGitStatus.js'
+import {
+  MAX_UNTRACKED_FILE_BYTES, MAX_UNTRACKED_FILES, MAX_UNTRACKED_TOTAL_LINES, resolveGitStatus, useGitStatus
+} from '../hooks/useGitStatus.js'
 
 const dirs: string[] = []
 
@@ -81,12 +86,11 @@ describe('resolveGitStatus', () => {
     })
   })
 
-  it('uses the short commit when HEAD is detached', async () => {
+  it('omits the branch when HEAD is detached', async () => {
     const cwd = initRepo()
-    const commit = git(cwd, 'rev-parse', '--short', 'HEAD')
     git(cwd, 'checkout', '--detach')
 
-    await expect(resolveGitStatus(cwd)).resolves.toMatchObject({ branch: commit, isRepo: true })
+    await expect(resolveGitStatus(cwd)).resolves.toMatchObject({ branch: null, isRepo: true })
   })
 
   it('counts staged and unstaged deltas even when the worktree matches HEAD', async () => {
@@ -109,4 +113,34 @@ describe('resolveGitStatus', () => {
       lines: 0
     })
   })
+})
+
+it('never renders a branch from the previous cwd while switching repositories', async () => {
+  const first = initRepo()
+  const second = initRepo()
+  git(second, 'branch', '-m', 'other')
+  const observed: Array<string | null> = []
+  const Probe = ({ cwd }: { cwd: string }) => {
+    observed.push(useGitStatus(cwd).branch)
+
+    return null
+  }
+  const stdout = Object.assign(new PassThrough(), { columns: 100, isTTY: false, rows: 20 })
+  const instance = renderSync(createElement(Probe, { cwd: first }), {
+    patchConsole: false,
+    stderr: new PassThrough() as NodeJS.WriteStream,
+    stdin: new PassThrough() as NodeJS.ReadStream,
+    stdout: stdout as NodeJS.WriteStream
+  })
+  try {
+    await vi.waitFor(() => expect(observed.at(-1)).toBe('main'), { timeout: 3_000 })
+    observed.length = 0
+    instance.rerender(createElement(Probe, { cwd: second }))
+    await vi.waitFor(() => expect(observed.at(-1)).toBe('other'), { timeout: 3_000 })
+    expect(observed[0]).toBeNull()
+    expect(observed).not.toContain('main')
+  } finally {
+    instance.unmount()
+    instance.cleanup()
+  }
 })

@@ -142,7 +142,7 @@ def test_status_line_keeps_every_classic_status_bar_field(monkeypatch):
     monkeypatch.setattr(HermesCLI, "_vim_mode_label", lambda self: "")
     monkeypatch.setattr(HermesCLI, "_cache_hit_rate", lambda self, snap, precision=1: (28.9, "◎ 28.9%"))
     monkeypatch.setattr("hermes_cli.cli_modern_layout.hint_pairs", lambda cli: [])
-    monkeypatch.setattr("hermes_cli.cli_modern_layout._cwd_label", lambda: "~")
+    monkeypatch.setenv("TERMINAL_CWD", "/example/workspace")
     line = "".join(text for _, text in cli._get_status_bar_fragments())
     for piece in ("73.2K/1M", "7%", "◎ 28.9%", "◷ 9.0s", "↑ 61 t/s", "⛓ 3", "6h 43m", "⏱ 10s"):
         assert piece in line, (piece, line)

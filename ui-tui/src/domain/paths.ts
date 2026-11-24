@@ -1,6 +1,10 @@
+// A directory can contain literal terminal controls or line breaks.
+const oneLine = (value: string) => value.replace(/[\p{Cc}\p{Bidi_Control}\u2028\u2029]/gu, '�')
+
 export const shortCwd = (cwd: string, max = 28) => {
   const h = process.env.HOME
-  const p = h && cwd.startsWith(h) ? `~${cwd.slice(h.length)}` : cwd
+  const inHome = h && (cwd === h || cwd.startsWith(`${h}/`) || cwd.startsWith(`${h}\\`))
+  const p = oneLine(inHome ? `~${cwd.slice(h.length)}` : cwd)
 
   return p.length <= max ? p : `…${p.slice(-(max - 1))}`
 }
@@ -10,13 +14,14 @@ export const fmtCwdBranch = (cwd: string, branch: null | string, max = 40) => {
     return shortCwd(cwd, max)
   }
 
-  const tag = ` (${branch.length > 16 ? `…${branch.slice(-15)}` : branch})`
+  const label = oneLine(branch)
+  const tag = ` (${label.length > 16 ? `…${label.slice(-15)}` : label})`
 
   return `${shortCwd(cwd, Math.max(8, max - tag.length))}${tag}`
 }
 
 export const shortProject = (projectName: string, max = 18) => {
-  const name = projectName.trim()
+  const name = oneLine(projectName).trim()
 
   return name.length <= max ? name : `${name.slice(0, Math.max(1, max - 1))}…`
 }

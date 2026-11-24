@@ -68,7 +68,7 @@ import { setSlashCatalog, useSlashCatalog } from './slashCatalog.js'
 import { captureDestination, isCurrentDestination, type SubmissionDestination } from './submissionDestination.js'
 import { turnController } from './turnController.js'
 import { patchTurnState, useTurnSelector } from './turnStore.js'
-import { $uiState, getUiState, patchUiState } from './uiStore.js'
+import { $uiState, getUiState, patchUiState, sessionCwd } from './uiStore.js'
 import { useApprovalAnswers } from './useApprovalAnswers.js'
 import { useBatteryPoll } from './useBatteryPoll.js'
 import { useComposerState } from './useComposerState.js'
@@ -1583,8 +1583,9 @@ export function useMainApp(gw: GatewayClient) {
   // randomly disappear when the live tail scrolls offscreen.
   const appProgress = useMemo(() => ({ showProgressArea }), [showProgressArea])
 
-  const cwd = ui.info?.cwd || process.env.HERMES_CWD || process.cwd()
-  const gitStatus = useGitStatus(cwd)
+  const cwd = ui.info?.cwd || (ui.sid ? '' : sessionCwd() || '')
+  const terminalBackend = ui.info?.terminal_backend
+  const gitStatus = useGitStatus(!terminalBackend || terminalBackend === 'local' ? cwd : '')
 
   const appStatus = useMemo(
     () => ({

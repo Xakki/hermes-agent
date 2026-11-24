@@ -16,6 +16,11 @@ export interface GitStatus {
   lines: number
 }
 
+interface GitStatusSnapshot {
+  cwd: string
+  status: GitStatus
+}
+
 const EMPTY: GitStatus = { branch: null, files: 0, isRepo: false, lines: 0 }
 const cache = new Map<string, { at: number; status: GitStatus }>()
 const inflight = new Map<string, Promise<GitStatus>>()
@@ -131,9 +136,8 @@ export const resolveGitStatus = async (cwd: string): Promise<GitStatus> => {
     return EMPTY
   }
 
-  const [branchOutput, commitOutput, statusOutput, stagedDiff, unstagedDiff, rootOutput] = await Promise.all([
+  const [branchOutput, statusOutput, stagedDiff, unstagedDiff, rootOutput] = await Promise.all([
     runGit(cwd, ['branch', '--show-current']),
-    runGit(cwd, ['rev-parse', '--short', 'HEAD']),
     runGit(cwd, ['status', '--porcelain=v2', '-z', '--untracked-files=all']),
     runGit(cwd, ['diff', '--cached', '--numstat', '--']),
     runGit(cwd, ['diff', '--numstat', '--']),
@@ -148,7 +152,7 @@ export const resolveGitStatus = async (cwd: string): Promise<GitStatus> => {
   const untrackedLines = await untrackedTextLines(rootOutput.replace(/\r?\n$/, ''), untracked)
 
   return {
-    branch: branchOutput?.trim() || commitOutput?.trim() || null,
+    branch: branchOutput?.trim() || null,
     files,
     isRepo: true,
     lines: numstatLines(stagedDiff) + numstatLines(unstagedDiff) + untrackedLines
@@ -169,9 +173,13 @@ const fetchStatus = (cwd: string): Promise<GitStatus> => {
 }
 
 export function useGitStatus(cwd: string): GitStatus {
-  const [status, setStatus] = useState<GitStatus>(() => cache.get(cwd)?.status ?? EMPTY)
+  const [snapshot, setSnapshot] = useState<GitStatusSnapshot>(() => ({ cwd, status: cache.get(cwd)?.status ?? EMPTY }))
 
   useEffect(() => {
+    if (!cwd) {
+      return
+    }
+
     let cancelled = false
 
     const tick = async () => {
@@ -179,7 +187,9 @@ export function useGitStatus(cwd: string): GitStatus {
 
       if (hit && Date.now() - hit.at < TTL_MS) {
         if (!cancelled) {
-          setStatus(hit.status)
+          setSnapshot((prev: GitStatusSnapshot) =>
+            prev.cwd === cwd && prev.status === hit.status ? prev : { cwd, status: hit.status }
+          )
         }
 
         return
@@ -189,7 +199,7 @@ export function useGitStatus(cwd: string): GitStatus {
       cache.set(cwd, { at: Date.now(), status: next })
 
       if (!cancelled) {
-        setStatus(next)
+        setSnapshot({ cwd, status: next })
       }
     }
 
@@ -202,5 +212,5 @@ export function useGitStatus(cwd: string): GitStatus {
     }
   }, [cwd])
 
-  return status
+  return cwd && snapshot.cwd === cwd ? snapshot.status : EMPTY
 }

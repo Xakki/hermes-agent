@@ -8,6 +8,7 @@ inside each method (``from cli import ...``) — never at module load time (impo
 from __future__ import annotations
 
 import errno
+import os
 import shutil
 import threading
 import time
@@ -16,6 +17,8 @@ from agent.i18n import t
 from agent import terminal_image
 from agent.pet import render as pet_render
 from hermes_cli.banner import _format_context_length
+from hermes_cli.gateway_session_store import GatewaySessionStore
+from hermes_cli.status_bar_git import current_git_branch, format_workspace_label
 from typing import Any, Dict, Optional
 
 _SB = "class:status-bar"
@@ -230,7 +233,6 @@ class CLIStatusBarMixin:
             "battery_label": "",
             "battery_category": "dim",
             "focus_label": "",  # /focus badge: the reduced-output mode is never invisible.
-            "git_branch": "",
             "goal_active": False,
             "goal_turns_used": 0,
             "goal_max_turns": 0}
@@ -243,16 +245,6 @@ class CLIStatusBarMixin:
         except Exception:
             pass
 
-        # Git branch (⎇) — opt-in via display.status_bar.fields, so the filesystem probe
-        # (TTL-cached in status_bar_git) only runs when the user asked for the segment.
-        try:
-            _fields = self._get_status_bar_field_set()
-            if _fields is not None and "git_branch" in _fields:
-                from hermes_cli.status_bar_git import current_git_branch
-
-                snapshot["git_branch"] = current_git_branch()
-        except Exception:
-            pass
 
         # Battery reads are memoised inside agent.battery, so per-repaint polling is cheap.
         if getattr(self, "_battery_visible", False):
@@ -997,7 +989,7 @@ class CLIStatusBarMixin:
         ``CLI_CONFIG``; no per-render YAML parse). ``None`` = not customized, show everything.
 
         Fields: model, context_detail, context_pct, cache_hit, latency, tps, compressions,
-        bg_tasks, bg_processes, bg_subagents, goal, git_branch (opt-in only), duration,
+        bg_tasks, bg_processes, bg_subagents, goal, cwd, git_branch, duration,
         prompt_elapsed, idle_since, focus, yolo, stash, battery, title, total_tokens
         (opt-in only). Order is fixed; the config controls visibility only.
         """
@@ -1015,6 +1007,26 @@ class CLIStatusBarMixin:
             result = None
         self._status_bar_field_set_cache = result
         return result
+
+    def _status_workspace_label(self, field_set, width: int) -> str:
+        """Read the attached session's cached cwd, never an RPC from prompt_toolkit."""
+        show_cwd = field_set is None or "cwd" in field_set
+        show_branch = field_set is None or "git_branch" in field_set
+        if width < 6 or not (show_cwd or show_branch):
+            return ""
+        store = getattr(self, "_session_db", None)
+        state = (store.connection.states.get(getattr(self, "session_id", ""))
+                 if isinstance(store, GatewaySessionStore) else None)
+        info = state.info if state is not None else {}
+        cwd = info.get("cwd") or os.getenv("TERMINAL_CWD")
+        if not cwd:
+            try:
+                cwd = os.getcwd()
+            except OSError:
+                return ""
+        backend = info.get("terminal_backend") or os.getenv("TERMINAL_ENV") or "local"
+        branch = current_git_branch(cwd) if show_branch and backend == "local" else ""
+        return format_workspace_label(cwd if show_cwd else "", branch, width)
 
     def _status_bar_segments(
         self, snapshot, width: int, field_set, yolo_active: bool, *, styled: bool) -> list:
@@ -1087,9 +1099,6 @@ class CLIStatusBarMixin:
             add_count("bg_subagents", "active_background_subagents", "⛓")
         if goal_segment:
             add("goal", _STRONG, goal_segment)
-        git_branch = snapshot.get("git_branch") or ""
-        if git_branch:
-            add("git_branch", _DIM, f"⎇ {git_branch}")
         if not narrow:
             add("duration", _DIM, duration_label)
         if wide:
@@ -1129,6 +1138,11 @@ class CLIStatusBarMixin:
                 text = f"{parts[0]} │ " + " · ".join(parts[1:]) if battery_label else " · ".join(parts)
             else:
                 text = (" · " if width < 76 else " │ ").join(parts)
+            badge = self._status_title_badge(session_title, width)
+            left_width = badge[1] if badge else width
+            workspace = self._status_workspace_label(field_set, left_width - self._status_bar_display_width(text) - 3)
+            if workspace:
+                text += (" · " if width < 76 else " │ ") + workspace
             return self._right_align_status_title(text, session_title, width)
         except Exception:
             return f"☤ {self.model if getattr(self, 'model', None) else 'Hermes'}"
@@ -1169,15 +1183,22 @@ class CLIStatusBarMixin:
                 stash_indicator = ""
             if stash_indicator and _ok("stash"):
                 frags.extend([(_DIM, " · "), (_STRONG, stash_indicator)])
-            frags.append((_SB, " "))  # one-cell right margin
             # Battery is the first element when enabled: prepend ahead of the ☤ marker.
             battery_label = snapshot.get("battery_label") or ""
             if battery_label and _ok("battery"):
                 battery_style = self._battery_status_style(snapshot.get("battery_category", "dim"))
                 frags[0:0] = [(_SB, " "), (battery_style, battery_label), (_DIM, " │")]
 
-            frags = self._right_align_status_title_fragments(frags, session_title, width)
             vim_label = self._vim_mode_label()
+            vim_width = self._status_bar_display_width(f" │ {vim_label} ") if vim_label else 0
+            badge = self._status_title_badge(session_title, width)
+            left_width = min(width - vim_width, badge[1]) if badge else width - vim_width
+            used = sum(self._status_bar_display_width(text) for _, text in frags)
+            workspace = self._status_workspace_label(field_set, left_width - used - 4)
+            if workspace:
+                frags.extend([(_DIM, sep), (_DIM, workspace)])
+            frags.append((_SB, " "))  # one-cell right margin
+            frags = self._right_align_status_title_fragments(frags, session_title, width)
             if vim_label:
                 frags.extend([(_DIM, " │ "), (_STRONG, vim_label), (_SB, " ")])
             total_width = sum(self._status_bar_display_width(text) for _, text in frags)
