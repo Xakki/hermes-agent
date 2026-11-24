@@ -15,6 +15,7 @@ import { ConnectionSetupOverlay } from './connectionSetupOverlay.js'
 import { ConnectorsOverlay } from './connectorsOverlay.js'
 import { SecretPrompt, SudoPrompt, VaultCodePrompt, VaultSaveLoginPrompt, VaultUnlockPrompt } from './maskedPrompt.js'
 import { ModelPicker } from './modelPicker.js'
+import { NextActionPrompt } from './nextActionPrompt.js'
 import { OverlayHint } from './overlayControls.js'
 import { listRowStyle } from './overlayPrimitives.js'
 import { PetPicker } from './petPicker.js'
@@ -182,6 +183,15 @@ export function PromptZone({
     return (
       <PromptCell cols={cols} id="confirm">
         <ConfirmPrompt onCancel={onCancel} onConfirm={onConfirm} req={req} t={theme} />
+      </PromptCell>
+    )
+  }
+
+  if (overlay.nextAction && !overlay.clarify && !overlay.sudo && !overlay.secret &&
+      !overlay.vaultUnlock && !overlay.vaultCode && !overlay.vaultSaveLogin) {
+    return (
+      <PromptCell cols={cols} id="next-action">
+        <NextActionPrompt key={overlay.nextAction.id} card={overlay.nextAction} />
       </PromptCell>
     )
   }

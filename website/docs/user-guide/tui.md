@@ -287,6 +287,26 @@ global `details_mode`. To reshape the layout:
 Anything set explicitly in `display.sections` wins over the defaults, so
 existing configs keep working unchanged.
 
+## Next actions
+
+After a successful conversation turn, the TUI can show a next-action card when the session is idle. Use the arrow keys and Enter to choose explicitly, or Esc to close it. **Continue** sends a regular prompt to resume the current task; **Show changes** runs the existing read-only `/diff`. The card expires after 10 minutes without taking any action. Hiding the countdown does not change that deadline.
+
+Add text actions to the owning profile's `config.yaml`:
+
+```yaml
+interaction:
+  show_countdown: true
+  menu:
+    - id: summarize_changes
+      label: Summarize changes
+      description: Ask for a short, read-only summary
+      enabled: true
+      handler: prompt
+      prompt: Summarize what changed in this task. Do not edit files.
+```
+
+The owner accepts up to eight custom actions, each with a distinct lowercase ID (letters, digits, underscores or hyphens; must start with a letter). Invalid or disabled entries are omitted. The built-in IDs `continue`, `review_changes`, and `close`, and the reserved IDs `new_task`, `stop`, `once`, and `always`, can't be redefined. Custom entries only submit text as normal prompts, under existing permissions and approvals; slash commands, shell shortcuts, and attachment-reference prefixes are not accepted as configured prompts. The card does not discover new tasks or change approval settings.
+
 ## Sessions
 
 Sessions are shared between the TUI and the classic CLI — both write to the same `~/.hermes/state.db`. You can start a session in one, resume in the other. The session picker surfaces sessions from both sources, with a source tag.

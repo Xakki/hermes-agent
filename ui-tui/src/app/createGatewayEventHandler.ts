@@ -49,6 +49,7 @@ import { takePastes } from './pasteStore.js'
 import { markBubbleShown, newlyStartedRows } from './pendingBubbles.js'
 import { flashGoodVibes, flashPet } from './petFlashStore.js'
 import { forgetServerRequest } from './serverRequestStore.js'
+import { closeNextAction, showNextAction } from './nextAction.js'
 import { noteCanonicalCompletion } from './slash/canonicalSessionCommands.js'
 import {
   mutateCanonicalSession,
@@ -1207,6 +1208,19 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     }
 
     switch (ev.type) {
+      case 'interaction.next_action':
+        if (sid && ev.session_id === sid && ev.payload) {
+          showNextAction(sid, ev.payload, rpc, sys)
+        }
+
+        return
+
+      case 'interaction.next_action_closed':
+        if (sid && ev.session_id === sid && ev.payload) {
+          closeNextAction(ev.payload.id)
+        }
+
+        return
       case 'connection.request':
         if (ev.payload) {
           applyConnectionRequest(ev.payload)
@@ -1295,6 +1309,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
 
       case 'message.start':
+        closeNextAction()
         resetAgentsNudgeTurnState()
         turnController.startMessage()
 
