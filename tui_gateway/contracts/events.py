@@ -48,6 +48,27 @@ class SkinPayload(OpenPayload):
     help_header: str = ""
 
 
+class NextActionItem(Payload):
+    id: str
+    label: str
+    description: str
+
+
+class NextActionOfferPayload(Payload):
+    id: str
+    deadline_ms: int
+    show_countdown: bool
+    actions: list[NextActionItem]
+
+
+class NextActionClosedPayload(Payload):
+    id: str
+
+
+event("interaction.next_action", NextActionOfferPayload, doc="Explicit next actions for an idle session.")
+event("interaction.next_action_closed", NextActionClosedPayload, doc="The owner consumed the next-action offer.")
+
+
 class GatewayReadyPayload(Payload):
     """``tui_gateway/entry.py`` (stdio) / ``tui_gateway/ws.py`` (WebSocket) first frame."""
 

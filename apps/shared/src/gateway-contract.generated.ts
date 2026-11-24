@@ -5068,6 +5068,14 @@ export interface SkinPayload {
   help_header?: string
   [key: string]: unknown
 }
+export interface NextActionRespondParams {
+  session_id: string
+  offer_id: string
+  action_id: string
+}
+export interface NextActionRespondResult {
+  output?: string | null
+}
 export interface ClarifyRespondParams {
   session_id: string
   execution_generation: number
@@ -5924,6 +5932,20 @@ export interface DisplayInstallDonePayload {
   profile_key: string
   code: number
   status: DisplayStatus
+}
+export interface NextActionOfferPayload {
+  id: string
+  deadline_ms: number
+  show_countdown: boolean
+  actions: NextActionItem[]
+}
+export interface NextActionItem {
+  id: string
+  label: string
+  description: string
+}
+export interface NextActionClosedPayload {
+  id: string
 }
 /** ``tui_gateway/entry.py`` (stdio) / ``tui_gateway/ws.py`` (WebSocket) first frame. */
 export interface GatewayReadyPayload {
@@ -7209,6 +7231,8 @@ export interface CanonicalRpcMethods {
   'groups.peer.revoke': { params: CanonicalGroupsPeerRevokeParams; result: GroupsPeerRevokeResult }
   'groups.retry': { params: CanonicalRoomAttemptParams; result: GroupsRetryResult }
   'image.attach_bytes': { params: ImageAttachBytesParams; result: CanonicalAttachedImageResult }
+  /** Consume one explicit, unexpired next-action offer in the owned idle session. */
+  'interaction.next_action.respond': { params: NextActionRespondParams; result: NextActionRespondResult }
   /** Native-owner only: admit the dispatcher's current claim on a kanban task. */
   'kanban.run': { params: KanbanRunParams; result: KanbanRunResult }
   'profiles.list': { params: CanonicalProfilesParams; result: CanonicalProfilesResult }
@@ -7287,6 +7311,7 @@ export const CANONICAL_RPC_METHODS = [
   'groups.peer.revoke',
   'groups.retry',
   'image.attach_bytes',
+  'interaction.next_action.respond',
   'kanban.run',
   'profiles.list',
   'prompt.cancel',
@@ -7421,6 +7446,10 @@ export interface BackendGatewayEventMap {
   'gateway.ready': GatewayReadyPayload
   /** A Group Chat log, task or live status moved; an open room re-reads its log delta and groups.state. */
   'groups.changed': GroupsChangedPayload
+  /** Explicit next actions for an idle session. */
+  'interaction.next_action': NextActionOfferPayload
+  /** The owner consumed the next-action offer. */
+  'interaction.next_action_closed': NextActionClosedPayload
   /** The turn ended: final text, usage and outcome. */
   'message.complete': MessageCompletePayload
   /** One streamed chunk of the assistant reply (null text: segment boundary). */
@@ -7563,6 +7592,8 @@ export const GATEWAY_EVENT_TYPES = [
   'free_tier.challenge',
   'gateway.ready',
   'groups.changed',
+  'interaction.next_action',
+  'interaction.next_action_closed',
   'message.complete',
   'message.delta',
   'message.interim',

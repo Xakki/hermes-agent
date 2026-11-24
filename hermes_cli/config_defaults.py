@@ -20,6 +20,7 @@ LEGACY_VERCEL_RUNTIME = "node24"  # the seeded pre-49 default, never a user choi
 
 
 DEFAULT_CONFIG = {
+    "interaction": {"show_countdown": True, "menu": []},
     "model": "",
     "providers": {},
     "fallback_providers": [],
