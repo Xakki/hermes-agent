@@ -12,6 +12,53 @@ def _make_skill(parent: Path, name: str) -> None:
     )
 
 
+def test_same_scope_concurrent_lookups_build_once(tmp_path, monkeypatch):
+    """Both callers resolve the exact same key before the first map is published."""
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+
+    import agent.skill_commands as sc
+    import tools.skills_tool as st
+
+    _make_skill(tmp_path, "coalesced")
+    monkeypatch.setattr(st, "SKILLS_DIR", tmp_path)
+    monkeypatch.setattr(sc, "_skill_commands_by_key", {})
+    monkeypatch.setattr(sc, "_resolve_skill_commands_platform", lambda: None)
+    monkeypatch.setattr(sc, "_resolve_skill_commands_home", lambda: "same-home")
+    monkeypatch.setattr(sc, "_resolve_skill_commands_project", lambda: "same-project")
+    st.clear_skills_cache()
+    entered = threading.Event()
+    second_lookup = threading.Event()
+    release = threading.Event()
+    original_scan = sc.scan_skill_commands
+    calls = []
+
+    def home():
+        if entered.is_set():
+            second_lookup.set()
+        return "same-home"
+
+    def parked_scan():
+        calls.append(threading.get_ident())
+        entered.set()
+        assert release.wait(timeout=10)
+        return original_scan()
+
+    monkeypatch.setattr(sc, "_resolve_skill_commands_home", home)
+    monkeypatch.setattr(sc, "scan_skill_commands", parked_scan)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(sc.get_skill_commands)
+        try:
+            assert entered.wait(timeout=10)
+            second = pool.submit(sc.get_skill_commands)
+            assert second_lookup.wait(timeout=10)
+        finally:
+            release.set()
+        a, b = first.result(timeout=10), second.result(timeout=10)
+    assert set(a) == set(b) == {"/coalesced"}
+    assert len(calls) == 1, "identical scope built concurrently more than once"
+
+
 def test_cache_survives_platform_empty_string_none_flapping(tmp_path):
     """When platform flaps between "" and None, both share the same cache slot.
 

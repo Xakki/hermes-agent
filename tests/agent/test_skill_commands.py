@@ -468,6 +468,9 @@ class TestScanSkillCommands:
         with patch("tools.skills_tool.SKILLS_DIR", tmp_path), patch(
             "tools.skills_tool._parse_frontmatter", observing_parse
         ):
+            # Force I/O so the observer exercises publication during a rebuild,
+            # rather than correctly reusing the metadata from the first scan.
+            _skills_tool.clear_skills_cache()
             scan_skill_commands()
 
         # Every mid-scan observation shows the complete previous map, never a
