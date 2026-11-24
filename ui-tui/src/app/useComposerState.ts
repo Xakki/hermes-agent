@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -113,9 +114,8 @@ export function looksLikeDroppedPath(text: string): boolean {
     return true
   }
 
-  // Bare absolute paths (start with /) — require a second '/' or a '.' to avoid
-  // false positives on short strings like "/api" or "/help" which would trigger
-  // unnecessary RPC round-trips.
+  // Bare absolute paths need a second '/' or '.' to exclude short slash commands.
+  // Paths with spaces remain candidates; the consumer resolves command-shaped ambiguity locally.
   if (trimmed.startsWith('/')) {
     const rest = trimmed.slice(1)
 
@@ -545,20 +545,36 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
     [attachImageToken, captureDraft, gw, resolveAttachment, sys]
   )
 
-  const handleResolvedPaste = useCallback(
-    async ({ bracketed, cursor, text, value }: Omit<PasteEvent, 'hotkey'>): Promise<ComposerPasteResult | null> => {
-      const destination = captureDestination()
-      const draft = captureDraft(value)
-      const current = () => isCurrentDestination(destination) && isFresh(draft)
-      const cleanedText = stripTrailingPasteNewlines(text)
+  const resolveDroppedPaste = useCallback(
+    async (
+      cleanedText: string,
+      value: string,
+      cursor: number,
+      destination: SubmissionDestination,
+      draft: DraftMark,
+      current: () => boolean,
+      sid: string | null
+    ): Promise<ComposerPasteResult | null> => {
+      // A command argument can contain dots or paths. Only treat that ambiguous
+      // shape as a drop when the complete string names a real local file; an
+      // unavailable Gateway must not hold ordinary command text behind attachment RPCs.
+      const commandShapedPath = /^\/[^/.\s\\]+\s/.test(cleanedText)
+      const dropCandidate = looksLikeDroppedPath(cleanedText)
 
-      if (!cleanedText || !/[^\n]/.test(cleanedText)) {
-        return bracketed ? pasteClipboardImage(value, cursor, true) : null
+      const probeDrop =
+        sid &&
+        dropCandidate &&
+        (!commandShapedPath ||
+          (await stat(cleanedText).then(
+            info => info.isFile(),
+            () => false
+          )))
+
+      if (!current()) {
+        return null
       }
 
-      const sid = getUiState().sid
-
-      if (sid && looksLikeDroppedPath(cleanedText)) {
+      if (sid && probeDrop) {
         try {
           const next = await resolveAttachment<ImageAttachResponse & { path?: string; mime?: string }>(
             destination,
@@ -601,6 +617,29 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
         }
       }
 
+      return null
+    },
+    [attachImageToken, gw, insertLanding, resolveAttachment]
+  )
+
+  const handleResolvedPaste = useCallback(
+    async ({ bracketed, cursor, text, value }: Omit<PasteEvent, 'hotkey'>): Promise<ComposerPasteResult | null> => {
+      const destination = captureDestination()
+      const draft = captureDraft(value)
+      const current = () => isCurrentDestination(destination) && isFresh(draft)
+      const cleanedText = stripTrailingPasteNewlines(text)
+
+      if (!cleanedText || !/[^\n]/.test(cleanedText)) {
+        return bracketed ? pasteClipboardImage(value, cursor, true) : null
+      }
+
+      const sid = getUiState().sid
+      const dropped = await resolveDroppedPaste(cleanedText, value, cursor, destination, draft, current, sid)
+
+      if (dropped) {
+        return dropped
+      }
+
       if (!current()) {
         return null
       }
@@ -633,7 +672,7 @@ export function useComposerState({ gw, submitRef, sys }: UseComposerStateOptions
 
       return inserted
     },
-    [attachImageToken, captureDraft, gw, insertLanding, isFresh, pasteClipboardImage, resolveAttachment, setComposerTokens]
+    [captureDraft, gw, isFresh, pasteClipboardImage, resolveDroppedPaste, setComposerTokens]
   )
 
   const handleTextPaste = useCallback(
