@@ -44,12 +44,12 @@ import {
 import { reportGatewayStartTimeout } from './gatewayStartTimeout.js'
 import type { GatewayEventHandlerContext, NoticeLevel } from './interfaces.js'
 import { applyControlSnapshot } from './loopStatus.js'
+import { closeNextAction, showNextAction } from './nextAction.js'
 import { getOverlayState, patchOverlayState, SENSITIVE_PROMPTS } from './overlayStore.js'
 import { takePastes } from './pasteStore.js'
 import { markBubbleShown, newlyStartedRows } from './pendingBubbles.js'
 import { flashGoodVibes, flashPet } from './petFlashStore.js'
 import { forgetServerRequest } from './serverRequestStore.js'
-import { closeNextAction, showNextAction } from './nextAction.js'
 import { noteCanonicalCompletion } from './slash/canonicalSessionCommands.js'
 import {
   mutateCanonicalSession,
@@ -566,10 +566,10 @@ function handleErrorEvent(
     return
   }
 
-  turnController.recordError()
-  flashPet('failed')
-
   const message = String(payload?.message || t('gatewayMsg.error.unknown'))
+
+  turnController.recordError(message)
+  flashPet('failed')
 
   turnController.pushActivity(message, 'error')
 

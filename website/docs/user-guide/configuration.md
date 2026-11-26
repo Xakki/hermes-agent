@@ -908,6 +908,17 @@ skills:
 
 Resolved once per session when the system prompt is first built (so the prompt stays cache-stable; edits apply to the next session). Missing or disabled skills warn and are skipped; `--ignore-rules` / `HERMES_IGNORE_RULES=1` suppresses the list. Profile-scoped. See [CLI — persistent auto-load](./cli.md#persistent-auto-load-via-config).
 
+### Skill index description width
+
+The system prompt lists every skill as `name: description`, and that description is the main signal the model uses to pick a skill. Each row shows the first 60 characters by default. Raise it when your skills put their trigger phrases past character 60:
+
+```yaml
+skills:
+  index_desc_limit: 200   # default: 60; accepted range 60–1024
+```
+
+Longer rows cost prompt tokens on every session (about one token per four extra characters, per skill whose description is longer than 60). `skill_manage`, `/learn` and the curator use the same width, so the agent may write descriptions up to it. Bundled skills still follow the 60-character authoring standard. Applies to new sessions; profile-scoped.
+
 ### Guard on agent-created skill writes
 
 When the agent uses `skill_manage` to create, edit, patch, or delete a skill, Hermes can optionally scan the new/updated content for dangerous keyword patterns (credential harvesting, obvious prompt injection, exfil instructions). The scanner is **off by default** — real agent workflows that legitimately touch `~/.ssh/` or mention `$OPENAI_API_KEY` were tripping the heuristic too often. Turn it back on if you want the scanner to prompt you before the agent's skill writes land:
@@ -1595,7 +1606,7 @@ A keep-alive that goes out while a tool call is still running is a separate side
 
 If the clock cannot vouch for the window (`unknown` or `assumed` on `/context`), nothing is warmed and nothing is compacted at the cache edge. A keep-alive is sent only when its cache read, plus the output it may generate (1 token, or 16 on GPT-5/o-series) and any per-request fee, costs less than the full re-send it prevents and the keep-alives of one idle set, or of one tool wait, together cost no more than that re-send; there is no fixed dollar minimum, so cheap models are warmed too. It also needs known cache prices (an unpriced or subscription-included route is never warmed) and a cached prompt of at least 1,024 tokens (no smaller prompt is cached). Route ceilings apply: a route capped at `5m` is warmed on the 5-minute schedule. Requests with budget-based extended thinking are never warmed because a 1-token cap would change the budget Anthropic keys the cache on. A keep-alive only goes out through a client that really sends the small cap: native Gemini raises any cap to 65,535 tokens when thinking is on, so those chats are not warmed (with thinking off they are, at 1 token), and a long-decode budget is dropped from the replay. Every stop is logged at INFO (`prompt cache warming stopped: <reason>` in `agent.log`); keep-alives count toward the session totals (`session_cache_warm_calls`, `task=cache_warm` usage rows) but never enter the conversation, and a cache-edge compaction is recorded as a `cache_expiry` compression.
 
-Every compaction (automatic, prepared, `/compress`, gateway hygiene and the cache-edge one) summarizes the original tool results first, so the summary reads what the tools actually returned. Only after the summary is written does it save each tool result it removed or shortened to `$HERMES_HOME/cache/pruned/`, byte for byte, once, and leave a `— full result: <path>` pointer in its place, so the model can still reach the exact output; short and duplicate results the summary drops are saved too. Planning whether to compact writes nothing, and a summary that fails writes nothing. The committed summary ends with an `Archived tool output` list naming every saved file, so no file loses its last reference (the retention sweep keeps files a stored message names). A shortened result whose file cannot be written (disk full, read-only home) stays whole; one the summary replaces is then kept only by the summary and the original rows in `state.db`, and a warning is logged. The built-in sandboxed backends (docker, modal, ssh, daytona, vercel_sandbox) get the same archive at the path the sandbox reads (see above). On a backend that does not publish `cache/pruned` (plugin backends, a hosted sandbox) tool output is summarized and shortened without an archive: the removed text is gone from the live context (the original rows stay in `state.db`).
+Every compaction (automatic, prepared, `/compress`, gateway hygiene and the cache-edge one) summarizes the original tool results first, so the summary reads what the tools actually returned. Only after the summary is written does it save each tool result it removed or shortened to `$HERMES_HOME/cache/pruned/`, byte for byte, once, and leave a `— full result: <path>` pointer in its place, so the model can still reach the exact output; short and duplicate results the summary drops are saved too. Planning whether to compact writes nothing, and a summary that fails writes nothing. The committed summary ends with an `Archived tool output` list naming every saved file that would otherwise leave the live context (no kept message and no part of the generated summary still names it), so no file loses its last reference (the retention sweep keeps files a stored message names); an earlier summary's list is not repeated once that summary is stored in `state.db`, where it stays. A shortened result whose file cannot be written (disk full, read-only home) stays whole; one the summary replaces is then kept only by the summary and the original rows in `state.db`, and a warning is logged. The built-in sandboxed backends (docker, modal, ssh, daytona, vercel_sandbox) get the same archive at the path the sandbox reads (see above). On a backend that does not publish `cache/pruned` (plugin backends, a hosted sandbox) tool output is summarized and shortened without an archive: the removed text is gone from the live context (the original rows stay in `state.db`).
 
 ## Auxiliary Models
 
@@ -2413,6 +2424,8 @@ display:
   # notification; other terminals ignore it) and, inside Warp (TERM_PROGRAM=WarpTerminal with the CLI-agent
   # protocol advertised), a warp://cli-agent OSC 777 event (`stop` on completion, `permission_request` on
   # blocking prompts) so Warp's tab status and notification mailbox track Hermes. No extra keys needed.
+  program_status: true    # CLI + TUI: OSC 7501 Program Status reports (idle, working, blocked on approval/question/credential,
+                          # done, error) so terminals that track them show each Hermes tab's state; others ignore it
   show_reasoning: true    # Show model reasoning/thinking above each response (default: true; toggle with /reasoning show|hide). On a gateway reply that was streamed, it follows the answer as its own message
   streaming: false        # Stream tokens to terminal as they arrive (real-time output)
   show_cost: false        # Show estimated $ cost in the CLI status bar
