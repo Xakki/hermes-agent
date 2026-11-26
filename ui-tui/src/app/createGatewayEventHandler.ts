@@ -566,10 +566,10 @@ function handleErrorEvent(
     return
   }
 
-  turnController.recordError()
-  flashPet('failed')
-
   const message = String(payload?.message || t('gatewayMsg.error.unknown'))
+
+  turnController.recordError(message)
+  flashPet('failed')
 
   turnController.pushActivity(message, 'error')
 

@@ -12,12 +12,15 @@ viewer's response frame.
 from __future__ import annotations
 
 import contextlib
+import logging
 import threading
 import time
 import uuid
 
 from tools.clarify_batch import settle_batch
 from tui_gateway.server_requests import MASKED_PROMPT_METHODS
+
+logger = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT_S = 120  # main: ``_ask("sudo", ..., timeout=120)``
 _POLL_S = 0.25
@@ -84,11 +87,15 @@ def is_response_frame(frame) -> bool:
             and frame["id"].startswith("srq-") and ("result" in frame or "error" in frame))
 
 
-def resolve(frame, *, session_ok=lambda session_id, events: True) -> bool:
+def resolve(frame, *, session_ok=lambda session_id, events: True, answered=None) -> bool:
     """Settle the open request *frame* answers; False when nothing (here) waits for that id.
     ``session_ok(session_id, events)`` lets the caller refuse an answer from a connection not entitled
     to that session: the caller's own authority must own ``events``, the stream the request was sent on
-    (session ids are only unique per profile, and ``_open`` is process-wide)."""
+    (session ids are only unique per profile, and ``_open`` is process-wide). ``answered(session_id)``
+    runs, before the waiter wakes, when the frame is a result (not an error, so no decline; a skip or
+    cancel result counts) to a request a reconnecting viewer is handed again (not an automatic window
+    request: reads, a preview click, the tour, a theme apply). A failure in it is logged and changes
+    nothing about the settlement."""
     with _lock:
         pending = _open.get(frame["id"])
         if pending is None or not session_ok(pending.session_id, pending.events):
@@ -96,14 +103,19 @@ def resolve(frame, *, session_ok=lambda session_id, events: True) -> bool:
         if _expired(pending):  # The authorization check can contend before the response commits.
             return False
         _open.pop(frame["id"], None)
-        result = frame.get("result") if "error" not in frame else None
-        if pending.qids is not None:
-            # A viewer can supply answers, not the owner's timeout provenance.
-            result = _settle_clarify(pending, result)
-        value = result.get("value") if isinstance(result, dict) else ""
-        pending.value = value if isinstance(value, str) else ""
-        pending.result = result if isinstance(result, dict) else None
-        pending.event.set()
+    result = frame.get("result") if "error" not in frame else None
+    if pending.qids is not None:
+        # A viewer can supply answers, not the owner's timeout provenance.
+        result = _settle_clarify(pending, result)
+    value = result.get("value") if isinstance(result, dict) else ""
+    pending.value = value if isinstance(value, str) else ""
+    pending.result = result if isinstance(result, dict) else None
+    if answered is not None and pending.replay and "error" not in frame:
+        try:
+            answered(pending.session_id)
+        except Exception:  # health: allow BLE001 -- observing an answer never changes its settlement
+            logger.debug("answered() failed for %s", frame["id"], exc_info=True)
+    pending.event.set()
     return True
 
 
@@ -215,7 +227,8 @@ def _ask(events, session_id, method, params, *, cancelled, timeout, qids=None, r
         pending.params["deadline_ms"] = int((time.time() + timeout) * 1000)
     with _lock:
         _open[request_id] = pending
-    events.fanout.write({"jsonrpc": "2.0", "id": request_id, "method": method, "params": pending.params})
+    request_params = pending.params
+    events.fanout.write({"jsonrpc": "2.0", "id": request_id, "method": method, "params": request_params})
     if method in MASKED_PROMPT_METHODS and timeout is not None and timeout > 0:
         # This is a display projection of the existing polling wait, not a new expiry check.
         deadline_ms = int((time.time() + timeout) * 1000)
@@ -227,6 +240,8 @@ def _ask(events, session_id, method, params, *, cancelled, timeout, qids=None, r
             with contextlib.suppress(Exception):
                 events.publish(session_id, {"id": request_id, "method": method, "deadline_ms": deadline_ms},
                                event_type="request.deadline")
+    from gateway import session_prompt_hooks
+    hooked = session_prompt_hooks.request_opened(events, session_id, request_id, method, request_params, replay)
     waited = 0.0
     reason = "timeout"
     while not pending.event.is_set():
@@ -258,6 +273,7 @@ def _ask(events, session_id, method, params, *, cancelled, timeout, qids=None, r
         with contextlib.suppress(Exception):
             events.publish(session_id, {"id": request_id, "method": method, "reason": reason},
                            event_type="request.cancel")
+        session_prompt_hooks.request_settled(hooked, reason)
         return pending if pending.qids is not None else None
     # Settled by a viewer (a response frame or the last ``clarify.lock``): every OTHER viewer still
     # shows the card, and a classic CLI is parked inside its modal callback. Withdraw it everywhere
@@ -266,4 +282,5 @@ def _ask(events, session_id, method, params, *, cancelled, timeout, qids=None, r
     with contextlib.suppress(Exception):
         events.publish(session_id, {"id": request_id, "method": method, "reason": "resolved"},
                        event_type="request.cancel")
+    session_prompt_hooks.request_settled(hooked, "resolved")
     return pending
