@@ -197,6 +197,9 @@ async def snapshot_info(authority, ref):
     policy = policy_for_source(authority.runner, authority.sessions[ref.session_id].source)
     agent = authority.agent(ref)
     inventory = await asyncio.to_thread(session_inventory, authority, policy, agent, info.get("cwd"))
+    if cwd := info.get("cwd"):
+        from tui_gateway.git_probe import common_repo_root
+        info["git_repo_root"] = await asyncio.to_thread(common_repo_root, cwd) or None
     if info.get('tool_count') is None:
         # A lazy session: the tools its first turn loads (the banner's own count).
         info['tool_count'] = sum(len(names) for names in (inventory.get('tools') or {}).values())

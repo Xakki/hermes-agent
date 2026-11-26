@@ -17,6 +17,7 @@ import { clampOverlayWidth, listRowStyle } from './overlayPrimitives.js'
 import { TextInput } from './textInput.js'
 
 const VISIBLE = 12
+const RESUME_TOGGLE_DEBOUNCE_MS = 80
 const MIN_WIDTH = 64
 const MAX_WIDTH = 128
 const TITLE_MAX = 64
@@ -298,6 +299,60 @@ function OrchestratorHintText({ segments, t }: OrchestratorHintTextProps) {
   )
 }
 
+interface ResumeMetadata {
+  cwd?: string | null
+  git_repo_root?: string | null
+  git_branch?: string | null
+  started_at?: number | null
+  last_activity_at?: number | null
+  message_count?: number | null
+}
+
+type ResumeSelector = { workspace: string; workspace_cwd?: never } | { workspace?: never; workspace_cwd: string }
+
+const resolveResumeSelector = async (gw: GatewayClient, sessionId: string | null): Promise<ResumeSelector | null> => {
+  if (!sessionId || !gw.sessionListWorkspaceCwd) {
+    return null
+  }
+
+  const info = await gw.request<Pick<ResumeMetadata, 'cwd' | 'git_repo_root'>>('session.info', { session_id: sessionId })
+
+  if (info?.git_repo_root?.trim()) {
+    return { workspace: info.git_repo_root }
+  }
+
+  return info?.cwd?.trim() ? { workspace_cwd: info.cwd } : null
+}
+
+const resumeColumnsPerLine = (width: number) => (width >= 90 ? 6 : width >= 62 ? 3 : width >= 38 ? 2 : 1)
+
+function ResumeRowMetadata({ row, width, color }: { row: ResumeMetadata; width: number; color: string }) {
+  const S = useT().pickers.session
+  const labels = S.resumeWorkspace
+  const values = [
+    [labels.cwd, row.cwd],
+    [labels.repo, row.git_repo_root],
+    [labels.branch, row.git_branch],
+    [labels.started, relativeSessionAge(row.started_at ?? undefined)],
+    [labels.activity, relativeSessionAge(row.last_activity_at ?? undefined)],
+    row.message_count == null ? [labels.messages, null] : ['', S.row.messageCount(row.message_count)]
+  ]
+  const columns = resumeColumnsPerLine(width)
+  const columnWidth = Math.max(1, Math.floor((width - 4) / columns))
+
+  return Array.from({ length: Math.ceil(values.length / columns) }, (_, line) => (
+    <Box key={line} paddingLeft={3}>
+      {values.slice(line * columns, (line + 1) * columns).map(([label, value], index) => (
+        <Box key={index} paddingRight={1} width={columnWidth}>
+          <Text color={color} wrap="truncate-end">
+            {label ? `${label}: ` : ''}{value || '—'}
+          </Text>
+        </Box>
+      ))}
+    </Box>
+  ))
+}
+
 export function ActiveSessionSwitcher({
   currentSessionId,
   gw,
@@ -308,15 +363,24 @@ export function ActiveSessionSwitcher({
   onNewPrompt,
   onResume,
   onSelect,
+  resumePicker = false,
   t
 }: ActiveSessionSwitcherProps) {
-  const [items, setItems] = useState<SessionActiveItem[]>([])
-  const [history, setHistory] = useState<SessionListRow[]>([])
+  const [items, setItems] = useState<(SessionActiveItem & ResumeMetadata)[]>([])
+  const [history, setHistory] = useState<(SessionListRow & ResumeMetadata)[]>([])
   const [err, setErr] = useState('')
   // A close/delete failure: kept apart from `err`, which every quiet poll rewrites.
   const [actionErr, setActionErr] = useState('')
   const [sel, setSel] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [scopeEpoch, setScopeEpoch] = useState(0)
+  const scopeEpochRef = useRef(0)
+  const filterActive = scopeEpoch % 2 === 1
+  const [filterUnavailable, setFilterUnavailable] = useState(false)
+  const scopeRef = useRef<ResumeSelector | null>(null)
+  const requestRef = useRef({ seq: 0, busy: false })
+  const pickerFields = resumePicker && gw.sessionListPicker
+  const workspaceSupported = resumePicker && gw.sessionListWorkspaceCwd
   const [draft, setDraft] = useState('')
   const [draftModel, setDraftModel] = useState('')
   const [pickingModel, setPickingModel] = useState(false)
@@ -334,7 +398,7 @@ export function ActiveSessionSwitcher({
   // re-derives the resumable list from this against the latest live set, so a
   // session that was hidden while live reappears in history once it closes —
   // without re-querying the DB. Only refreshed on a full (includeHistory) load.
-  const rawHistoryRef = useRef<SessionListRow[]>([])
+  const rawHistoryRef = useRef<(SessionListRow & ResumeMetadata)[]>([])
   // Mirror the displayed lists so the async poll can re-anchor the selection to
   // the *same* row (by session id) after live sessions appear/disappear, rather
   // than keeping a now-stale flat index.
@@ -343,8 +407,24 @@ export function ActiveSessionSwitcher({
   const { stdout } = useStdout()
   // Optional maxWidth lets grid layouts hand the switcher its cell budget.
   const preferredWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, (stdout?.columns ?? 80) - 6))
-  const width = clampOverlayWidth(preferredWidth, maxWidth)
-  const promptColumns = Math.max(20, width - 11)
+  const terminalWidth = (stdout?.columns ?? 80) - 2
+  const width = clampOverlayWidth(
+    preferredWidth,
+    resumePicker ? Math.min(maxWidth ?? terminalWidth, terminalWidth) : maxWidth
+  )
+  const promptColumns = Math.max(resumePicker ? 1 : 20, width - 11)
+  const linesPerRow = 1 + 6 / resumeColumnsPerLine(width)
+  const visible = resumePicker
+    ? Math.max(1, Math.min(VISIBLE, Math.floor(((stdout?.rows ?? 30) - 11) / linesPerRow)))
+    : VISIBLE
+
+  const clearRows = useCallback(() => {
+    rawHistoryRef.current = []
+    initialSelectionAppliedRef.current = false
+    setItems([])
+    setHistory([])
+    setSel(0)
+  }, [])
 
   // Rows are [new][live…][history…]: the "+ new" row is pinned first (index 0,
   // always rendered) and the live+history list is windowed below it. `total`
@@ -360,18 +440,61 @@ export function ActiveSessionSwitcher({
     // `includeHistory` re-queries the resumable DB list (skipped on the 1.5s
     // poll, which only needs fresh live-session status).
     async (quiet = false, includeHistory = true) => {
+      // A timer from the previous mode can fire before its effect is cleaned up.
+      if (scopeEpoch !== scopeEpochRef.current ||
+          (resumePicker && !includeHistory && (requestRef.current.busy || (filterActive && !scopeRef.current)))) {
+        return []
+      }
+
+      const seq = ++requestRef.current.seq
+      const stale = () => resumePicker && seq !== requestRef.current.seq
+      requestRef.current.busy = true
+
       if (!quiet) {
         setLoading(true)
       }
 
       try {
+        let selector = filterActive ? scopeRef.current : null
+
+        if (filterActive && includeHistory) {
+          try {
+            selector = workspaceSupported ? await resolveResumeSelector(gw, currentSessionId) : null
+          } catch {
+            selector = null
+          }
+
+          if (stale()) {
+            return []
+          }
+
+          if (
+            selector?.workspace !== scopeRef.current?.workspace ||
+            selector?.workspace_cwd !== scopeRef.current?.workspace_cwd
+          ) {
+            clearRows()
+          }
+
+          scopeRef.current = selector
+          setFilterUnavailable(!selector)
+        }
+
+        if (filterActive && (!selector || !gw.sessionListWorkspaceCwd)) {
+          scopeRef.current = null
+          clearRows()
+          setFilterUnavailable(true)
+          setErr('')
+          setLoading(false)
+
+          return []
+        }
+
+        const listParams = { limit: 200, ...(pickerFields ? { picker: true } : {}), ...selector }
         // Fetch independently (allSettled) so a failing session.list can't
         // wipe the live-session list: live sessions still render and the
         // resumable history degrades on its own.
         const canonicalList = gw.isCanonical
-          ? gw.request<{ scope?: string; sessions?: (SessionListRow & { running?: boolean })[] }>('session.list', {
-              limit: 200
-            })
+          ? gw.request<{ scope?: string; sessions?: (SessionListRow & ResumeMetadata & { running?: boolean })[] }>('session.list', listParams)
           : null
 
         const [liveRes, histRes] = await Promise.allSettled([
@@ -386,11 +509,15 @@ export function ActiveSessionSwitcher({
             : gw.request<SessionActiveListResponse>('session.active_list', { current_session_id: currentSessionId }),
           includeHistory
             ? gw.request<SessionListResult>('session.list', {
-                limit: 200,
+                ...listParams,
                 ...(canonicalList ? { scope: 'stored' } : {})
               })
             : Promise.resolve(null)
         ])
+
+        if (stale()) {
+          return []
+        }
 
         const r = liveRes.status === 'fulfilled' ? asRpcResult<SessionActiveListResponse>(liveRes.value) : null
 
@@ -458,18 +585,26 @@ export function ActiveSessionSwitcher({
 
           return i >= 0 ? 1 + next.length + i : clamp()
         })
-        setErr(histError)
+        if (includeHistory || !resumePicker) {
+          setErr(histError)
+        }
         setLoading(false)
 
         return next
       } catch (e: unknown) {
-        setErr(rpcErrorMessage(e))
-        setLoading(false)
+        if (!stale()) {
+          setErr(rpcErrorMessage(e))
+          setLoading(false)
+        }
 
         return []
+      } finally {
+        if (!stale()) {
+          requestRef.current.busy = false
+        }
       }
     },
-    [currentSessionId, gw]
+    [clearRows, currentSessionId, filterActive, gw, pickerFields, resumePicker, scopeEpoch, workspaceSupported]
   )
 
   useEffect(() => {
@@ -478,11 +613,28 @@ export function ActiveSessionSwitcher({
   }, [items, history])
 
   useEffect(() => {
-    void load()
+    let toggleTimer: ReturnType<typeof setTimeout> | undefined
+
+    if (scopeEpoch > 0) {
+      const seq = requestRef.current.seq
+      toggleTimer = setTimeout(() => {
+        if (seq === requestRef.current.seq) {
+          void load()
+        }
+      }, RESUME_TOGGLE_DEBOUNCE_MS)
+    } else {
+      void load()
+    }
+
     const timer = setInterval(() => void load(true, false), 1500)
 
-    return () => clearInterval(timer)
-  }, [load])
+    return () => {
+      clearTimeout(toggleTimer)
+      clearInterval(timer)
+      requestRef.current.seq++
+      requestRef.current.busy = false
+    }
+  }, [load, scopeEpoch])
 
   const submitDraft = useCallback(
     (value: string) => {
@@ -505,6 +657,7 @@ export function ActiveSessionSwitcher({
       return
     }
 
+    const scopeAtClose = scopeEpochRef.current
     setActionErr('')
     setClosingId(target.id)
 
@@ -524,7 +677,16 @@ export function ActiveSessionSwitcher({
         return
       }
 
+      if (scopeAtClose !== scopeEpochRef.current) {
+        return
+      }
+
       const remaining = await load(true)
+
+      if (scopeAtClose !== scopeEpochRef.current) {
+        return
+      }
+
       const fallback = closeFallbackAfterClose(target.id, currentSessionId, remaining)
 
       if (fallback.action === 'activate') {
@@ -593,6 +755,23 @@ export function ActiveSessionSwitcher({
       return
     }
 
+    const lower = ch?.toLowerCase() ?? ''
+    const isCtrl = (letter: string) => key.ctrl && (lower === letter || ch === ctrlChar(letter))
+
+    if (resumePicker && isCtrl('t')) {
+      requestRef.current.seq++
+      scopeRef.current = null
+      clearRows()
+      setConfirmDelete(null)
+      setActionErr('')
+      setErr('')
+      setFilterUnavailable(false)
+      setLoading(true)
+      setScopeEpoch(++scopeEpochRef.current)
+
+      return
+    }
+
     // Two-press history delete: once armed, only a second `d` deletes; any
     // other key cancels the prompt (mirrors the standalone resume picker).
     if (confirmDelete !== null) {
@@ -605,9 +784,6 @@ export function ActiveSessionSwitcher({
 
       return
     }
-
-    const lower = ch?.toLowerCase() ?? ''
-    const isCtrl = (letter: string) => key.ctrl && (lower === letter || ch === ctrlChar(letter))
 
     if (key.escape) {
       return onCancel()
@@ -694,15 +870,15 @@ export function ActiveSessionSwitcher({
     )
   }
 
-  if (loading) {
+  if (loading && !resumePicker) {
     return <Text color={t.color.muted}>{S.loading}</Text>
   }
 
   // The "+ new" row (sel 0) is pinned at the top so it's always visible; the
   // live + history list is windowed beneath it.
   const listSel = sel > 0 ? sel - 1 : 0
-  const offset = windowOffset(listLen, listSel, VISIBLE)
-  const visibleCount = Math.max(0, Math.min(VISIBLE, listLen - offset))
+  const offset = windowOffset(listLen, listSel, visible)
+  const visibleCount = Math.max(0, Math.min(visible, listLen - offset))
   const visibleRows = Array.from({ length: visibleCount }, (_, k) => offset + k + 1)
 
   const newSelectedRow = sel === 0
@@ -718,52 +894,92 @@ export function ActiveSessionSwitcher({
       </Text>
       <Text color={t.color.muted}>{sessionsCountLabel(items.length, history.length)}</Text>
 
+      {resumePicker && (
+        <Text color={t.color.muted}>
+          <Text color={t.color.accent}>Ctrl+T</Text>{width < 42 ? '\n' : ' · '}
+          {filterActive ? (filterUnavailable ? S.resumeWorkspace.unavailable : S.resumeWorkspace.on) : S.resumeWorkspace.off}
+        </Text>
+      )}
+      {resumePicker && loading && <Text color={t.color.muted}>{S.loading}</Text>}
       {(actionErr || err) && <Text color={t.color.label}>{C.error(actionErr || err)}</Text>}
 
-      <Box backgroundColor={newRowStyle?.backgroundColor} flexDirection="row" onClick={handleRowClick(0)} width="100%">
-        <Text bold={newSelectedRow} color={newRowTextColor ?? t.color.muted}>
-          {newSelectedRow ? '▸ ' : '  '}
-        </Text>
-
-        <Box {...fixedSessionColumnStyle()} width={5}>
-          <Text bold={newSelectedRow} color={newRowMarkerColor}>
-            {'+'.padStart(2)}
+      {resumePicker ? (
+        <Box backgroundColor={newRowStyle?.backgroundColor} onClick={handleRowClick(0)} width="100%">
+          <Text color={newRowTextColor ?? t.color.label} wrap="truncate-end">
+            {newSelectedRow ? '▸ ' : '  '}{S.newRowMarker} {promptTitle}
           </Text>
         </Box>
-
-        <Box {...fixedSessionColumnStyle()} width={11}>
-          <Text bold={newSelectedRow} color={newRowMarkerColor} wrap="truncate-end">
-            {S.row.new}
+      ) : (
+        <Box backgroundColor={newRowStyle?.backgroundColor} flexDirection="row" onClick={handleRowClick(0)} width="100%">
+          <Text bold={newSelectedRow} color={newRowTextColor ?? t.color.muted}>
+            {newSelectedRow ? '▸ ' : '  '}
           </Text>
-        </Box>
 
-        <Box {...fixedSessionColumnStyle()} width={11}>
-          <Text color={newRowTextColor ?? t.color.muted} wrap="truncate-end">
-            {S.row.draft}
-          </Text>
-        </Box>
+          <Box {...fixedSessionColumnStyle()} width={5}>
+            <Text bold={newSelectedRow} color={newRowMarkerColor}>
+              {'+'.padStart(2)}
+            </Text>
+          </Box>
 
-        <Box {...fixedSessionColumnStyle()} width={18}>
-          <Text color={newRowTextColor ?? t.color.muted} wrap="truncate-end">
-            {draftModelDisplayLabel(draftModel)}
-          </Text>
-        </Box>
+          <Box {...fixedSessionColumnStyle()} width={11}>
+            <Text bold={newSelectedRow} color={newRowMarkerColor} wrap="truncate-end">
+              {S.row.new}
+            </Text>
+          </Box>
 
-        <Box flexGrow={1} flexShrink={1} minWidth={0}>
-          <Text bold={newSelectedRow} color={newRowTextColor ?? t.color.muted} wrap="truncate-end">
-            {promptTitle}
-          </Text>
+          <Box {...fixedSessionColumnStyle()} width={11}>
+            <Text color={newRowTextColor ?? t.color.muted} wrap="truncate-end">
+              {S.row.draft}
+            </Text>
+          </Box>
+
+          <Box {...fixedSessionColumnStyle()} width={18}>
+            <Text color={newRowTextColor ?? t.color.muted} wrap="truncate-end">
+              {draftModelDisplayLabel(draftModel)}
+            </Text>
+          </Box>
+
+          <Box flexGrow={1} flexShrink={1} minWidth={0}>
+            <Text bold={newSelectedRow} color={newRowTextColor ?? t.color.muted} wrap="truncate-end">
+              {promptTitle}
+            </Text>
+          </Box>
         </Box>
-      </Box>
+      )}
 
       {offset > 0 && <Text color={t.color.muted}>{C.moreAbove(offset)}</Text>}
-      {!listLen && <Text color={t.color.muted}>{S.noOtherSessions}</Text>}
+      {!listLen && !loading && !filterUnavailable && (
+        <Text color={t.color.muted}>{filterActive ? S.resumeWorkspace.noMatches : S.noOtherSessions}</Text>
+      )}
 
       {visibleRows.map(i => {
         const selected = sel === i
         const selectedStyle = selected ? selectedSessionRowStyle(t) : null
         const rowTextColor = selectedStyle?.color
         const kind = rowKind(i)
+
+        if (resumePicker) {
+          const row = kind === 'history' ? history[i - 1 - items.length]! : items[i - 1]!
+          const pendingDelete = confirmDelete === row.id
+          const title = pendingDelete ? S.row.pressDAgain
+            : deleting && selected ? S.row.deleting
+            : closingId === row.id ? S.row.closing
+            : row.title || row.preview || S.row.untitled
+          const current = row.id === currentSessionId
+          const color = rowTextColor ?? t.color.muted
+          const status = kind === 'live' ? (items[i - 1]?.status ?? 'idle') : null
+
+          return (
+            <Box backgroundColor={selectedStyle?.backgroundColor} flexDirection="column" key={row.id}
+              onClick={handleRowClick(i)} width="100%">
+              <Text bold={selected} color={pendingDelete ? t.color.label : color} wrap="truncate-end">
+                {selected ? '▸ ' : '  '}{i}. {status && `${STATUS_GLYPH[status] ?? '·'} `}{title}
+                {current ? ` (${S.row.current})` : ''}
+              </Text>
+              <ResumeRowMetadata color={color} row={row} width={width} />
+            </Box>
+          )
+        }
 
         if (kind === 'history') {
           const h = history[i - 1 - items.length]!
@@ -884,7 +1100,7 @@ export function ActiveSessionSwitcher({
         )
       })}
 
-      {offset + VISIBLE < listLen && <Text color={t.color.muted}>{C.moreBelow(listLen - offset - VISIBLE)}</Text>}
+      {offset + visible < listLen && <Text color={t.color.muted}>{C.moreBelow(listLen - offset - visible)}</Text>}
 
       {newSelected ? (
         <>
@@ -939,5 +1155,6 @@ interface ActiveSessionSwitcherProps {
   onNewPrompt: (prompt: string, modelArg?: string) => void
   onResume: (id: string) => void
   onSelect: (id: string) => void
+  resumePicker?: boolean
   t: Theme
 }

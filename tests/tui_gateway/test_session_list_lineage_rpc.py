@@ -58,3 +58,17 @@ def test_session_list_projects_lineage_root_id(db):
     assert "tip1" in by_id, rows
     # REST already projects this field; the RPC row summary must too (#66663).
     assert by_id["tip1"]["_lineage_root_id"] == "root1"
+
+
+def test_legacy_session_list_carries_stored_picker_metadata(db, tmp_path):
+    cwd = str(tmp_path / 'repo' / 'pkg')
+    repo = str(tmp_path / 'repo')
+    seed_session(db, 'one', 'cli', cwd=cwd)
+    seed_messages(db, 'one', {'role': 'user', 'content': 'hello'})
+    db.sessions.update_cwd('one', cwd, git_branch='topic', git_repo_root=repo)
+    stamp = time.time() + 60
+    db.sessions.touch_activity('one', at=stamp)
+
+    [row] = _call('session.list', {})['result']['sessions']
+    assert (row['cwd'], row['git_repo_root'], row['git_branch'], row['last_activity_at']) == (
+        cwd, repo, 'topic', stamp)

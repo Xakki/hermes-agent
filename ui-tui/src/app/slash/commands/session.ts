@@ -10,6 +10,7 @@ import type {
   SlashExecResponse,
   VoiceToggleResponse
 } from '@hermes/shared/gateway-types'
+import { parseSlashCommand } from '@hermes/shared/slash'
 import { sessionScopedModelArg, TUI_SESSION_MODEL_FLAG } from '@hermes/shared/slash-input'
 
 import { usageBarsText } from '../../../components/overlayPrimitives.js'
@@ -223,7 +224,7 @@ export const sessionCommands: SlashCommand[] = [
     aliases: ['switch', 'session', 'resume'],
     help: 'browse, switch, or resume sessions',
     name: 'sessions',
-    run: (arg, ctx) => {
+    run: (arg, ctx, cmd) => {
       const trimmed = arg.trim()
 
       // A new *live* session keeps the current one running in the background
@@ -244,7 +245,7 @@ export const sessionCommands: SlashCommand[] = [
         return ctx.session.resumeById(trimmed)
       }
 
-      patchOverlayState({ sessions: true })
+      patchOverlayState({ sessions: parseSlashCommand(cmd).name === 'resume' ? 'resume' : true })
     }
   },
 

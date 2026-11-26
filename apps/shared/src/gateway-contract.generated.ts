@@ -3461,6 +3461,10 @@ export interface SessionListRow {
   preview?: string
   started_at?: number
   message_count?: number
+  cwd?: string | null
+  git_repo_root?: string | null
+  git_branch?: string | null
+  last_activity_at?: number | null
   live_message_count?: number | null
   source?: string
   _lineage_root_id?: string | null
@@ -5346,6 +5350,7 @@ export interface CanonicalSnapshotInfo {
   profile_id?: string | null
   profile_name?: string | null
   cwd?: string | null
+  git_repo_root?: string | null
   edit_approval_policy?: 'ask' | 'workspace_session' | 'session' | null
   launch_request?: Record<string, unknown> | null
   client?: CanonicalClientLabel | null
@@ -5384,6 +5389,7 @@ export interface CanonicalListParams {
   title?: string | null
   include_hidden?: boolean
   workspace?: string | null
+  workspace_cwd?: string | null
   picker?: boolean
   query?: string | null
   cursor?: string | null
@@ -5407,7 +5413,9 @@ export interface CanonicalSessionListRow {
   preview?: string | null
   last_reply?: string | null
   cwd?: string | null
+  git_repo_root?: string | null
   git_branch?: string | null
+  last_activity_at?: number | null
   workspace?: string | null
   last_active_at?: number | null
   pinned?: boolean | null

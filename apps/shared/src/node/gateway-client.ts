@@ -897,6 +897,14 @@ export class GatewayClient extends EventEmitter {
     return this.isCanonical && this.runtimeCapabilities.includes('clarify-batch-v1')
   }
 
+  get sessionListPicker(): boolean {
+    return this.isCanonical && this.runtimeCapabilities.includes('session-list-picker-v1')
+  }
+
+  get sessionListWorkspaceCwd(): boolean {
+    return this.isCanonical && this.runtimeCapabilities.includes('session-list-workspace-cwd-v1')
+  }
+
   /** The owner's session.create contract. A failed read is not cached: the next
    * session.create asks again instead of reporting an outdated gateway forever. */
   private describeRuntime(): Promise<void> {

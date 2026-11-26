@@ -301,7 +301,7 @@ export interface OverlayState {
   vaultCode: null | VaultCodeReq
   vaultSaveLogin: null | VaultSaveLoginReq
   vaultUnlock: null | VaultUnlockReq
-  sessions: boolean
+  sessions: boolean | 'resume'
   skillsHub: boolean
   subscription: SubscriptionOverlayState | null
   sudo: null | SudoReq
