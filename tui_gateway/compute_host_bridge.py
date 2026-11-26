@@ -155,6 +155,17 @@ def _relay_compute_host_rpc(message: dict) -> bool:
                 session["_compute_host_open_request"] = {
                     "id": message["id"], "method": message["method"],
                     **({"params": dict(params)} if replayable else {"replayable": False})}
+    elif isinstance(params, dict) and params.get("type") == "request.deadline":
+        session = _sessions.get(str(params.get("session_id") or ""))
+        payload = params.get("payload")
+        if session is not None and isinstance(payload, dict):
+            deadline_ms = payload.get("deadline_ms")
+            with _history_lock(session):
+                if _open_request_matches(session, payload.get("id")) and type(deadline_ms) is int and deadline_ms > 0:
+                    mirrored = session["_compute_host_open_request"]
+                    if mirrored.get("method") == payload.get("method") and "params" in mirrored:
+                        session["_compute_host_open_request"] = {
+                            **mirrored, "params": {**mirrored["params"], "deadline_ms": deadline_ms}}
     elif isinstance(params, dict) and params.get("type") == "request.cancel":
         session = _sessions.get(str(params.get("session_id") or ""))
         payload = params.get("payload")

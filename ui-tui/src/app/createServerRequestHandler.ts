@@ -16,6 +16,29 @@ export interface ServerRequestHandlerContext {
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
 
+export const promptDeadlineMs = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isSafeInteger(v) && v > 0 ? v : undefined
+
+function clarifyTimeoutChoices(raw: unknown, questions: ClarifyQuestion[]) {
+  const choices: Record<string, { label: string; optionId: string }> = Object.create(null)
+
+  if (raw && typeof raw === 'object') {
+    for (const q of questions) {
+      const value = (raw as Record<string, unknown>)[q.qid]
+
+      if (value && typeof value === 'object') {
+        const { label, option_id: optionId } = value as Record<string, unknown>
+
+        if (typeof label === 'string' && typeof optionId === 'string') {
+          choices[q.qid] = { label, optionId }
+        }
+      }
+    }
+  }
+
+  return choices
+}
+
 // The cards this handler opens; anything else is declined below and must keep failing fast.
 const PROMPT_METHODS = new Set([
   'approval',
@@ -78,6 +101,10 @@ export function createServerRequestHandler(ctx: ServerRequestHandlerContext): (r
           .filter(q => str(q.qid) && str(q.question).trim())
           .map(q => ({
             choices: strList(q.choices),
+            customOptionIds: q.custom_option_ids && typeof q.custom_option_ids === 'object'
+              ? new Map(Object.entries(q.custom_option_ids).filter((entry): entry is [string, string] =>
+                typeof entry[1] === 'string'))
+              : undefined,
             multiSelect: q.multi_select === true,
             qid: str(q.qid),
             question: str(q.question).trim()
@@ -98,7 +125,17 @@ export function createServerRequestHandler(ctx: ServerRequestHandlerContext): (r
               )
             : {}
 
-        patchOverlayState({ clarify: { answers, questions, requestId: request.id } })
+        const deadlineMs = promptDeadlineMs(p.deadline_ms)
+
+        patchOverlayState({
+          clarify: {
+            answers,
+            deadlineMs,
+            questions,
+            requestId: request.id,
+            timeoutChoices: deadlineMs === undefined ? undefined : clarifyTimeoutChoices(p.timeout_choices, questions)
+          }
+        })
         open(request, t('session.status.waitingForInput'))
 
         return true
@@ -111,6 +148,7 @@ export function createServerRequestHandler(ctx: ServerRequestHandlerContext): (r
             allowPermanent: p.allow_permanent !== false,
             choices: strList(p.choices) ?? undefined,
             command: str(p.command),
+            deadlineMs: promptDeadlineMs(p.deadline_ms),
             description: str(p.description) || t('session.request.dangerousCommand'),
             requestId: request.id,
             smartDenied: p.smart_denied === true
@@ -122,20 +160,20 @@ export function createServerRequestHandler(ctx: ServerRequestHandlerContext): (r
       }
 
       case 'sudo':
-        patchOverlayState({ sudo: { requestId: request.id } })
+        patchOverlayState({ sudo: { deadlineMs: promptDeadlineMs(p.deadline_ms), requestId: request.id } })
         open(request, t('session.status.sudoPasswordNeeded'))
 
         return true
 
       case 'secret':
-        patchOverlayState({ secret: { envVar: str(p.env_var), prompt: str(p.prompt), requestId: request.id } })
+        patchOverlayState({ secret: { envVar: str(p.env_var), prompt: str(p.prompt), deadlineMs: promptDeadlineMs(p.deadline_ms), requestId: request.id } })
         open(request, t('session.status.secretInputNeeded'))
 
         return true
 
       case 'vault.unlock_prompt':
         patchOverlayState({
-          vaultUnlock: { backend: str(p.backend), displayName: str(p.display_name), requestId: request.id }
+          vaultUnlock: { backend: str(p.backend), displayName: str(p.display_name), deadlineMs: promptDeadlineMs(p.deadline_ms), requestId: request.id }
         })
         open(request, t('session.status.unlockVault', str(p.display_name)))
 
@@ -143,7 +181,7 @@ export function createServerRequestHandler(ctx: ServerRequestHandlerContext): (r
       case 'vault.save_login': {
         const site = str(p.site) || str(p.origin)
 
-        patchOverlayState({ vaultSaveLogin: { origin: str(p.origin), requestId: request.id, site } })
+        patchOverlayState({ vaultSaveLogin: { origin: str(p.origin), deadlineMs: promptDeadlineMs(p.deadline_ms), requestId: request.id, site } })
         open(request, t('session.status.saveLogin', site))
 
         return true
@@ -152,7 +190,7 @@ export function createServerRequestHandler(ctx: ServerRequestHandlerContext): (r
       case 'vault.code': {
         const site = str(p.site)
 
-        patchOverlayState({ vaultCode: { hint: str(p.hint), requestId: request.id, site } })
+        patchOverlayState({ vaultCode: { hint: str(p.hint), deadlineMs: promptDeadlineMs(p.deadline_ms), requestId: request.id, site } })
         open(request, t('session.status.verificationCode', site))
 
         return true

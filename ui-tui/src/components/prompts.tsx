@@ -23,6 +23,24 @@ const approvalLabels = (): Record<ApprovalChoice, string> => {
 
 const CMD_PREVIEW_LINES = 10
 
+export function PromptDeadline({ deadlineMs, t }: { deadlineMs: number; t: Theme }) {
+  const [clock, setClock] = useState(Date.now)
+  const seconds = Math.max(0, Math.ceil((deadlineMs - clock) / 1000))
+
+  useEffect(() => {
+    const now = Date.now()
+    if (deadlineMs <= now) {
+      return
+    }
+
+    const timer = setTimeout(() => setClock(Date.now()), Math.min(1000, deadlineMs - now))
+
+    return () => clearTimeout(timer)
+  }, [deadlineMs, clock])
+
+  return <Text color={t.color.muted}>{seconds}s remaining</Text>
+}
+
 /**
  * The page of wrapped command lines on screen. A command longer than one page
  * is paged with `v` (wrapping back to the top), so every line of what will run
@@ -168,6 +186,7 @@ export function ApprovalPrompt({ cols = 80, onChoice, onTell, req, t }: Approval
       <Text bold color={t.color.warn}>
         {T.prompt.approval.title} · {req.description}
       </Text>
+      {req.deadlineMs !== undefined ? <PromptDeadline deadlineMs={req.deadlineMs} key={req.deadlineMs} t={t} /> : null}
 
       <Box flexDirection="column" paddingLeft={1}>
         {shown.map((line, i) => (
@@ -274,15 +293,17 @@ export function ClarifyPrompt({ cols = 80, onCancel, onQuestionAnswer, req, t }:
   const answeredCount = questions.filter(q => answers[q.qid] !== undefined).length
   const remainingCount = questions.length - answeredCount
 
-  const lockActive = (value: string) => {
+  const lockActive = (value: string, optionId?: string) => {
     if (activeQuestion) {
-      onQuestionAnswer(activeQuestion.qid, value)
+      onQuestionAnswer(activeQuestion.qid, value, optionId)
       setSel(0)
       setCustom('')
       setTyping(false)
       setPicked([])
     }
   }
+
+  const lockChoice = (label: string) => lockActive(label, activeQuestion?.customOptionIds?.get(label))
 
   const lockPicked = (extra: string[]) => {
     const values = [...picked, ...extra.map(v => v.trim()).filter(Boolean)]
@@ -343,7 +364,7 @@ export function ClarifyPrompt({ cols = 80, onCancel, onQuestionAnswer, req, t }:
       } else if (multi) {
         lockPicked(picked.length ? [] : [activeChoices[sel]!])
       } else if (activeChoices[sel]) {
-        lockActive(activeChoices[sel]!)
+        lockChoice(activeChoices[sel]!)
       }
 
       return
@@ -361,7 +382,7 @@ export function ClarifyPrompt({ cols = 80, onCancel, onQuestionAnswer, req, t }:
       if (multi) {
         togglePick(activeChoices[n - 1]!)
       } else {
-        lockActive(activeChoices[n - 1]!)
+        lockChoice(activeChoices[n - 1]!)
       }
     }
   })
@@ -386,6 +407,8 @@ export function ClarifyPrompt({ cols = 80, onCancel, onQuestionAnswer, req, t }:
         </Text>
       </Text>
 
+      {req.deadlineMs !== undefined ? <PromptDeadline deadlineMs={req.deadlineMs} key={req.deadlineMs} t={t} /> : null}
+
       {questions.map((q, i) => {
         const answer = answers[q.qid]
         const isActive = i === active
@@ -398,6 +421,12 @@ export function ClarifyPrompt({ cols = 80, onCancel, onQuestionAnswer, req, t }:
                 {marker} {q.question}
               </Text>
             </Text>
+
+            {req.timeoutChoices !== undefined && answer === undefined ? (
+              <Box paddingLeft={2}>
+                <Text color={t.color.muted}>On timeout: {req.timeoutChoices?.[q.qid]?.label ?? 'No selection'}</Text>
+              </Box>
+            ) : null}
 
             {answer !== undefined ? (
               // The locked answer on its own line, in the ok color, so the
@@ -520,7 +549,7 @@ interface ApprovalPromptProps {
 interface ClarifyPromptProps {
   cols?: number
   onCancel: () => void
-  onQuestionAnswer: (qid: string, s: string) => void
+  onQuestionAnswer: (qid: string, s: string, optionId?: string) => void
   req: ClarifyReq
   t: Theme
 }

@@ -325,7 +325,8 @@ def test_a_raising_plugin_changes_nothing_about_the_prompt(owner, plugin):
     worker.join(5)
     assert out["value"] == "pw"
     # The fanout writes to its peers off the publisher's thread: wait for the teardown to arrive.
-    wait_until(lambda: [f["params"]["type"] for f in peer.frames if f.get("method") == "event"] == ["request.cancel"],
+    wait_until(lambda: [f["params"]["type"] for f in peer.frames if f.get("method") == "event"]
+               == ["request.deadline", "request.cancel"],
                what="the request.cancel teardown")
 
 

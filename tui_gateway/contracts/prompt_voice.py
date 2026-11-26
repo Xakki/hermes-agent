@@ -268,6 +268,7 @@ class ClarifyLockParams(Params):
     request_id: str
     question_id: str
     answer: JsonValue = ""  # non-string answers are JSON-encoded server-side
+    option_id: str | None = None
     profile: str | None = None
 
 

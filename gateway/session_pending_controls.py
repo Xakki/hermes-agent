@@ -7,7 +7,7 @@ from copy import deepcopy
 
 from gateway.session_prompt_hooks import PromptTable
 from persistence.core.errors import AuthorityRefusal
-from tools.approval import list_gateway_approvals, resolve_gateway_approval
+from tools.approval import list_gateway_approvals, observe_gateway_wait_start, resolve_gateway_approval
 
 
 class PendingControls:
@@ -37,6 +37,25 @@ class PendingControls:
                 prompt['timeout_s'] = timeout_s
             self.pending[prompt_id] = (route, prompt)
             self.events.publish(session_id, prompt, event_type='approval.request')
+            if timeout_s is not None:
+                observe_gateway_wait_start(route, prompt_id, lambda deadline_ms: self._project_deadline(
+                    session_id, prompt, deadline_ms))
+
+    def _project_deadline(self, session_id, prompt, deadline_ms):
+        prompt_id = prompt['prompt_id']
+        with self.events.lock:
+            current = self.pending.get(prompt_id)
+            if current is not None and current[1] is prompt:
+                prompt['deadline_ms'] = deadline_ms
+                self.events.publish(session_id, {'prompt_id': prompt_id, 'deadline_ms': deadline_ms,
+                    'execution_generation': prompt['execution_generation']}, event_type=prompt['kind'] + '.deadline')
+
+    def project_remote_deadline(self, session_id, generation, prompt_id, deadline_ms):
+        with self.events.lock:
+            saved = self.pending.get(prompt_id)
+            if (saved is not None and prompt_id in self.remote_responders
+                    and saved[1]['execution_generation'] == generation):
+                self._project_deadline(session_id, saved[1], deadline_ms)
 
     def register_clarify(self, session_id, generation, entry, *, timeout_s=None):
         from gateway.run import _redact_approval_command
@@ -50,6 +69,9 @@ class PendingControls:
                 prompt["timeout_s"] = timeout_s
             self.pending[entry.clarify_id] = (entry, prompt)
             self.events.publish(session_id, prompt, event_type="clarify.request")
+            if timeout_s is not None:
+                from tools.clarify_gateway import observe_wait_start
+                observe_wait_start(entry, lambda deadline_ms: self._project_deadline(session_id, prompt, deadline_ms))
 
     def waiting_kinds(self):
         """Kinds of the prompts still parked on the user, without pruning or publishing (the

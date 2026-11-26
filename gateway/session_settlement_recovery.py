@@ -312,9 +312,7 @@ async def settle_and_deliver(authority, live, ref, row, response, outcome):
         await deliver_settled(authority, admission_id)
         await fire_post_delivery(authority, admission_id)
         await authority._resolve_settled_waiter(admission_id, response)
-        if settled is not None:
-            from gateway.session_next_action import candidate
-            candidate(live, row, settled, response)
+
         return True
     finally:
         # A resolution that raced this drain handed its collection here (``_resolved_unknown``):

@@ -2,6 +2,7 @@ import { Box, stringWidth, Text } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
 import type { ReactNode } from 'react'
 
+import { $connectionOperation } from '../app/connectionOperationStore.js'
 import { useGateway } from '../app/gatewayContext.js'
 import type { AppOverlaysProps } from '../app/interfaces.js'
 import { $overlayState, hasFloatingPanel, patchOverlayState } from '../app/overlayStore.js'
@@ -15,12 +16,11 @@ import { ConnectionSetupOverlay } from './connectionSetupOverlay.js'
 import { ConnectorsOverlay } from './connectorsOverlay.js'
 import { SecretPrompt, SudoPrompt, VaultCodePrompt, VaultSaveLoginPrompt, VaultUnlockPrompt } from './maskedPrompt.js'
 import { ModelPicker } from './modelPicker.js'
-import { NextActionPrompt } from './nextActionPrompt.js'
 import { OverlayHint } from './overlayControls.js'
 import { listRowStyle } from './overlayPrimitives.js'
 import { PetPicker } from './petPicker.js'
 import { PluginsHub } from './pluginsHub.js'
-import { ApprovalPrompt, ClarifyPrompt, ConfirmPrompt } from './prompts.js'
+import { ApprovalPrompt, ClarifyPrompt, ConfirmPrompt, PromptDeadline } from './prompts.js'
 import { RewindBrowse } from './rewindBrowse.js'
 import { SkillsHub } from './skillsHub.js'
 import { SubscriptionOverlay } from './subscriptionOverlay.js'
@@ -35,7 +35,9 @@ const COMPLETION_WINDOW = 16
  * grid makes the prompt zone a layout-engine surface like the desktop app's
  * pane shell.
  */
-function PromptCell({ children, cols, id }: { children: ReactNode; cols: number; id: string }) {
+function PromptCell({ children, cols, deadlineMs, id }: {
+  children: ReactNode; cols: number; deadlineMs?: number; id: string
+}) {
   return (
     <Box flexDirection="column" flexShrink={0}>
       <WidgetGrid
@@ -49,6 +51,7 @@ function PromptCell({ children, cols, id }: { children: ReactNode; cols: number;
           {
             children: (
               <Box flexDirection="column" width="100%">
+                {deadlineMs !== undefined ? <PromptDeadline deadlineMs={deadlineMs} t={$uiTheme.get()} /> : null}
                 {children}
               </Box>
             ),
@@ -86,6 +89,8 @@ export function PromptZone({
 >) {
   const overlay = useStore($overlayState)
   const theme = useStore($uiTheme)
+
+  const connection = useStore($connectionOperation)
 
   if (overlay.approval) {
     return (
@@ -135,7 +140,7 @@ export function PromptZone({
 
   if (overlay.connection) {
     return (
-      <PromptCell cols={cols} id="connection">
+      <PromptCell cols={cols} deadlineMs={connection && connection.opId === overlay.connection.opId && connection.deadlineAt > 0 ? connection.deadlineAt * 1000 : undefined} id="connection">
         <ConnectionSetupOverlay cols={cols} t={theme} />
       </PromptCell>
     )
@@ -187,14 +192,6 @@ export function PromptZone({
     )
   }
 
-  if (overlay.nextAction && !overlay.clarify && !overlay.sudo && !overlay.secret &&
-      !overlay.vaultUnlock && !overlay.vaultCode && !overlay.vaultSaveLogin) {
-    return (
-      <PromptCell cols={cols} id="next-action">
-        <NextActionPrompt key={overlay.nextAction.id} card={overlay.nextAction} />
-      </PromptCell>
-    )
-  }
 
   if (overlay.clarify) {
     return (
@@ -212,7 +209,7 @@ export function PromptZone({
 
   if (overlay.sudo) {
     return (
-      <PromptCell cols={cols} id="sudo">
+      <PromptCell cols={cols} deadlineMs={overlay.sudo.deadlineMs} id="sudo">
         <SudoPrompt cols={cols} onSubmit={onSudoSubmit} t={theme} />
       </PromptCell>
     )
@@ -220,7 +217,7 @@ export function PromptZone({
 
   if (overlay.secret) {
     return (
-      <PromptCell cols={cols} id="secret">
+      <PromptCell cols={cols} deadlineMs={overlay.secret.deadlineMs} id="secret">
         <SecretPrompt
           cols={cols}
           envVar={overlay.secret.envVar}
@@ -234,7 +231,7 @@ export function PromptZone({
 
   if (overlay.vaultUnlock) {
     return (
-      <PromptCell cols={cols} id="vault-unlock">
+      <PromptCell cols={cols} deadlineMs={overlay.vaultUnlock.deadlineMs} id="vault-unlock">
         <VaultUnlockPrompt
           cols={cols}
           displayName={overlay.vaultUnlock.displayName}
@@ -247,7 +244,7 @@ export function PromptZone({
 
   if (overlay.vaultSaveLogin) {
     return (
-      <PromptCell cols={cols} id="vault-save-login">
+      <PromptCell cols={cols} deadlineMs={overlay.vaultSaveLogin.deadlineMs} id="vault-save-login">
         <VaultSaveLoginPrompt
           cols={cols}
           onReady={onVaultSaveLoginSubmit}
@@ -260,7 +257,7 @@ export function PromptZone({
 
   if (overlay.vaultCode) {
     return (
-      <PromptCell cols={cols} id="vault-code">
+      <PromptCell cols={cols} deadlineMs={overlay.vaultCode.deadlineMs} id="vault-code">
         <VaultCodePrompt
           cols={cols}
           hint={overlay.vaultCode.hint}

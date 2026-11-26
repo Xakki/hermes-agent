@@ -635,11 +635,12 @@ class GatewayTurnPersistenceMixin:
                 history_len = agent_result.get("history_offset", len(history))
                 new_messages = agent_messages[history_len:] if len(agent_messages) > history_len else []
                 if not new_messages:
-                    # Edge case: fall back to simple user/assistant rows.
+                    # Fall back to simple rows, without the display-only clarify report.
                     await store.append_to_transcript(sid, _user_row, skip_db=agent_persisted)
-                    if response:
+                    history_response = agent_result.get("_final_response_without_clarify_report", response)
+                    if history_response:
                         await store.append_to_transcript(
-                            sid, {"role": "assistant", "content": response, "timestamp": ts},
+                            sid, {"role": "assistant", "content": history_response, "timestamp": ts},
                             skip_db=agent_persisted,
                         )
                 else:

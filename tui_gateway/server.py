@@ -721,8 +721,12 @@ def _emit_approval_request(sid: str, data: dict | None) -> None:
     settle = server_requests.send_async("approval", sid, payload, on_result)
     # The wait can end between the frame going out and the hook attaching (the client answered by RPC, another
     # surface resolved it): withdraw now, or the request stays in ``open_requests`` for every later resume.
-    if request_id and not _approval.register_gateway_settle(session_key, request_id, settle):
-        settle("resolved")
+    if request_id:
+        if _approval.register_gateway_settle(session_key, request_id, settle):
+            _approval.observe_gateway_wait_start(session_key, request_id, lambda deadline_ms:
+                server_requests.project_approval_deadline(sid, request_id, deadline_ms))
+        else:
+            settle("resolved")
 
 
 def _status_update(sid: str, kind: str, text: str | None = None):

@@ -49,6 +49,8 @@ from tools.clarify_batch import settle_batch
 
 logger = logging.getLogger(__name__)
 
+MASKED_PROMPT_METHODS = frozenset({"sudo", "secret", "vault.unlock_prompt", "vault.save_login", "vault.code"})
+
 
 class ServerRequest:
     __slots__ = (
@@ -205,6 +207,25 @@ def _register(req: ServerRequest) -> None:
         _emit_cancel(req, withdrawn)
 
 
+def _project_deadline(req: ServerRequest, deadline_ms: int) -> None:
+    with _lock:
+        if _open.get(req.id) is not req:
+            return
+        req.params = {**req.params, "deadline_ms": deadline_ms}
+    try:
+        _emit("request.deadline", req.sid, {"id": req.id, "method": req.method, "deadline_ms": deadline_ms})
+    except Exception:
+        logger.debug("Request deadline projection failed")
+
+
+def project_approval_deadline(sid: str, approval_id: str, deadline_ms: int) -> None:
+    with _lock:
+        req = next((req for req in _open.values() if req.sid == sid and req.method == "approval"
+                    and req.params.get("request_id") == approval_id), None)
+    if req is not None:
+        _project_deadline(req, deadline_ms)
+
+
 def send(method: str, sid: str, params: dict, *, timeout: float | None,
          qids: list[str] | None = None, transport: Any = None) -> dict | None:
     """Send one request and block for the response ``result`` (a dict).
@@ -223,6 +244,8 @@ def send(method: str, sid: str, params: dict, *, timeout: float | None,
     req.transport = transport
     _register(req)
     try:
+        if method in MASKED_PROMPT_METHODS | {"clarify"} and timeout is not None and timeout > 0:
+            _project_deadline(req, int((time.time() + timeout) * 1000))
         req.event.wait(timeout)
     except BaseException:
         # The wait itself died (KeyboardInterrupt, SystemExit, injected error): withdraw the request

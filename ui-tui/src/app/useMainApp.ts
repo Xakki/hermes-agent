@@ -883,7 +883,7 @@ export function useMainApp(gw: GatewayClient) {
   // up until the server reports no remaining questions — the final lock
   // resolves the server request and the turn continues.
   const answerClarifyQuestion = useCallback(
-    (qid: string, answer: string) => {
+    (qid: string, answer: string, optionId?: string) => {
       const clarify = overlay.clarify
       const question = clarify?.questions.find(q => q.qid === qid)
 
@@ -925,7 +925,7 @@ export function useMainApp(gw: GatewayClient) {
       }
 
       rpc<ClarifyLockResponse>('clarify.lock', {
-        answer: answer.trim() ? answer : null,
+        ...(optionId === undefined ? { answer: answer.trim() ? answer : null } : { option_id: optionId }),
         question_id: qid,
         request_id: clarify.requestId
       }).then(r => {

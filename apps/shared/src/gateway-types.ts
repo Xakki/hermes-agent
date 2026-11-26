@@ -46,6 +46,7 @@ export type GatewaySkin = HermesSkin
 export interface CanonicalSharedPrompt {
   execution_epoch?: string
   execution_generation: number
+  deadline_ms?: number
   kind?: 'approval' | 'clarify'
   prompt_id: string
 }

@@ -5431,6 +5431,30 @@
         "title": "ApprovalChoice",
         "type": "string"
       },
+      "ApprovalDeadlinePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "prompt_id": {
+            "title": "Prompt Id",
+            "type": "string"
+          },
+          "execution_generation": {
+            "title": "Execution Generation",
+            "type": "integer"
+          },
+          "deadline_ms": {
+            "title": "Deadline Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "prompt_id",
+          "execution_generation",
+          "deadline_ms"
+        ],
+        "title": "ApprovalDeadlinePayload",
+        "type": "object"
+      },
       "ApprovalKind": {
         "enum": [
           "command",
@@ -5535,6 +5559,18 @@
           "session_id": {
             "title": "Session Id",
             "type": "string"
+          },
+          "deadline_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Deadline Ms"
           },
           "request_id": {
             "title": "Request Id",
@@ -9862,6 +9898,18 @@
             ],
             "default": null,
             "title": "Timeout S"
+          },
+          "deadline_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Deadline Ms"
           }
         },
         "required": [
@@ -12361,6 +12409,18 @@
             "default": "",
             "title": "Answer"
           },
+          "option_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Option Id"
+          },
           "profile": {
             "anyOf": [
               {
@@ -12448,6 +12508,21 @@
             "default": false,
             "title": "Multi Select",
             "type": "boolean"
+          },
+          "custom_option_ids": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Custom Option Ids"
           }
         },
         "required": [
@@ -12464,6 +12539,18 @@
           "session_id": {
             "title": "Session Id",
             "type": "string"
+          },
+          "deadline_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Deadline Ms"
           },
           "questions": {
             "items": {
@@ -12493,6 +12580,21 @@
             ],
             "default": null,
             "title": "Answers"
+          },
+          "timeout_choices": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ClarifyTimeoutChoice"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Timeout Choices"
           }
         },
         "required": [
@@ -12576,6 +12678,25 @@
           }
         },
         "title": "ClarifyResult",
+        "type": "object"
+      },
+      "ClarifyTimeoutChoice": {
+        "additionalProperties": false,
+        "properties": {
+          "option_id": {
+            "title": "Option Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "option_id",
+          "label"
+        ],
+        "title": "ClarifyTimeoutChoice",
         "type": "object"
       },
       "CliExecParams": {
@@ -26025,119 +26146,6 @@
         "title": "ModelSaveKeyResult",
         "type": "object"
       },
-      "NextActionClosedPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "title": "Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id"
-        ],
-        "title": "NextActionClosedPayload",
-        "type": "object"
-      },
-      "NextActionItem": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "label": {
-            "title": "Label",
-            "type": "string"
-          },
-          "description": {
-            "title": "Description",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "label",
-          "description"
-        ],
-        "title": "NextActionItem",
-        "type": "object"
-      },
-      "NextActionOfferPayload": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "deadline_ms": {
-            "title": "Deadline Ms",
-            "type": "integer"
-          },
-          "show_countdown": {
-            "title": "Show Countdown",
-            "type": "boolean"
-          },
-          "actions": {
-            "items": {
-              "$ref": "#/components/schemas/NextActionItem"
-            },
-            "title": "Actions",
-            "type": "array"
-          }
-        },
-        "required": [
-          "id",
-          "deadline_ms",
-          "show_countdown",
-          "actions"
-        ],
-        "title": "NextActionOfferPayload",
-        "type": "object"
-      },
-      "NextActionRespondParams": {
-        "additionalProperties": false,
-        "properties": {
-          "session_id": {
-            "title": "Session Id",
-            "type": "string"
-          },
-          "offer_id": {
-            "title": "Offer Id",
-            "type": "string"
-          },
-          "action_id": {
-            "title": "Action Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "session_id",
-          "offer_id",
-          "action_id"
-        ],
-        "title": "NextActionRespondParams",
-        "type": "object"
-      },
-      "NextActionRespondResult": {
-        "additionalProperties": false,
-        "properties": {
-          "output": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Output"
-          }
-        },
-        "title": "NextActionRespondResult",
-        "type": "object"
-      },
       "NoticePayload": {
         "additionalProperties": false,
         "description": "``tui_gateway/model_switch.py`` capability-refresh notice.",
@@ -35521,6 +35529,30 @@
         "title": "RequestCancelPayload",
         "type": "object"
       },
+      "RequestDeadlinePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "deadline_ms": {
+            "title": "Deadline Ms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "method",
+          "deadline_ms"
+        ],
+        "title": "RequestDeadlinePayload",
+        "type": "object"
+      },
       "ResumePhaseStatus": {
         "enum": [
           "loading",
@@ -37132,6 +37164,18 @@
           "session_id": {
             "title": "Session Id",
             "type": "string"
+          },
+          "deadline_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Deadline Ms"
           },
           "env_var": {
             "title": "Env Var",
@@ -46545,6 +46589,18 @@
             "title": "Session Id",
             "type": "string"
           },
+          "deadline_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Deadline Ms"
+          },
           "command": {
             "default": "",
             "title": "Command",
@@ -48716,6 +48772,18 @@
             "title": "Session Id",
             "type": "string"
           },
+          "deadline_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Deadline Ms"
+          },
           "site": {
             "anyOf": [
               {
@@ -49058,6 +49126,18 @@
             "title": "Session Id",
             "type": "string"
           },
+          "deadline_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Deadline Ms"
+          },
           "origin": {
             "title": "Origin",
             "type": "string"
@@ -49240,6 +49320,18 @@
           "session_id": {
             "title": "Session Id",
             "type": "string"
+          },
+          "deadline_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Deadline Ms"
           },
           "backend": {
             "title": "Backend",
@@ -51306,24 +51398,6 @@
       }
     },
     {
-      "name": "interaction.next_action.respond",
-      "summary": "Consume one explicit, unexpired next-action offer in the owned idle session.",
-      "params": [
-        {
-          "name": "params",
-          "schema": {
-            "$ref": "#/components/schemas/NextActionRespondParams"
-          }
-        }
-      ],
-      "result": {
-        "name": "result",
-        "schema": {
-          "$ref": "#/components/schemas/NextActionRespondResult"
-        }
-      }
-    },
-    {
       "name": "kanban.run",
       "summary": "Native-owner only: admit the dispatcher's current claim on a kanban task.",
       "params": [
@@ -52212,6 +52286,18 @@
       ]
     },
     {
+      "name": "approval.deadline",
+      "summary": "An existing native approval wait started; display metadata only.",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/ApprovalDeadlinePayload"
+          }
+        }
+      ]
+    },
+    {
       "name": "background.complete",
       "summary": "A /background side agent finished.",
       "params": [
@@ -52267,6 +52353,18 @@
           "name": "payload",
           "schema": {
             "$ref": "#/components/schemas/SideAgentCompletePayload"
+          }
+        }
+      ]
+    },
+    {
+      "name": "clarify.deadline",
+      "summary": "An existing single-question clarify wait started; display only.",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/ApprovalDeadlinePayload"
           }
         }
       ]
@@ -52399,30 +52497,6 @@
           "name": "payload",
           "schema": {
             "$ref": "#/components/schemas/GroupsChangedPayload"
-          }
-        }
-      ]
-    },
-    {
-      "name": "interaction.next_action",
-      "summary": "Explicit next actions for an idle session.",
-      "params": [
-        {
-          "name": "payload",
-          "schema": {
-            "$ref": "#/components/schemas/NextActionOfferPayload"
-          }
-        }
-      ]
-    },
-    {
-      "name": "interaction.next_action_closed",
-      "summary": "The owner consumed the next-action offer.",
-      "params": [
-        {
-          "name": "payload",
-          "schema": {
-            "$ref": "#/components/schemas/NextActionClosedPayload"
           }
         }
       ]
@@ -52759,6 +52833,18 @@
           "name": "payload",
           "schema": {
             "$ref": "#/components/schemas/RequestCancelPayload"
+          }
+        }
+      ]
+    },
+    {
+      "name": "request.deadline",
+      "summary": "Display-only time projection for an open native request.",
+      "params": [
+        {
+          "name": "payload",
+          "schema": {
+            "$ref": "#/components/schemas/RequestDeadlinePayload"
           }
         }
       ]

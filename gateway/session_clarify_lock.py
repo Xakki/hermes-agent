@@ -20,7 +20,8 @@ async def clarify_lock(connection, ref, params):
     request_id, question_id = params.get('request_id'), params.get('question_id')
     if not isinstance(request_id, str) or not request_id or not isinstance(question_id, str) or not question_id:
         raise AuthorityRefusal('invalid_params')
-    answer = params.get('answer', '')
+    option_id = params.get('option_id')
+    answer = params.get('answer', None if option_id is not None else '')
     if answer is not None and not isinstance(answer, str):
         answer = json.dumps(answer, ensure_ascii=False)
     authority, actor = connection.authority, connection.actor
@@ -29,7 +30,7 @@ async def clarify_lock(connection, ref, params):
         # The same rule the closing response frame for this request id goes through.
         return may_settle(authority, actor, session_id, events)
     try:
-        remaining = lock_answer(request_id, question_id, answer, session_ok=entitled)
+        remaining = lock_answer(request_id, question_id, answer, option_id=option_id, session_ok=entitled)
     except ValueError:
         raise AuthorityRefusal('invalid_params') from None
     if remaining is None:

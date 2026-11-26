@@ -49,7 +49,7 @@ _SETUP_READY = re.compile(r"^SETUP_READY_EVENT = \"([a-z_.]+)\"", re.MULTILINE)
 _FREE_TIER_CHALLENGE = re.compile(r"^CHALLENGE_EVENT = \"([a-z_.]+)\"", re.MULTILINE)
 # Session-authority local-viewer turn projections (gateway/local_viewer_events.py).
 _LOCAL_VIEWER_PUBLISH = re.compile(r"\b(?:publish|_publish_execution)\(\s*\"([a-z_][a-z0-9_.]*)\"")
-_NEXT_ACTION_PUBLISH = re.compile(r"\bevent_type='([a-z_][a-z0-9_.]*)'")
+_CONTROL_DEADLINE = re.compile(r"event_type=prompt\['kind'\] \+ '\.deadline'")
 
 
 def _read(path: Path) -> str:
@@ -78,7 +78,8 @@ def emitted_event_names() -> set[str]:
     names.update(_SETUP_READY.findall(_read(REPO / current_path("hermes_cli/free_tier_bootstrap.py"))))
     names.update(_FREE_TIER_CHALLENGE.findall(_read(REPO / current_path("hermes_cli/anon_challenge.py"))))
     names.update(_LOCAL_VIEWER_PUBLISH.findall(_read(REPO / current_path("gateway/local_viewer_events.py"))))
-    names.update(_NEXT_ACTION_PUBLISH.findall(_read(REPO / current_path("gateway/session_next_action.py"))))
+    if _CONTROL_DEADLINE.search(_read(REPO / current_path("gateway/session_pending_controls.py"))):
+        names.update({"approval.deadline", "clarify.deadline"})
     return names
 
 

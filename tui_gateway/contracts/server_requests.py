@@ -23,6 +23,10 @@ class ServerRequestParams(Params):
     session_id: str
 
 
+class TimedPromptParams(ServerRequestParams):
+    deadline_ms: int | None = None
+
+
 class ValueResult(Result):
     """The answer to any one-string prompt (sudo, secret, vault prompts, desktop bridges):
     ``''`` means skipped / declined."""
@@ -38,13 +42,20 @@ class ClarifyQuestion(Params):
     question: str
     choices: list[str] | None = None
     multi_select: bool = False
+    custom_option_ids: dict[str, str] | None = None
 
 
-class ClarifyRequestParams(ServerRequestParams):
+class ClarifyTimeoutChoice(Params):
+    option_id: str
+    label: str
+
+
+class ClarifyRequestParams(TimedPromptParams):
     """``answers`` rides only on a reconnect replay (locks the server already accepted; null = skipped)."""
 
     questions: list[ClarifyQuestion]
     answers: dict[str, str | None] | None = None
+    timeout_choices: dict[str, ClarifyTimeoutChoice] | None = None
 
 
 class ClarifyResult(Result):
@@ -181,7 +192,7 @@ class ApprovalAccessLevel(WireEnum):
     read_write = "read_write"
 
 
-class ApprovalRequestParams(ServerRequestParams):
+class ApprovalRequestParams(TimedPromptParams):
     """``tui_gateway/server.py::_approval_request_payload`` — the command is redacted server-side.
 
     ``kind`` selects the card; absent means ``command``. A sandbox asks for a folder with
@@ -242,7 +253,7 @@ class EmptyRequestParams(ServerRequestParams):
     pass
 
 
-class SudoRequestParams(ServerRequestParams):
+class SudoRequestParams(TimedPromptParams):
     """Original command, redacted server-side before any password-injection rewrite."""
 
     command: str = ""
@@ -252,7 +263,7 @@ server_request("sudo", params=SudoRequestParams, result=ValueResult,
                doc="Masked sudo password for the terminal tool.")
 
 
-class SecretRequestParams(ServerRequestParams):
+class SecretRequestParams(TimedPromptParams):
     env_var: str
     prompt: str
     metadata: dict[str, JsonValue] | None = None
@@ -262,7 +273,7 @@ server_request("secret", params=SecretRequestParams, result=ValueResult,
                doc="Masked value for a named env var (skills / setup flows).")
 
 
-class VaultUnlockRequestParams(ServerRequestParams):
+class VaultUnlockRequestParams(TimedPromptParams):
     backend: str
     display_name: str
 
@@ -271,7 +282,7 @@ server_request("vault.unlock_prompt", params=VaultUnlockRequestParams, result=Va
                doc="Master password to unlock an external password manager for this session.")
 
 
-class VaultSaveLoginRequestParams(ServerRequestParams):
+class VaultSaveLoginRequestParams(TimedPromptParams):
     origin: str
     site: str
 
@@ -280,7 +291,7 @@ server_request("vault.save_login", params=VaultSaveLoginRequestParams, result=Va
                doc="Save a login for a site the agent is about to fill; the answer is JSON {identifier, password}.")
 
 
-class VaultCodeRequestParams(ServerRequestParams):
+class VaultCodeRequestParams(TimedPromptParams):
     site: str | None = None
     hint: str | None = None
 
@@ -415,6 +426,15 @@ class RequestCancelReason(WireEnum):
     shutdown = "shutdown"
     resolved = "resolved"
     session_closed = "session_closed"
+
+
+class RequestDeadlinePayload(Payload):
+    id: str
+    method: str
+    deadline_ms: int
+
+
+event("request.deadline", RequestDeadlinePayload, doc="Display-only time projection for an open native request.")
 
 
 class RequestCancelPayload(Payload):

@@ -287,25 +287,70 @@ global `details_mode`. To reshape the layout:
 Anything set explicitly in `display.sections` wins over the defaults, so
 existing configs keep working unchanged.
 
-## Next actions
+## Timed decisions
 
-After a successful conversation turn, the TUI can show a next-action card when the session is idle. Use the arrow keys and Enter to choose explicitly, or Esc to close it. **Continue** sends a regular prompt to resume the current task; **Show changes** runs the existing read-only `/diff`. The card expires after 10 minutes without taking any action. Hiding the countdown does not change that deadline.
+Finishing a conversation turn does not open a menu. When Hermes asks a question with the native `clarify` tool, Ink shows the gateway's remaining time and what will happen if each question is left unanswered. Reconnecting does not reset the timer. Unlimited requests do not show a countdown.
 
-Add text actions to the owning profile's `config.yaml`:
+The owning profile can opt in to automatic single-choice selections:
 
 ```yaml
 interaction:
-  show_countdown: true
-  menu:
-    - id: summarize_changes
-      label: Summarize changes
-      description: Ask for a short, read-only summary
-      enabled: true
-      handler: prompt
-      prompt: Summarize what changed in this task. Do not edit files.
+  clarify_timeout_policy: none
 ```
 
-The owner accepts up to eight custom actions, each with a distinct lowercase ID (letters, digits, underscores or hyphens; must start with a letter). Invalid or disabled entries are omitted. The built-in IDs `continue`, `review_changes`, and `close`, and the reserved IDs `new_task`, `stop`, `once`, and `always`, can't be redefined. Custom entries only submit text as normal prompts, under existing permissions and approvals; slash commands, shell shortcuts, and attachment-reference prefixes are not accepted as configured prompts. The card does not discover new tasks or change approval settings.
+`none` is the default: nothing is selected. `recommended` selects the unique recommended option; `first` selects the first displayed option; `recommended_or_first` uses the recommendation if present, otherwise the first option. Ambiguous choices, free text and multi-select questions are never answered automatically. Answers locked before the deadline stand. The final response can include a **Выбранные варианты** (Selected options) footer listing only questions and matching offered labels, without saying how they were selected.
+
+Native approval deadlines, when supplied by the owner, are display-only. Expiry does not grant permission. The retired `interaction.show_countdown` setting does not hide native deadlines.
+
+### Profile-defined choices
+
+In the owning profile, `interaction.menu` can extend an existing single-choice question in Ink's native clarify form. These are opt-in examples, not built-in choices or profile defaults:
+
+```yaml
+interaction:
+  menu:
+    - question_key: "Как продолжить при блокере?"
+      id: continue_independent
+      label: Продолжить независимую часть
+      handler: prompt
+      prompt: >-
+        Продолжи только уже согласованную работу, которая не зависит от блокера.
+        Не расширяй объём задачи и не обходи подтверждения. Если независимой работы нет,
+        остановись. В конце укажи, что осталось заблокировано и почему.
+      recommended: true
+      auto_select: true
+    - question_key: "Как продолжить при блокере?"
+      id: record_blocker_and_stop
+      label: Зафиксировать блокер и остановиться
+      handler: prompt
+      prompt: >-
+        Зафиксируй, что выполнено, точную причину блокировки и решение, которое
+        требуется от владельца. Остановись без новых действий.
+      auto_select: false
+    - question_key: "Как проверить это замечание?"
+      id: verify_without_edits
+      label: Проверить факт без правок
+      handler: prompt
+      prompt: >-
+        Собери минимальные доказательства в рамках уже согласованных проверок. Отдели
+        факт от гипотезы; ничего не меняй. Если проверка не согласована, опиши её и остановись.
+      recommended: true
+      auto_select: true
+    - question_key: "Как проверить это замечание?"
+      id: compare_without_implementation
+      label: Сравнить варианты без реализации
+      handler: prompt
+      prompt: >-
+        Сравни варианты по результату, риску и способу проверки. Ничего не меняй
+        и не запускай реализацию.
+      auto_select: false
+```
+
+`question_key` is the exact displayed question text, including case and punctuation, not its position in the form. Only a unique matching question is extended. The built-in options stay in order; configured options fill spare rows up to the existing four-choice limit. Duplicate IDs or labels, disabled items, and old menu items without `question_key` are ignored. Open-ended and multi-select questions are not extended.
+
+The configured text is ordinary input for the current turn, not a new command, turn, or approval. Selecting the row sends its ID; typing an identical label in **Other** sends only the typed text. Timeout selection also requires `auto_select: true` on the entry and a matching `clarify_timeout_policy`. The footer lists the selected label, not the configured instruction or how it was selected.
+
+**Manual acceptance on a rebuilt checkout:** In `hermes -p <profile> config edit`, merge the example into a test profile and set `agent.clarify_timeout: 15` and `interaction.clarify_timeout_policy: recommended` (if the profile defines legacy `clarify.timeout`, it takes precedence over `agent.clarify_timeout`). After explicitly restarting the gateway that serves this profile (`hermes gateway restart` for the shared default gateway, or `hermes -p <profile> gateway restart` for a dedicated profile gateway), open a fresh `hermes -p <profile> --tui`. Ask Hermes to use `clarify` with the exact question `Как проверить это замечание?` and one non-recommended built-in choice. Verify the countdown and the preview of `Проверить факт без правок`. Select that option once, then repeat and let it expire: both footers should list `Проверить факт без правок` with no provenance marker. Set `auto_select: false` on that entry and repeat: nothing should be selected on expiry. Opening a TUI alone may attach to an older running gateway.
 
 ## Sessions
 

@@ -1,4 +1,4 @@
-"""Exercise the post-settlement offer on the real local gateway and model path."""
+"""An ordinary greeting on the native TUI route does not open a decision card."""
 import asyncio
 from http.server import ThreadingHTTPServer
 import json
@@ -11,7 +11,7 @@ from tests.gateway.fixtures.local_recovery_probe import Model, child_env, daemon
 
 
 @pytest.mark.platforms('linux')
-def test_local_turn_offers_a_custom_action_and_executes_it_as_text(tmp_path):
+def test_local_greeting_does_not_offer_an_idle_action(tmp_path):
     root = Path(__file__).resolve().parents[2]
     home, user = tmp_path / 'state', tmp_path / 'user'
     home.mkdir(mode=0o700)
@@ -44,27 +44,22 @@ def test_local_turn_offers_a_custom_action_and_executes_it_as_text(tmp_path):
                 async def create(key):
                     result = await rpc(ws, 'session.create', request_id=key, source='tui', cwd=str(home), toolsets=[])
                     return result['result']['session_id']
-                sid, other = await create('menu'), await create('other')
-                accepted = await rpc(ws, 'prompt.submit', session_id=sid, input_id='first', text='FIRST_MENU_TURN',
+                sid = await create('greeting')
+                accepted = await rpc(ws, 'prompt.submit', session_id=sid, input_id='first', text='привет',
                                      clarify_batch=True)
                 assert accepted['result']['status'] == 'queued'
-                offer = await event(ws, 'interaction.next_action', sid)
-                assert 'summarize' in [action['id'] for action in offer['actions']]
-                args = {'offer_id': offer['id'], 'action_id': 'summarize'}
-                refused = await rpc(ws, 'interaction.next_action.respond', session_id=other, **args)
-                assert refused['error']['message'] == 'stale_generation'
-                chosen = await rpc(ws, 'interaction.next_action.respond', session_id=sid, **args)
-                assert 'result' in chosen, chosen
                 final = await event(ws, 'message.complete', sid)
-                assert final['status'] == 'complete' and prompt in final['text'], final
-                again = await rpc(ws, 'interaction.next_action.respond', session_id=sid, **args)
-                assert again['error']['message'] == 'stale_generation'
+                assert final['status'] == 'complete' and 'привет' in final['text'], final
+                with pytest.raises(TimeoutError):
+                    async with asyncio.timeout(2):
+                        await event(ws, 'interaction.next_action', sid)
+                snapshot = await rpc(ws, 'session.events.since', session_id=sid, last_seen=0)
+                assert snapshot['result']['open_requests'] == []
 
         try:
             with daemon(root, home, env, barrier=False) as (_, desc):
                 asyncio.run(probe(desc))
-            assert sum(next((msg['content'] for msg in reversed(body['messages'])
-                             if msg['role'] == 'user'), None) == prompt for body in peer.requests) == 1
+            assert len(peer.requests) == 1
         finally:
             peer.shutdown()
             server.join(timeout=5)

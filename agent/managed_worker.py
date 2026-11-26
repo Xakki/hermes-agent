@@ -298,10 +298,12 @@ class WorkerControls:
                 _die_with_owner()
 
     def approval(self, data):
-        from tools.approval import ack_gateway_approval
+        from tools.approval import ack_gateway_approval, observe_gateway_wait_start
         fields = {'request_id', 'command', 'description', 'allow_session', 'allow_permanent', 'smart_denied', 'edit'}
         self.channel.send('approval', data={k: v for k, v in data.items() if k in fields})
         ack_gateway_approval(self.route, data['request_id'])
+        observe_gateway_wait_start(self.route, data['request_id'], lambda deadline_ms:
+            self.channel.send('prompt_deadline', prompt_id=data['request_id'], deadline_ms=deadline_ms))
 
     def clarify(self, questions):
         """clarify_tool's batch contract: ``callback(questions) -> {answers, outcome, notice?}``.
@@ -337,6 +339,10 @@ class WorkerControls:
         try:
             self.channel.send('clarify', prompt_id=prompt_id, question=question,
                               choices=list(choices or []), multi_select=bool(multi_select))
+            if timeout > 0 and not state['event'].is_set():
+                with contextlib.suppress(OSError):
+                    self.channel.send('prompt_deadline', prompt_id=prompt_id,
+                                      deadline_ms=int((time.time() + timeout) * 1000))
             state['event'].wait(timeout if timeout > 0 else None)
             return state['answer']
         finally:

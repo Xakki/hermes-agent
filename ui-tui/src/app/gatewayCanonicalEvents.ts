@@ -3,6 +3,7 @@ import type {
   SessionInfo
 } from '@hermes/shared/gateway-types'
 
+import { promptDeadlineMs } from './createServerRequestHandler.js'
 import { patchOverlayState } from './overlayStore.js'
 import { patchUiState } from './uiStore.js'
 
@@ -120,7 +121,8 @@ export function openCanonicalClarify(
   }
 
   patchOverlayState({
-    clarify: { answers: shared.answers ?? {}, questions, requestId: shared.prompt_id, sharedControl }
+    clarify: { answers: shared.answers ?? {}, deadlineMs: promptDeadlineMs(shared.deadline_ms),
+      questions, requestId: shared.prompt_id, sharedControl }
   })
   setStatus('waiting for input…')
   ringPromptBell()
@@ -149,6 +151,7 @@ export function openCanonicalApproval(
       allowPermanent: shared.allow_permanent !== false,
       choices: shared.choices,
       command: String(shared.command ?? ''),
+      deadlineMs: promptDeadlineMs(shared.deadline_ms),
       description: String(shared.description ?? 'dangerous command'),
       requestId: shared.prompt_id,
       sharedControl,
@@ -157,4 +160,22 @@ export function openCanonicalApproval(
   })
   setStatus('approval needed')
   ringPromptBell()
+}
+
+export function updateCanonicalPromptDeadline(ev: GatewayEventOf<'approval.deadline' | 'clarify.deadline'>) {
+  const payload = ev.payload
+  const deadlineMs = promptDeadlineMs(payload?.deadline_ms)
+
+  if (payload && deadlineMs !== undefined) {
+    patchOverlayState(prev => {
+      const kind = ev.type === 'approval.deadline' ? 'approval' : 'clarify'
+      const prompt = prev[kind]
+      const control = prompt?.sharedControl
+
+      return prompt && control && control.session_id === ev.session_id &&
+        control.prompt_id === payload.prompt_id && control.execution_generation === payload.execution_generation
+        ? { ...prev, [kind]: { ...prompt, deadlineMs } }
+        : prev
+    })
+  }
 }

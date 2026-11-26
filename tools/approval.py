@@ -286,6 +286,14 @@ def observe_gateway_settle(session_key: str, request_id: str, observer) -> bool:
         return True
 
 
+def observe_gateway_wait_start(session_key: str, request_id: str, observer) -> None:
+    """Project the native wait's absolute deadline without changing its decision."""
+    with _lock:
+        entry = _entry_for_request(session_key, request_id)
+        if entry is not None:
+            entry.on_wait_start = observer
+
+
 def ack_gateway_approval(session_key: str, request_id: str) -> bool:
     """A client's receipt of one approval request: True while that request is still pending."""
     with _lock:
