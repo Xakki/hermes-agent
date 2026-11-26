@@ -12,6 +12,7 @@ previous values; ``restore`` puts them back when the turn's ``run_conversation``
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 
@@ -214,6 +215,8 @@ def complete_fields(turn, call_id, tool_name=None, args=None, result=None, *, is
     fields = {"duration_s": (time.monotonic() - started) if started is not None else None}
     if tool_name is None:
         return fields
+    if tool_name == "clarify" and not is_error:
+        _remember_clarify_decisions(turn, call_id, result)
     snapshot = turn.__dict__.setdefault("_local_edit_snapshots", {}).pop(key, None)
     rendered: list[str] = []
     try:
@@ -230,6 +233,50 @@ def complete_fields(turn, call_id, tool_name=None, args=None, result=None, *, is
     if todo is not None:
         fields.update(todo)
     return fields
+
+
+def _remember_clarify_decisions(turn, call_id, result):
+    from agent.redact import redact_approval_display
+    from tools.clarify_tool import strip_recommended
+
+    if not isinstance(result, str):
+        return
+    try:
+        receipt = json.loads(result)
+    except ValueError:
+        return
+    if not isinstance(receipt, dict) or not isinstance(receipt.get("responses"), list):
+        return
+    lines = []
+    for row in receipt.get("responses") or []:
+        if not isinstance(row, dict) or not isinstance(row.get("qid"), str) or row.get("status") != "answered":
+            continue
+        question, choices = row.get("question"), row.get("choices_offered")
+        if not isinstance(question, str) or not isinstance(choices, list):
+            continue
+        offered = {strip_recommended(choice) for choice in choices if isinstance(choice, str)}
+        value = row.get("user_response")
+        values = value if isinstance(value, list) else [value]
+        safe_question = " ".join(redact_approval_display(question, prose=True).split())
+        for label in values:
+            if isinstance(label, str) and strip_recommended(label) in offered:
+                safe_label = " ".join(redact_approval_display(label, prose=True).split())
+                lines.append(f"- {safe_question}: {safe_label}")
+    if lines:
+        turn.__dict__.setdefault("_clarify_decisions", {})[call_id] = lines
+
+
+def append_clarify_report(turn, result):
+    batches = turn.__dict__.pop("_clarify_decisions", {})
+    if not batches or not isinstance(result, dict) or result.get("failed") or result.get("interrupted"):
+        return
+    if result.get("completed") is False:
+        return
+    final = result.get("final_response")
+    body = final if isinstance(final, str) and final.strip() and final != "(empty)" else ""
+    lines = [line for entries in batches.values() for line in entries]
+    result["_final_response_without_clarify_report"] = body
+    result["final_response"] = (body + "\n\n" if body else "") + "Выбранные варианты:\n" + "\n".join(lines)
 
 
 def todo_state(tool_name, result) -> dict | None:

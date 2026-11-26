@@ -15,6 +15,7 @@ import logging
 import threading
 import time
 import uuid
+from collections.abc import Callable
 
 from tools.interrupt import get_interrupt_reason, is_interrupted
 from tools import approval_context as _ctx
@@ -25,7 +26,7 @@ logger = logging.getLogger("tools.approval")
 
 class _ApprovalEntry:
     """One pending dangerous-command approval inside a gateway session."""
-    __slots__ = ("authority", "cancelled", "card_deny_only", "data", "event", "expired", "identity", "observers",
+    __slots__ = ("authority", "cancelled", "card_deny_only", "data", "event", "expired", "identity", "observers", "on_wait_start",
                  "owner", "reason", "result", "settle")
 
     def __init__(self, data: dict):
@@ -46,6 +47,7 @@ class _ApprovalEntry:
         # another client): the tui_gateway withdraws its open server→client request through it.
         self.settle = None
         self.observers = []
+        self.on_wait_start: Callable[[int], None] | None = None
         self.result: str | None = None  # "once"|"session"|"always"|"deny"
         # Free-text reason from ``/deny <reason>`` so the agent can adapt, not just hear "denied".
         self.reason: str | None = None
@@ -70,7 +72,7 @@ def _same_answerers(leader: dict, follower: dict) -> bool:
 
 
 def _poll_event(event: threading.Event, session_key: str, *, interrupt_log: str,
-                timeout_s: int | None = None) -> str:
+                timeout_s: int | None = None, on_wait_start: Callable[[int], None] | None = None) -> str:
     """Wait on *event* until it fires, the turn is interrupted, or approvals.timeout
     elapses; returns ``"set"`` | ``"interrupted"`` | ``"timeout"``. Polls in ~1s
     slices so activity heartbeats reach the agent's inactivity tracker every ~10s —
@@ -84,6 +86,13 @@ def _poll_event(event: threading.Event, session_key: str, *, interrupt_log: str,
     category), never inferred from message text, so the caller can report a
     withdrawn prompt without inventing a user refusal."""
     deadline = time.monotonic() + max(_ctx._get_approval_timeout() if timeout_s is None else timeout_s, 0)
+    if on_wait_start is not None and not event.is_set():
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            try:
+                on_wait_start(int((time.time() + remaining) * 1000))
+            except Exception:
+                logger.debug("Approval deadline projection failed")
     heartbeat = activity_heartbeat("waiting for user approval")
     with human_wait_window(session_key):
         while True:
@@ -283,7 +292,7 @@ def _await_gateway_decision(session_key: str, notify_cb, approval_data: dict, *,
             human.outcome = "notify_failed"
             return {"resolved": False, "choice": None, "notify_failed": True}
 
-        state = _poll_event(entry.event, session_key, timeout_s=timeout_s,
+        state = _poll_event(entry.event, session_key, timeout_s=timeout_s, on_wait_start=entry.on_wait_start,
                             interrupt_log="Approval wait interrupted — returning deny for session %s")
         cancelled = _cancel_cause(state, entry)
         if state == "interrupted":

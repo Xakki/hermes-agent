@@ -93,21 +93,36 @@ def _response_status(qid: str, answers: dict, multi: bool) -> tuple:
 
 
 def _result(normalized: list[dict], reply: dict, shown: list[dict] | None = None) -> str:
-    """Result JSON from a callback reply ``{"answers": {qid: raw | None}, "outcome", "notice"?}``:
-    every response carries ``status`` and ``user_response`` (null unless answered); ``outcome``
-    says how the wait ended and ``notice`` (surface-supplied) says why. A picked display-copy
-    choice (from ``shown``) maps back to the raw choice by position."""
+    """Project native choices as task input without changing the trusted callback reply."""
     answers = reply.get("answers") or {}
+    native = reply.get("report_decisions") is True
+    timed_choices = reply.get("timeout_choices", {}) if native and reply.get("native_timeout") is True else {}
     responses = []
     for entry, seen in zip(normalized, shown or normalized):
-        status, value = _response_status(entry["qid"], answers, entry["multi_select"])
+        qid = entry["qid"]
+        status, value = _response_status(qid, answers, entry["multi_select"])
+        option_id = reply.get("manual_option_ids", {}).get(qid) if status == "answered" else None
+        if status == "unanswered" and (choice := timed_choices.get(qid)):
+            status, value, option_id = "answered", choice["label"], choice["option_id"]
         back = dict(zip(seen["choices_offered"] or [], entry["choices_offered"] or []))
         if back and value:
             value = [back.get(v, v) for v in value] if isinstance(value, list) else back.get(value, value)
-        responses.append({"question": entry["question"], "choices_offered": entry["choices_offered"],
-                          "status": status, "user_response": value})
-    result: dict[str, object] = {"responses": responses, "outcome": reply["outcome"]}
-    if reply.get("notice"):
+        row = {"question": entry["question"], "choices_offered": entry["choices_offered"],
+               "status": status, "user_response": value}
+        if native:
+            row["qid"] = qid
+            custom = reply.get("configured_options", {}).get(qid, {})
+            if custom:
+                row["choices_offered"] = [*(entry["choices_offered"] or []), *(option["label"] for option in custom.values())]
+            if option := custom.get(option_id):
+                row["configured_instruction"] = option["instruction"]
+                row["user_response"] = option["label"]
+        responses.append(row)
+    outcome = reply["outcome"]
+    if native and outcome == "timed_out" and all(row["status"] != "unanswered" for row in responses):
+        outcome = "submitted"
+    result: dict[str, object] = {"responses": responses, "outcome": outcome}
+    if not native and reply.get("notice"):
         result["notice"] = str(reply["notice"])
     return json.dumps(result, ensure_ascii=False)
 
@@ -139,6 +154,7 @@ def clarify_tool(questions, callback: Optional[Callable] = None) -> str:
     for q in normalized:
         offered = prose(q["choices_offered"])
         shown.append({**q, "question": prose([q["question"]])[0], "choices_offered": offered,
+                      "auto_select_safe": offered == q["choices_offered"],
                       "choices": mark_recommended(list(offered)) if offered else None})
     # Observers see the questions only; the answers stay in the tool result.
     with human_input_request("clarify", prompt="\n".join(q["question"] for q in shown)) as human:

@@ -1158,12 +1158,15 @@ class TurnRunner(GatewayTurnProgressMixin, GatewaySessionAgentMixin):
 
     def _finish_stream_consumer(self, result, agent_history, stream_consumer):
         ctx = self._ctx
+
         # Canonicalize a model-emitted computer-use screenshot path at the common result boundary so
         # the streaming finalizer and the non-streaming delivery path see the same response.
         if isinstance(result, dict) and isinstance(result.get("final_response"), str):
             result["final_response"] = repair_explicit_computer_use_media_paths(
                 result["final_response"], result.get("messages", []), history_offset=len(agent_history),
             )
+        from gateway.local_viewer_events import append_clarify_report
+        append_clarify_report(self, result)
         ctx.result_holder[0] = result
         if stream_consumer is None:
             return
@@ -1529,6 +1532,8 @@ class TurnRunner(GatewayTurnProgressMixin, GatewaySessionAgentMixin):
         # about to shrink.
         common = {
             "messages": result.get("messages", []), "api_calls": result.get("api_calls", 0),
+            **({"_final_response_without_clarify_report": result["_final_response_without_clarify_report"]}
+               if "_final_response_without_clarify_report" in result else {}),
             "failed": result.get("failed", False), "failure_reason": result.get("failure_reason"),
             # Usage-window limit (agent/plan_limits.py): the gateway offers the plan's model as a button.
             "usage_limit": result.get("usage_limit"),

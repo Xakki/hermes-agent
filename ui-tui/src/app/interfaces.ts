@@ -293,7 +293,7 @@ export interface OverlayState {
   widget: ActiveWidget | null
   journey: boolean
   modelPicker: boolean | { refresh?: boolean }
-  nextAction: import('./nextAction.js').NextActionCard | null
+
   pager: null | PagerState
   petPicker: boolean
   pluginsHub: boolean
@@ -728,7 +728,7 @@ export interface AppOverlaysProps {
   onApprovalChoice: (choice: string) => void
   onApprovalTell: (text: string) => void
   onClarifyCancel: () => void
-  onClarifyQuestionAnswer: (qid: string, value: string) => void
+  onClarifyQuestionAnswer: (qid: string, value: string, optionId?: string) => void
   onActiveSessionSelect: (sessionId: string) => void
   onActiveSessionClose: (sessionId: string) => Promise<null | SessionCloseResponse>
   onModelSelect: (value: string) => void

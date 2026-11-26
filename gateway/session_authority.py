@@ -73,8 +73,7 @@ class LiveSession:
     # Set by ``_schedule`` while a drain is alive. The claim commits off-loop, so input admitted
     # after its transaction read the FIFO would otherwise be stranded by a drain that exits idle.
     rescan: bool = False
-    next_action_candidate: tuple | None = None
-    next_action_offer: object | None = None
+
     # admission id -> its started claim, from the moment the settlement worker starts the terminal
     # write until the completion frame is published. The write runs outside ``event_stream.lock``
     # (a contended SQLite writer must not stall loop-side lock takers); readers holding that lock
@@ -1232,7 +1231,7 @@ class SessionAuthority:
         """The claim's execution stamp, in the same tracked task as its commit: no observer (or
         retirement's join) ever sees a committed claim that no execution stamp names."""
         if row:  # None or False (the head changed under the write) claimed nothing
-            live.next_action_candidate = live.next_action_offer = None
+
             with live.event_stream.lock:
                 live.event_stream.execution = {
                     'authority_epoch': self.epoch, 'execution_generation': row['generation'],
@@ -1412,8 +1411,7 @@ class SessionAuthority:
                     continue
                 from gateway.session_retirement import retire_at_idle
                 retire_at_idle(self, ref, live)
-                from gateway.session_next_action import offer_idle
-                offer_idle(self, ref, live)
+
                 return
             admission_id = row['admission_id']
             from gateway.run_plugin_injection import admission_turn_scope

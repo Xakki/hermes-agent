@@ -39,7 +39,8 @@ import {
   isGenericErrorEvent,
   openCanonicalApproval,
   openCanonicalClarify,
-  settleSharedPrompt
+  settleSharedPrompt,
+  updateCanonicalPromptDeadline
 } from './gatewayCanonicalEvents.js'
 import { reportGatewayStartTimeout } from './gatewayStartTimeout.js'
 import type { GatewayEventHandlerContext, NoticeLevel } from './interfaces.js'
@@ -49,7 +50,6 @@ import { takePastes } from './pasteStore.js'
 import { markBubbleShown, newlyStartedRows } from './pendingBubbles.js'
 import { flashGoodVibes, flashPet } from './petFlashStore.js'
 import { forgetServerRequest } from './serverRequestStore.js'
-import { closeNextAction, showNextAction } from './nextAction.js'
 import { noteCanonicalCompletion } from './slash/canonicalSessionCommands.js'
 import {
   mutateCanonicalSession,
@@ -1208,19 +1208,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     }
 
     switch (ev.type) {
-      case 'interaction.next_action':
-        if (sid && ev.session_id === sid && ev.payload) {
-          showNextAction(sid, ev.payload, rpc, sys)
-        }
 
-        return
-
-      case 'interaction.next_action_closed':
-        if (sid && ev.session_id === sid && ev.payload) {
-          closeNextAction(ev.payload.id)
-        }
-
-        return
       case 'connection.request':
         if (ev.payload) {
           applyConnectionRequest(ev.payload)
@@ -1309,7 +1297,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
 
       case 'message.start':
-        closeNextAction()
+
         resetAgentsNudgeTurnState()
         turnController.startMessage()
 
@@ -1625,6 +1613,22 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return turnController.pushImageSegment(ev.payload.image_path, ev.payload.tool_id)
       }
 
+      case 'request.deadline': {
+        const deadline = ev.payload
+
+        if (deadline && Number.isSafeInteger(deadline.deadline_ms) && deadline.deadline_ms > 0) {
+          patchOverlayState(prev => {
+            const key = (['approval', 'clarify', ...SENSITIVE_PROMPTS] as const)
+              .find(candidate => prev[candidate]?.requestId === deadline.id)
+            const prompt = key && prev[key]
+
+            return prompt ? { ...prev, [key]: { ...prompt, deadlineMs: deadline.deadline_ms } } : prev
+          })
+        }
+
+        return
+      }
+
       case 'request.cancel': {
         // The backend withdrew a server→client request (timeout / interrupt /
         // session close): tear down whichever card carries that id. A clarify
@@ -1671,6 +1675,12 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
       case 'approval.request':
         openCanonicalApproval(ev, setStatus, ringPromptBell)
+
+        return
+
+      case 'approval.deadline':
+      case 'clarify.deadline':
+        updateCanonicalPromptDeadline(ev)
 
         return
 

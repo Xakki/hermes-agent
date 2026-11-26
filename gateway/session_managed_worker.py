@@ -379,6 +379,13 @@ def _prompt_frame(authority, ref, row, worker, frame):
     live = authority.sessions[ref.session_id]
     controls = live.controls
     kind = frame.get('type')
+    if kind == 'prompt_deadline':
+        prompt_id, deadline_ms = frame.get('prompt_id'), frame.get('deadline_ms')
+        if (set(frame) != {'type', 'prompt_id', 'deadline_ms'} or not isinstance(prompt_id, str)
+                or type(deadline_ms) is not int or not 0 < deadline_ms < 2**53):
+            raise AuthorityRefusal('invalid_worker_frame')
+        controls.project_remote_deadline(ref.session_id, row['generation'], prompt_id, deadline_ms)
+        return True
     if kind == 'prompt_settled' and set(frame) == {'type', 'prompt_id'}:
         prompt_id = frame['prompt_id']
         controls.remote_responders.pop(prompt_id, None)

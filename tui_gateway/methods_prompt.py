@@ -1314,6 +1314,8 @@ def _(rid, params: dict) -> dict:
     question_id = str(params.get("question_id") or "")
     if not request_id or not question_id:
         return _err(rid, 4002, "request_id and question_id required")
+    if params.get("option_id") is not None:
+        return _err(rid, 4002, "configured option IDs require the canonical session owner")
     answer = params.get("answer", "")
     if answer is not None and not isinstance(answer, str):
         answer = json.dumps(answer, ensure_ascii=False)

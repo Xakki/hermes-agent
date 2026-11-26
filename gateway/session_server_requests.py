@@ -13,16 +13,19 @@ from __future__ import annotations
 
 import contextlib
 import threading
+import time
 import uuid
 
 from tools.clarify_batch import settle_batch
+from tui_gateway.server_requests import MASKED_PROMPT_METHODS
 
 REQUEST_TIMEOUT_S = 120  # main: ``_ask("sudo", ..., timeout=120)``
 _POLL_S = 0.25
 
 
 class _Pending:
-    __slots__ = ("event", "events", "locked", "method", "params", "qids", "replay", "result", "session_id", "value")
+    __slots__ = ("deadline", "event", "events", "locked", "locked_options", "method", "params", "qids", "replay", "result",
+                 "session_id", "value")
 
     def __init__(self, session_id, qids=None, events=None, method=None, params=None, replay=True):
         self.event = threading.Event()
@@ -36,14 +39,20 @@ class _Pending:
         # session mount, so a viewer of another profile's same-named session can never settle it.
         self.events = events
         self.value = ""
-        self.result = None
+        self.result: dict | None = None
+        self.deadline: float | None = None
         # A batch clarify: its question ids and the answers ``clarify.lock`` has locked so far.
         self.qids = tuple(qids) if qids else None
         self.locked = {}
+        self.locked_options = {}
 
 
 _lock = threading.Lock()
 _open: dict[str, _Pending] = {}
+
+
+def _expired(pending):
+    return pending.deadline is not None and time.monotonic() >= pending.deadline
 
 
 def owned_by(authority, session_id, events) -> bool:
@@ -84,16 +93,17 @@ def resolve(frame, *, session_ok=lambda session_id, events: True) -> bool:
         pending = _open.get(frame["id"])
         if pending is None or not session_ok(pending.session_id, pending.events):
             return False
+        if _expired(pending):  # The authorization check can contend before the response commits.
+            return False
         _open.pop(frame["id"], None)
-        locked = dict(pending.locked) if pending.qids is not None else None
-    result = frame.get("result") if "error" not in frame else None
-    if locked is not None:
-        # One rule with main's sidecar registry: the frame's answers over the locks, or a cancel-all.
-        result = settle_batch(locked, result)
-    value = result.get("value") if isinstance(result, dict) else ""
-    pending.value = value if isinstance(value, str) else ""
-    pending.result = result if isinstance(result, dict) else None
-    pending.event.set()
+        result = frame.get("result") if "error" not in frame else None
+        if pending.qids is not None:
+            # A viewer can supply answers, not the owner's timeout provenance.
+            result = _settle_clarify(pending, result)
+        value = result.get("value") if isinstance(result, dict) else ""
+        pending.value = value if isinstance(value, str) else ""
+        pending.result = result if isinstance(result, dict) else None
+        pending.event.set()
     return True
 
 
@@ -107,12 +117,13 @@ def ask_viewer(events, session_id, method, params, *, cancelled=lambda: False, t
 
 
 def ask_viewer_result(events, session_id, method, params, *, cancelled=lambda: False, timeout=REQUEST_TIMEOUT_S,
-                      qids=None):
+                      qids=None, clarify_timing=False):
     """The same round trip for a structured answer (``clarify``: ``ClarifyResult``): the viewer's
     ``result`` dict, or None on interrupt, timeout, an error response or no attached viewer.
     ``qids`` makes it a batch, which always ends with ``{answers: <locked so far>, outcome}`` once
     asked: ``lock_answer`` (the ``clarify.lock`` verb) answers it per question."""
-    pending = _ask(events, session_id, method, params, cancelled=cancelled, timeout=timeout, qids=qids)
+    pending = _ask(events, session_id, method, params, cancelled=cancelled, timeout=timeout, qids=qids,
+                   clarify_timing=clarify_timing)
     return pending.result if pending is not None else None
 
 
@@ -128,7 +139,7 @@ def open_requests(events, session_id) -> list[dict]:
     ``session.events.since`` hand a reconnecting viewer to re-render (``OpenRequestEntry``)."""
     with _lock:
         waiting_now = [(rid, p) for rid, p in _open.items()
-                       if p.session_id == session_id and p.events is events and p.replay]
+                       if p.session_id == session_id and p.events is events and p.replay and not _expired(p)]
         return [{"id": rid, "method": p.method,
                  "params": {**p.params, "answers": dict(p.locked)} if p.locked else dict(p.params)}
                 for rid, p in waiting_now]
@@ -141,12 +152,26 @@ def withdraw(events, session_id, method) -> int:
     with _lock:
         settled = [_open.pop(rid) for rid, p in list(_open.items())
                    if p.session_id == session_id and p.events is events and p.method == method]
-    for pending in settled:
-        pending.event.set()
+        for pending in settled:
+            if pending.deadline is not None:
+                pending.result = _settle_clarify(pending, ended="cancelled")
+            pending.event.set()
     return len(settled)
 
 
-def lock_answer(request_id, question_id, answer, *, session_ok=lambda session_id, events: False):
+def _settle_clarify(pending, frame_result=None, *, ended=None):
+    result = settle_batch(pending.locked, frame_result, ended=ended)
+    for key in ("timeout_choices", "native_timeout", "manual_option_ids"):
+        result.pop(key, None)
+    replaced = frame_result.get("answers") if isinstance(frame_result, dict) else None
+    option_ids = {qid: option_id for qid, option_id in pending.locked_options.items()
+                  if not isinstance(replaced, dict) or qid not in replaced}
+    if option_ids:
+        result["manual_option_ids"] = option_ids
+    return result
+
+
+def lock_answer(request_id, question_id, answer, *, option_id=None, session_ok=lambda session_id, events: False):
     """Lock one answer of an open batch request (``clarify.lock``; editable until the last lock;
     ``None`` = skipped). Returns the question ids still unanswered; the lock that empties it settles
     the request with ``{answers, outcome: submitted}``. ``None`` when no open batch has that id or the
@@ -156,42 +181,77 @@ def lock_answer(request_id, question_id, answer, *, session_ok=lambda session_id
         pending = _open.get(request_id)
         if pending is None or pending.qids is None or not session_ok(pending.session_id, pending.events):
             return None
+        if _expired(pending):
+            return None
         if question_id not in pending.qids:
             raise ValueError(question_id)
+        if option_id is not None:
+            if answer is not None:
+                raise ValueError(question_id)
+            question = next(q for q in pending.params["questions"] if q["qid"] == question_id)
+            labels = [label for label, value in question.get("custom_option_ids", {}).items() if value == option_id]
+            if len(labels) != 1:
+                raise ValueError(question_id)
+            pending.locked_options[question_id] = option_id
+            answer = labels[0]
+        else:
+            pending.locked_options.pop(question_id, None)
         pending.locked[question_id] = answer
         remaining = [qid for qid in pending.qids if qid not in pending.locked]
         if not remaining:
             _open.pop(request_id, None)
-            pending.result = settle_batch(pending.locked, ended="submitted")
-    if not remaining:
-        pending.event.set()
+            pending.result = _settle_clarify(pending, ended="submitted")
+            pending.event.set()
     return remaining
 
 
-def _ask(events, session_id, method, params, *, cancelled, timeout, qids=None, replay=True):
+def _ask(events, session_id, method, params, *, cancelled, timeout, qids=None, replay=True, clarify_timing=False):
     if not events.fanout.transports():
         return None
     request_id = f"srq-{uuid.uuid4().hex[:12]}"
     pending = _Pending(session_id, qids, events, method, {"session_id": session_id, **params}, replay)
+    if clarify_timing and method == "clarify" and qids and timeout is not None and timeout > 0:
+        pending.deadline = time.monotonic() + timeout
+        pending.params["deadline_ms"] = int((time.time() + timeout) * 1000)
     with _lock:
         _open[request_id] = pending
     events.fanout.write({"jsonrpc": "2.0", "id": request_id, "method": method, "params": pending.params})
+    if method in MASKED_PROMPT_METHODS and timeout is not None and timeout > 0:
+        # This is a display projection of the existing polling wait, not a new expiry check.
+        deadline_ms = int((time.time() + timeout) * 1000)
+        with _lock:
+            still_waiting = _open.get(request_id) is pending
+            if still_waiting:
+                pending.params = {**pending.params, "deadline_ms": deadline_ms}
+        if still_waiting:
+            with contextlib.suppress(Exception):
+                events.publish(session_id, {"id": request_id, "method": method, "deadline_ms": deadline_ms},
+                               event_type="request.deadline")
     waited = 0.0
     reason = "timeout"
-    while not pending.event.wait(_POLL_S):
-        waited += _POLL_S
+    while not pending.event.is_set():
+        remaining = _POLL_S if pending.deadline is None else pending.deadline - time.monotonic()
+        if remaining > 0 and pending.event.wait(min(_POLL_S, remaining)):
+            break
         if cancelled():
             reason = "interrupted"
             break
-        if timeout is not None and waited >= timeout:
+        waited += _POLL_S
+        if _expired(pending) or (pending.deadline is None and timeout is not None and waited >= timeout):
             break
     with _lock:
         still_open = _open.pop(request_id, None) is pending
         if still_open and pending.qids is not None:
             # A batch keeps every answer locked before the wait ended (main's sidecar: "locked
             # answers survive a timeout"); sudo/secret have no question ids and stay unanswered.
-            pending.result = settle_batch(pending.locked,
-                                          ended="cancelled" if reason == "interrupted" else "timed_out")
+            result = _settle_clarify(pending, ended="cancelled" if reason == "interrupted" else "timed_out")
+            if reason == "timeout" and pending.deadline is not None:
+                result["native_timeout"] = True
+                result["timeout_choices"] = {
+                    qid: choice for qid, choice in pending.params.get("timeout_choices", {}).items()
+                    if qid in pending.qids and qid not in pending.locked
+                }
+            pending.result = result
     if still_open:
         # The same teardown main's renderers key on (``request.cancel``): the card closes and a
         # timed-out password prompt says so.

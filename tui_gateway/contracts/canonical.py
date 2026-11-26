@@ -429,19 +429,6 @@ canonical_namespace("plugin.{plugin_id}.{name}", prefix="plugin.", capability="p
                         "not loaded; without plugin-rpc-v1, clients must not assume plugin RPC is supported.")
 
 
-class NextActionRespondParams(Params):
-    session_id: str
-    offer_id: str
-    action_id: str
-
-
-class NextActionRespondResult(Result):
-    output: str | None = None
-
-
-canonical_method("interaction.next_action.respond", params=NextActionRespondParams, result=NextActionRespondResult,
-                 doc="Consume one explicit, unexpired next-action offer in the owned idle session.")
-
 
 class ClarifyRespondParams(Params):
     session_id: str

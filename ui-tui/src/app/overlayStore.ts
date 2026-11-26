@@ -30,7 +30,7 @@ const buildOverlayState = (): OverlayState => ({
   widget: null,
   journey: false,
   modelPicker: false,
-  nextAction: null,
+
   pager: null,
   petPicker: false,
   pluginsHub: false,
@@ -58,7 +58,7 @@ const BLOCKING_KEYS = [
   'connectors',
   'journey',
   'modelPicker',
-  'nextAction',
+
   'pager',
   'petPicker',
   'pluginsHub',

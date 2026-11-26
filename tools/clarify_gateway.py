@@ -10,6 +10,7 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -29,6 +30,8 @@ class _ClarifyEntry:
     awaiting_text: bool = False  # set when user picked "Other" or clarify is open-ended
     # Who may answer it from a chat (``gateway.approval_actor.clarify_refusal``).
     authority: Optional[dict] = None
+    deadline_ms: int | None = None
+    on_wait_start: Callable[[int], None] | None = None
 
 
 _lock = threading.RLock()
@@ -62,6 +65,14 @@ def register(clarify_id: str, session_key: str, question: str, choices: Optional
     return entry
 
 
+def observe_wait_start(entry: _ClarifyEntry, observer: Callable[[int], None]) -> None:
+    with _lock:
+        entry.on_wait_start = observer
+        deadline_ms = entry.deadline_ms
+    if deadline_ms is not None:
+        observer(deadline_ms)
+
+
 def wait_for_response(clarify_id: str, timeout: float) -> Optional[str]:
     """Block until the entry resolves or ``timeout`` (``<= 0`` = unlimited) elapses; None on
     timeout/unknown id. Polls in 1s slices so the inactivity heartbeat keeps firing (a
@@ -76,6 +87,15 @@ def wait_for_response(clarify_id: str, timeout: float) -> Optional[str]:
         touch_activity_if_due = None
     from tools.interrupt import is_interrupted
     deadline = None if timeout is None or float(timeout) <= 0.0 else time.monotonic() + float(timeout)
+    if deadline is not None and not entry.event.is_set():
+        with _lock:
+            entry.deadline_ms = int((time.time() + max(0.0, deadline - time.monotonic())) * 1000)
+            observer = entry.on_wait_start
+        if observer is not None:
+            try:
+                observer(entry.deadline_ms)
+            except Exception:
+                logger.debug("Clarify deadline projection failed")
     activity_state = {"last_touch": time.monotonic(), "start": time.monotonic()}
     while True:
         remaining = 1.0 if deadline is None else deadline - time.monotonic()

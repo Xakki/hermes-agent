@@ -3037,6 +3037,7 @@ export interface ClarifyLockParams {
   request_id: string
   question_id: string
   answer?: unknown
+  option_id?: string | null
   profile?: string | null
 }
 /** ``remaining`` lists the qids still unanswered; the lock that empties it resolves the request. ``expired``: the wait already ended (timeout / cancel) — not an error. */
@@ -5068,14 +5069,6 @@ export interface SkinPayload {
   help_header?: string
   [key: string]: unknown
 }
-export interface NextActionRespondParams {
-  session_id: string
-  offer_id: string
-  action_id: string
-}
-export interface NextActionRespondResult {
-  output?: string | null
-}
 export interface ClarifyRespondParams {
   session_id: string
   execution_generation: number
@@ -5291,6 +5284,7 @@ export interface CanonicalPendingPrompt {
   question?: string | null
   multi_select?: boolean | null
   timeout_s?: number | null
+  deadline_ms?: number | null
 }
 export interface CanonicalSnapshotInfo {
   provider?: string | null
@@ -5674,14 +5668,21 @@ export interface PluginRpcParams {
 /** ``answers`` rides only on a reconnect replay (locks the server already accepted; null = skipped). */
 export interface ClarifyRequestParams {
   session_id: string
+  deadline_ms?: number | null
   questions: ClarifyQuestion[]
   answers?: Record<string, string | null> | null
+  timeout_choices?: Record<string, ClarifyTimeoutChoice> | null
 }
 export interface ClarifyQuestion {
   qid: string
   question: string
   choices?: string[] | null
   multi_select?: boolean
+  custom_option_ids?: Record<string, string> | null
+}
+export interface ClarifyTimeoutChoice {
+  option_id: string
+  label: string
 }
 /** ``{answers}`` for the whole set (early locks go through the ``clarify.lock`` RPC); a response without ``answers`` is cancel-all. ``outcome`` (optional): how the viewer's own panel ended, as main's classic CLI reports it (``timed_out`` keeps the answers locked before its deadline). */
 export interface ClarifyResult {
@@ -5751,6 +5752,7 @@ export interface SetupBuildAnswer {
 /** ``tui_gateway/server.py::_approval_request_payload`` — the command is redacted server-side. */
 export interface ApprovalRequestParams {
   session_id: string
+  deadline_ms?: number | null
   request_id: string
   command?: string
   description?: string
@@ -5769,6 +5771,7 @@ export interface ApprovalResult {
 /** Original command, redacted server-side before any password-injection rewrite. */
 export interface SudoRequestParams {
   session_id: string
+  deadline_ms?: number | null
   command?: string
 }
 /** The answer to any one-string prompt (sudo, secret, vault prompts, desktop bridges): ``''`` means skipped / declined. */
@@ -5777,22 +5780,26 @@ export interface ValueResult {
 }
 export interface SecretRequestParams {
   session_id: string
+  deadline_ms?: number | null
   env_var: string
   prompt: string
   metadata?: Record<string, unknown> | null
 }
 export interface VaultUnlockRequestParams {
   session_id: string
+  deadline_ms?: number | null
   backend: string
   display_name: string
 }
 export interface VaultSaveLoginRequestParams {
   session_id: string
+  deadline_ms?: number | null
   origin: string
   site: string
 }
 export interface VaultCodeRequestParams {
   session_id: string
+  deadline_ms?: number | null
   site?: string | null
   hint?: string | null
 }
@@ -5895,6 +5902,11 @@ export interface ConnectionUpdatePayload {
 }
 /** ``tools/connectors/contract.py::Actor``. */
 export type ConnectionActor = 'user' | 'backend_watcher' | 'clock'
+export interface RequestDeadlinePayload {
+  id: string
+  method: string
+  deadline_ms: number
+}
 export interface RequestCancelPayload {
   id: string
   method: string
@@ -5933,19 +5945,10 @@ export interface DisplayInstallDonePayload {
   code: number
   status: DisplayStatus
 }
-export interface NextActionOfferPayload {
-  id: string
+export interface ApprovalDeadlinePayload {
+  prompt_id: string
+  execution_generation: number
   deadline_ms: number
-  show_countdown: boolean
-  actions: NextActionItem[]
-}
-export interface NextActionItem {
-  id: string
-  label: string
-  description: string
-}
-export interface NextActionClosedPayload {
-  id: string
 }
 /** ``tui_gateway/entry.py`` (stdio) / ``tui_gateway/ws.py`` (WebSocket) first frame. */
 export interface GatewayReadyPayload {
@@ -7231,8 +7234,6 @@ export interface CanonicalRpcMethods {
   'groups.peer.revoke': { params: CanonicalGroupsPeerRevokeParams; result: GroupsPeerRevokeResult }
   'groups.retry': { params: CanonicalRoomAttemptParams; result: GroupsRetryResult }
   'image.attach_bytes': { params: ImageAttachBytesParams; result: CanonicalAttachedImageResult }
-  /** Consume one explicit, unexpired next-action offer in the owned idle session. */
-  'interaction.next_action.respond': { params: NextActionRespondParams; result: NextActionRespondResult }
   /** Native-owner only: admit the dispatcher's current claim on a kanban task. */
   'kanban.run': { params: KanbanRunParams; result: KanbanRunResult }
   'profiles.list': { params: CanonicalProfilesParams; result: CanonicalProfilesResult }
@@ -7311,7 +7312,6 @@ export const CANONICAL_RPC_METHODS = [
   'groups.peer.revoke',
   'groups.retry',
   'image.attach_bytes',
-  'interaction.next_action.respond',
   'kanban.run',
   'profiles.list',
   'prompt.cancel',
@@ -7414,6 +7414,8 @@ export interface BackendGatewayEventMap {
   'agent.terminal.output': TerminalOutputPayload
   /** Pending gateway approvals were dropped by interrupt/reap/teardown; the wait resolved as deny (not a user refusal). */
   'approval.cancelled': ApprovalCancelledPayload
+  /** An existing native approval wait started; display metadata only. */
+  'approval.deadline': ApprovalDeadlinePayload
   /** A /background side agent finished. */
   'background.complete': SideAgentCompletePayload
   /** Device-flow URL + code for the billing scope step-up; the client opens the browser. */
@@ -7424,6 +7426,8 @@ export interface BackendGatewayEventMap {
   'browser.progress': BrowserProgressPayload
   /** A /btw side question was answered. */
   'btw.complete': SideAgentCompletePayload
+  /** An existing single-question clarify wait started; display only. */
+  'clarify.deadline': ApprovalDeadlinePayload
   /** A connection operation opened on this session; the desktop renders its card. */
   'connection.request': ConnectionRequestPayload
   /** One transition or the settlement of an open connection operation. */
@@ -7446,10 +7450,6 @@ export interface BackendGatewayEventMap {
   'gateway.ready': GatewayReadyPayload
   /** A Group Chat log, task or live status moved; an open room re-reads its log delta and groups.state. */
   'groups.changed': GroupsChangedPayload
-  /** Explicit next actions for an idle session. */
-  'interaction.next_action': NextActionOfferPayload
-  /** The owner consumed the next-action offer. */
-  'interaction.next_action_closed': NextActionClosedPayload
   /** The turn ended: final text, usage and outcome. */
   'message.complete': MessageCompletePayload
   /** One streamed chunk of the assistant reply (null text: segment boundary). */
@@ -7506,6 +7506,8 @@ export interface BackendGatewayEventMap {
   'reasoning.delta': StreamDeltaPayload
   /** The backend withdrew an open server→client request; clear the matching card only. */
   'request.cancel': RequestCancelPayload
+  /** Display-only time projection for an open native request. */
+  'request.deadline': RequestDeadlinePayload
   /** Background review of the last turn finished. */
   'review.summary': ReviewSummaryPayload
   /** Persisted goal / loop / heartbeat state changed. */
@@ -7576,11 +7578,13 @@ export const GATEWAY_EVENT_TYPES = [
   'agent.print',
   'agent.terminal.output',
   'approval.cancelled',
+  'approval.deadline',
   'background.complete',
   'billing.step_up.verification',
   'bot_relay.outbox.pending',
   'browser.progress',
   'btw.complete',
+  'clarify.deadline',
   'connection.request',
   'connection.update',
   'cron.changed',
@@ -7592,8 +7596,6 @@ export const GATEWAY_EVENT_TYPES = [
   'free_tier.challenge',
   'gateway.ready',
   'groups.changed',
-  'interaction.next_action',
-  'interaction.next_action_closed',
   'message.complete',
   'message.delta',
   'message.interim',
@@ -7622,6 +7624,7 @@ export const GATEWAY_EVENT_TYPES = [
   'reasoning.available',
   'reasoning.delta',
   'request.cancel',
+  'request.deadline',
   'review.summary',
   'session.control.update',
   'session.info',

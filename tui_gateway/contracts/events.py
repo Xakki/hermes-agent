@@ -48,25 +48,15 @@ class SkinPayload(OpenPayload):
     help_header: str = ""
 
 
-class NextActionItem(Payload):
-    id: str
-    label: str
-    description: str
 
-
-class NextActionOfferPayload(Payload):
-    id: str
+class ApprovalDeadlinePayload(Payload):
+    prompt_id: str
+    execution_generation: int
     deadline_ms: int
-    show_countdown: bool
-    actions: list[NextActionItem]
 
 
-class NextActionClosedPayload(Payload):
-    id: str
-
-
-event("interaction.next_action", NextActionOfferPayload, doc="Explicit next actions for an idle session.")
-event("interaction.next_action_closed", NextActionClosedPayload, doc="The owner consumed the next-action offer.")
+event("approval.deadline", ApprovalDeadlinePayload, doc="An existing native approval wait started; display metadata only.")
+event("clarify.deadline", ApprovalDeadlinePayload, doc="An existing single-question clarify wait started; display only.")
 
 
 class GatewayReadyPayload(Payload):

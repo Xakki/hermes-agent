@@ -99,6 +99,7 @@ export interface DelegationStatus {
 
 export interface ApprovalReq {
   sharedControl?: SharedControl
+  deadlineMs?: number
   // false when the backend won't honor a permanent allow → hide "Always allow".
   allowPermanent?: boolean
   choices?: string[]
@@ -119,6 +120,7 @@ export interface ConfirmReq {
 }
 
 export interface ClarifyQuestion {
+  customOptionIds?: Map<string, string>
   choices: string[] | null
   multiSelect?: boolean
   qid: string
@@ -127,11 +129,13 @@ export interface ClarifyQuestion {
 
 export interface ClarifyReq {
   sharedControl?: SharedControl
+  deadlineMs?: number
   requestId: string
   questions: ClarifyQuestion[]
   /** Answers already locked server-side (qid → answer): seeded from the
    *  reconnect replay, updated as the user locks each question. */
   answers?: Record<string, string>
+  timeoutChoices?: Record<string, { label: string; optionId: string }>
 }
 
 /** A collapsed paste in a sent user message: the chip shown and the text the model got. */
@@ -204,10 +208,12 @@ export interface McpServerStatus {
 export type { ProjectInfo }
 
 export interface SudoReq {
+  deadlineMs?: number
   requestId: string
 }
 
 export interface SecretReq {
+  deadlineMs?: number
   envVar: string
   prompt: string
   requestId: string
@@ -215,6 +221,7 @@ export interface SecretReq {
 
 /** External password-manager unlock (1Password / Bitwarden) — masked master-password prompt. */
 export interface VaultUnlockReq {
+  deadlineMs?: number
   backend: string
   displayName: string
   requestId: string
@@ -226,6 +233,7 @@ export interface VaultUnlockReq {
  * the answer goes only to the encrypted vault, never to the model.
  */
 export interface VaultSaveLoginReq {
+  deadlineMs?: number
   origin: string
   requestId: string
   site: string
@@ -233,6 +241,7 @@ export interface VaultSaveLoginReq {
 
 /** `vault.code` server→client request — a one-time sign-in code the user reads from their device. */
 export interface VaultCodeReq {
+  deadlineMs?: number
   hint: string
   requestId: string
   site: string
