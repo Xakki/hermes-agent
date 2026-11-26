@@ -103,6 +103,8 @@ def _session_row_summary(row: dict, *, tip_row: dict | None = None, resolved_id=
             "title": row.get("title") or "", "preview": tip_row.get("preview") or "",
             "started_at": row.get("started_at") or 0, "message_count": tip_row.get("message_count") or 0,
             "source": row.get("source") or "",
+            "cwd": row.get("cwd") or None, "git_repo_root": row.get("git_repo_root") or None,
+            "git_branch": tip_row.get("git_branch") or None, "last_activity_at": tip_row.get("last_activity_at"),
             # Durable lineage root for compressed conversations — the same field REST
             # projects (api_server._session_response); RPC consumers (desktop pinning /
             # lineage dedup) group on it. #66663.

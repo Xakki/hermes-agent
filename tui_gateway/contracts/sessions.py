@@ -236,6 +236,10 @@ class SessionListRow(Result):
     preview: str = ""
     started_at: float = 0
     message_count: int = 0
+    cwd: str | None = None
+    git_repo_root: str | None = None
+    git_branch: str | None = None
+    last_activity_at: float | None = None
     live_message_count: int | None = None
     source: str = ""
     # Durable lineage root of a compressed conversation (REST parity, #66663); None on

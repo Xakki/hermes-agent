@@ -516,6 +516,8 @@ class SessionQuery:
     local_created_sources: Optional[tuple[str, ...]] = None
     #: Only rows in this workspace (``hermes -c``'s rule): the git repo root equals it, or a row without one has its cwd at or under it.
     workspace_key: Optional[str] = None
+    #: Exact non-Git workspace, without the legacy folder-prefix fallback.
+    workspace_cwd: Optional[str] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -842,6 +844,7 @@ class PickerSegment:
     git_branch: Optional[str]
     pinned: bool
     last_active: Optional[float]
+    last_activity_at: Optional[float]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1290,7 +1293,8 @@ class SessionRepository(Protocol):
         """The session with the most transcript rows of any visibility; ``None`` only without rows. A store with no transcript names one of its sessions (zero messages); which one among equal counts is unspecified."""
         ...
 
-    def sessions_in_workspace(self, session_ids: Sequence[SessionId], workspace: str) -> frozenset[SessionId]:
+    def sessions_in_workspace(self, session_ids: Sequence[SessionId], workspace: str | None, *,
+                              workspace_cwd: str | None = None) -> frozenset[SessionId]:
         """The ids among ``session_ids`` whose row is in ``workspace``, by the rule ``SessionQuery.workspace_key`` filters by."""
         ...
 

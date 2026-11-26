@@ -88,9 +88,12 @@ def _cwd_prefix_clause(cwd_prefix: str) -> tuple[str, list[str]]:
     )
 
 
-def _workspace_key_clause(key: str) -> tuple[str, list[str]]:
-    """WHERE for ``workspace_key(row) == key``: git_repo_root equals ``key``, or (rows predating
-    per-session git metadata) cwd is at/under ``key``."""
+def _workspace_key_clause(key: str | None, *, exact_cwd: str | None = None) -> tuple[str, list[str]]:
+    """Match an exact non-Git cwd, or apply the legacy repo-or-folder-prefix rule for a workspace key."""
+    if exact_cwd is not None:
+        return "(COALESCE(s.git_repo_root, '') = '' AND s.cwd = ?)", [exact_cwd]
+    if key is None:
+        return "0 = 1", []
     prefix = key.rstrip("/\\") or key
     cwd_clause, cwd_params = _cwd_prefix_clause(prefix)
     return (
@@ -109,7 +112,7 @@ def _session_filter_where(
     session_key: str | None = None, exclude_sources: list[str] | None = None, cwd_prefix: str | None = None,
     min_message_count: int = 0, archived_only: bool = False, include_archived: bool = False,
     include_subagents: bool = False, local_created_sources: Sequence[str] | None = None,
-    workspace_key: str | None = None,
+    workspace_key: str | None = None, workspace_cwd: str | None = None,
 ) -> tuple[list[str], list[Any]]:
     """Shared ``sessions s`` WHERE builder so counts line up with listed rows. ``exclude_children``
     hides sub-agent runs and compression continuations but keeps branch/reset children
@@ -136,7 +139,8 @@ def _session_filter_where(
         ("s.session_key = ?", [session_key] if session_key else []),
         (f"s.source NOT IN ({_session_ids_placeholders(exclude_sources or ())})", exclude_sources or []),
         (_cwd_prefix_clause(cwd_prefix) if cwd_prefix else ("", [])),
-        (_workspace_key_clause(workspace_key) if workspace_key else ("", [])),
+        (_workspace_key_clause(workspace_key, exact_cwd=workspace_cwd)
+         if workspace_key or workspace_cwd is not None else ("", [])),
         ("s.message_count >= ?", [min_message_count] if min_message_count > 0 else []),
     ):
         if values:
@@ -1271,7 +1275,7 @@ def list_sessions_rich(
     id_query: str | None = None, search_query: str | None = None, compact_rows: bool = False,
     include_pinned: bool = False, session_key: str | None = None, include_hidden: bool = False,
     include_subagents: bool = False, local_created_sources: Sequence[str] | None = None,
-    workspace_key: str | None = None,
+    workspace_key: str | None = None, workspace_cwd: str | None = None,
 ) -> list[dict[str, Any]]:
     """List sessions with preview and ``last_active`` in one query. ``order_by_last_active`` sorts
     by the chain TIP via a recursive CTE (the only path honouring ``id_query`` / ``search_query``);
@@ -1284,7 +1288,7 @@ def list_sessions_rich(
         exclude_children=not include_children, source=source, sources=sources, session_key=session_key,
         exclude_sources=exclude_sources, cwd_prefix=cwd_prefix, min_message_count=min_message_count,
         archived_only=archived_only, include_archived=include_archived, include_subagents=include_subagents,
-        local_created_sources=local_created_sources, workspace_key=workspace_key,
+        local_created_sources=local_created_sources, workspace_key=workspace_key, workspace_cwd=workspace_cwd,
     )
     # The archived-only view is the recovery surface for rows that dropped out of every
     # default list: a session that is archived AND hidden (Bot Mode marks its sessions
@@ -1393,7 +1397,7 @@ def list_sessions_rich(
             session_key=session_key, exclude_sources=exclude_sources, cwd_prefix=cwd_prefix,
             min_message_count=min_message_count, archived_only=False, include_archived=True,
             include_subagents=include_subagents, local_created_sources=local_created_sources,
-            workspace_key=workspace_key,
+            workspace_key=workspace_key, workspace_cwd=workspace_cwd,
         )
         if not include_hidden and not archived_only:
             pinned_clauses.append("s.hidden = 0")

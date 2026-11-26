@@ -141,6 +141,18 @@ export const pickersEn = {
         pressDAgain: 'press d again to delete',
         messageCount: (count: number) => `${count} msgs`
       },
+      resumeWorkspace: {
+        cwd: 'Cwd',
+        repo: 'Git root',
+        branch: 'Branch',
+        started: 'Started',
+        activity: 'Activity',
+        messages: 'Msgs',
+        off: 'Workspace filter: off',
+        on: 'Workspace filter: on',
+        unavailable: 'Workspace filter: unavailable',
+        noMatches: 'No sessions in this workspace'
+      },
       noOtherSessions: 'no other sessions — Enter on +new to start one',
       promptLabel: 'prompt › ',
       // {0} = the draft model label (short model id or `currentOrDefault`).

@@ -597,6 +597,7 @@ class AuthorityConnection:
                 'authority_epoch': self.authority.epoch,
                 'capabilities': ['durable-admission-v1', 'event-replay-v1', 'local-cli-create-v1', 'acp-editor-policy-v1',
                                  'acp-session-mcp-v1', 'clarify-batch-v1', 'plugin-rpc-v1', 'session-client-v1', 'session-transcript-v1', 'session-list-picker-v1',
+                                 'session-list-workspace-cwd-v1',
                                  'session-list-cursor-v1', 'client-identity-v1', 'client-activity-v1'],
                 'session_create': {'sources': sorted(SURFACES),
                                    'parameters': sorted(CREATE_FIELDS | {'title'})},
@@ -614,20 +615,24 @@ class AuthorityConnection:
         if 'session:read' not in self.actor.capabilities:
             raise AuthorityRefusal('permission_denied')
         limit, workspace, picker = params.get('limit', 200), params.get('workspace'), params.get('picker', False)
-        if (set(params) - {'limit', 'title', 'include_hidden', 'scope', 'workspace', 'picker', 'query', 'cursor'}
+        workspace_cwd = params.get('workspace_cwd')
+        if (set(params) - {'limit', 'title', 'include_hidden', 'scope', 'workspace', 'workspace_cwd', 'picker',
+                           'query', 'cursor'}
                 or type(limit) is not int or not 1 <= limit <= 200
                 or (workspace is not None and not (isinstance(workspace, str) and workspace))
+                or (workspace_cwd is not None and (workspace is not None or not isinstance(workspace_cwd, str)
+                                                  or not workspace_cwd.strip()))
                 or type(picker) is not bool):
             raise AuthorityRefusal('invalid_params')
         if (params.get('scope', 'live') not in {'live', 'stored'}
-                or ('title' in params and ('scope' in params or workspace is not None or picker))):
+                or ('title' in params and ('scope' in params or workspace is not None or workspace_cwd is not None or picker))):
             raise AuthorityRefusal('invalid_params')
         from gateway.session_listing import check_page_params, stored_picker_sessions
         check_page_params(params)
         if params.get('scope') == 'stored':
             return await asyncio.to_thread(stored_picker_sessions, self.authority, self.actor,
                 limit=limit, include_hidden=params.get('include_hidden', False), workspace=workspace, picker=picker,
-                query=params.get('query'), cursor=params.get('cursor'))
+                query=params.get('query'), cursor=params.get('cursor'), workspace_cwd=workspace_cwd)
         if 'title' in params:
             # Title-as-identity lookup (the Bots roster's forever-chat registry): the same
             # resolver `session.resume title=` uses, so a hidden canonical chat answers here
@@ -667,7 +672,8 @@ class AuthorityConnection:
                              'running': entry.handle.execution_state == 'running'})
         sessions.sort(key=lambda row: row['started_at'] or 0, reverse=True)
         from gateway.session_picker_fields import live_picker_page
-        return {'sessions': await asyncio.to_thread(live_picker_page, self.authority, sessions, limit, workspace, picker),
+        return {'sessions': await asyncio.to_thread(live_picker_page, self.authority, sessions, limit, workspace, picker,
+                                                     workspace_cwd=workspace_cwd),
                 'scope': 'live'}
 
     async def resume(self, ref, params):

@@ -9587,6 +9587,18 @@
             "default": null,
             "title": "Workspace"
           },
+          "workspace_cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Workspace Cwd"
+          },
           "picker": {
             "default": false,
             "title": "Picker",
@@ -11173,6 +11185,18 @@
             "default": null,
             "title": "Cwd"
           },
+          "git_repo_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Git Repo Root"
+          },
           "git_branch": {
             "anyOf": [
               {
@@ -11184,6 +11208,18 @@
             ],
             "default": null,
             "title": "Git Branch"
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Activity At"
           },
           "workspace": {
             "anyOf": [
@@ -11739,6 +11775,18 @@
             ],
             "default": null,
             "title": "Cwd"
+          },
+          "git_repo_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Git Repo Root"
           },
           "edit_approval_policy": {
             "anyOf": [
@@ -40148,6 +40196,54 @@
             "default": 0,
             "title": "Message Count",
             "type": "integer"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cwd"
+          },
+          "git_repo_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Git Repo Root"
+          },
+          "git_branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Git Branch"
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Activity At"
           },
           "live_message_count": {
             "anyOf": [

@@ -288,10 +288,11 @@ def transcript_tool_calls_before(holder: StoreHolder, segment_ids: list[str], be
 
 # -- session.list picker fields ----------------------------------------------------------------------
 
-def sessions_in_workspace(holder: StoreHolder, session_ids: Iterable[str], workspace: str) -> set[str]:
+def sessions_in_workspace(holder: StoreHolder, session_ids: Iterable[str], workspace: str | None, *,
+                          workspace_cwd: str | None = None) -> set[str]:
     """The ids among *session_ids* whose row is in *workspace*: the clause the listing filters by
     (``hermes -c``'s rule: the same repo root, or at/under the folder)."""
-    clause, params = _workspace_key_clause(workspace)
+    clause, params = _workspace_key_clause(workspace, exact_cwd=workspace_cwd)
     with holder._read_ctx() as conn:
         rows = conn.execute(f"SELECT s.id FROM sessions s WHERE s.id IN (SELECT value FROM json_each(?)) AND {clause}",
                             (json.dumps(list(session_ids)), *params)).fetchall()
@@ -322,7 +323,7 @@ def picker_session_facts(holder: StoreHolder, root_ids: Iterable[str], unlisted_
             "SELECT id, cwd, git_repo_root FROM sessions WHERE id IN (SELECT value FROM json_each(?))",
             (_ids(root_ids),)).fetchall()}
         unlisted = {row["id"]: dict(row) for row in conn.execute(
-            f"SELECT s.id, s.git_branch, s.pinned, {_sql_preview_raw('s.id')}, {_sql_session_last_active('s')} "
+            f"SELECT s.id, s.git_branch, s.pinned, s.last_activity_at, {_sql_preview_raw('s.id')}, {_sql_session_last_active('s')} "
             "AS last_active FROM sessions s WHERE s.id IN (SELECT value FROM json_each(?))",
             (_ids(unlisted_ids),)).fetchall()} if unlisted_ids else {}
         sql = _LAST_REPLIES_SQL.format(visible=DISPLAY_VISIBLE_SQL)
