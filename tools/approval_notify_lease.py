@@ -92,7 +92,9 @@ def stranded_denial(session_key, is_gateway, noun, pattern_key, description):
         "BLOCKED: no approval channel is available to ask the user — the gateway turn "
         f"that delivers approval prompts has ended, so this {noun} did not run "
         "and no prompt can be answered from this context. Do NOT retry or rephrase; "
-        "run it from an interactive turn instead.",
+        "run it from an interactive turn instead. In your final response, tell the parent agent "
+        "what was blocked, confirm that it did not run, and identify the action that needs "
+        "user approval in an interactive turn. Do not include secrets in the handoff.",
         pattern_key=pattern_key, description=description, outcome="notify_failed", noun=noun)
 
 
