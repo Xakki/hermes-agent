@@ -812,10 +812,12 @@ class SQLiteSessionRepository:
             ).fetchone()
         return SessionId(row[0]) if row else None
 
-    def sessions_in_workspace(self, session_ids: Sequence[SessionId], workspace: str) -> frozenset[SessionId]:
+    def sessions_in_workspace(self, session_ids: Sequence[SessionId], workspace: str | None, *,
+                              workspace_cwd: str | None = None) -> frozenset[SessionId]:
         holder = self._store.holder()
         with refusals(holder):
-            return frozenset(SessionId(sid) for sid in stored_reads.sessions_in_workspace(holder, session_ids, workspace))
+            return frozenset(SessionId(sid) for sid in stored_reads.sessions_in_workspace(
+                holder, session_ids, workspace, workspace_cwd=workspace_cwd))
 
     def picker_session_facts(self, root_ids: Sequence[SessionId], segment_ids: Sequence[SessionId],
                              reply_ids: Sequence[SessionId]) -> PickerFacts:
@@ -825,7 +827,8 @@ class SQLiteSessionRepository:
         return PickerFacts(
             roots={SessionId(sid): PickerRoot(cwd=row["cwd"], git_repo_root=row["git_repo_root"]) for sid, row in roots.items()},
             segments={SessionId(sid): PickerSegment(preview=_shape_preview(row["_preview_raw"]), git_branch=row["git_branch"],
-                                                    pinned=bool(row["pinned"]), last_active=row["last_active"])
+                                                    pinned=bool(row["pinned"]), last_active=row["last_active"],
+                                                    last_activity_at=row["last_activity_at"])
                       for sid, row in segments.items()},
             last_replies={SessionId(sid): reply for sid, reply in replies.items()})
 
@@ -866,6 +869,7 @@ class SQLiteSessionRepository:
                 compact_rows=compact_rows, include_pinned=query.include_pinned, session_key=query.session_key,
                 include_hidden=query.include_hidden, include_subagents=query.include_subagents,
                 local_created_sources=_optional_list(query.local_created_sources), workspace_key=query.workspace_key,
+                workspace_cwd=query.workspace_cwd,
             )
         return tuple(_list_entry(holder, row, compact=compact_rows) for row in rows)
 

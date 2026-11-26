@@ -101,7 +101,7 @@ def legacy_readable(authority, actor, sid):
 
 
 def stored_picker_sessions(authority, actor, *, limit, include_hidden=False, workspace=None, picker=False,
-                           query=None, cursor=None):
+                           query=None, cursor=None, workspace_cwd=None):
     """Offer legacy local rows only to the same native transport that may resume them.
 
     Canonical sessions are already in the live feed. Old local rows have no policy
@@ -114,6 +114,8 @@ def stored_picker_sessions(authority, actor, *, limit, include_hidden=False, wor
     if actor.profile_id != authority.profile_id:
         raise AuthorityRefusal('profile_mismatch')
     binding = (workspace, query, include_hidden)
+    if workspace_cwd is not None:
+        binding += (workspace_cwd,)
     offset = _decode_cursor(cursor, binding) if cursor is not None else 0
     if not _native_reader(authority, actor):
         return {'sessions': [], 'scope': 'stored', 'next_cursor': None}
@@ -123,7 +125,8 @@ def stored_picker_sessions(authority, actor, *, limit, include_hidden=False, wor
     own_profile = _own_profile(store)
     rule = owner_rule()
     listing = SessionQuery(exclude_sources=_excluded_sources(), order=SessionOrder.LAST_ACTIVE,
-                           include_hidden=include_hidden, workspace_key=workspace, search_text=query)
+                           include_hidden=include_hidden, workspace_key=workspace, workspace_cwd=workspace_cwd,
+                           search_text=query)
     sessions, seen, sources, exhausted = [], set(), [], False  # sources: (first row, current segment, listed row)
     while len(sessions) < limit:
         rows = store.sessions.list_sessions(listing, SessionWindow(limit=_BATCH, offset=offset), compact_rows=True)

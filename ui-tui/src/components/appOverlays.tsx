@@ -323,6 +323,7 @@ export function FloatingOverlays({
           <ActiveSessionSwitcher
             currentSessionId={sid}
             gw={gw}
+            key={overlay.sessions === 'resume' ? 'resume' : 'sessions'}
             maxWidth={width}
             onCancel={() => patchOverlayState({ sessions: false })}
             onClose={onActiveSessionClose}
@@ -330,6 +331,7 @@ export function FloatingOverlays({
             onNewPrompt={onNewPromptSession}
             onResume={onResumeSelect}
             onSelect={onActiveSessionSelect}
+            resumePicker={overlay.sessions === 'resume'}
             t={theme}
           />
         </FloatBox>

@@ -120,6 +120,7 @@ class CanonicalSnapshotInfo(SessionInventoryFields):
     profile_id: str | None = None
     profile_name: str | None = None
     cwd: str | None = None
+    git_repo_root: str | None = None
     edit_approval_policy: Literal['ask', 'workspace_session', 'session'] | None = None
     launch_request: dict[str, JsonValue] | None = None
     # ``session.info``'s ``client``: create and resume return the same projection.
@@ -177,6 +178,8 @@ class CanonicalListParams(ProfileParams):
     # ``hermes -c`` rule (``persistence.conversation.sessions.workspace_key``): its git repo root equals this, or
     # (no root recorded) its cwd is this folder or under it. Pass the caller's repo root (else its cwd).
     workspace: str | None = None
+    # Non-Git workspace: exact cwd, never a descendant. Mutually exclusive with workspace.
+    workspace_cwd: str | None = None
     # Each row also carries the picker fields below (off by default: a live-list poll does not pay for them).
     picker: bool = False
     # Stored scope only. ``query``: conversations whose title or id contains this text (1-200 characters).
@@ -205,7 +208,9 @@ class CanonicalSessionListRow(Result):
     preview: str | None = None
     last_reply: str | None = None
     cwd: str | None = None
+    git_repo_root: str | None = None
     git_branch: str | None = None
+    last_activity_at: float | None = None
     workspace: str | None = None
     last_active_at: float | None = None
     pinned: bool | None = None
