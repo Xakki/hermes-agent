@@ -246,11 +246,14 @@ an override that permits prompting can still interrupt a background check.
 
 ```yaml
 updates:
+  branch: ""                     # Source branch on origin; empty keeps stock update target selection
   pre_update_backup: quick       # quick (state snapshot, default) | full (snapshot + HERMES_HOME zip) | off
   backup_keep: 5                 # Keep this many full pre-update backup zips
   non_interactive_local_changes: stash  # stash | discard
   auto_switch_parked_branch: true       # auto-switch a clean, fully merged parked branch back to main
 ```
+
+Set `updates.branch` in the active profile to follow a branch on `origin` for `hermes update` and `hermes update --check`. Leaving it unset or blank keeps normal update target selection (including the install's release channel). `--branch NAME` overrides the profile setting; an explicit `--channel` also takes precedence over the profile setting when `--branch` is absent. This does not write a channel preference or change parked-branch and gateway-restart behavior.
 
 `pre_update_backup` is the single pre-update safety knob: `quick` (default) snapshots critical state files (pairing data, cron jobs, config, auth; files over 1 GiB are skipped) into `state-snapshots/`; `full` additionally zips all of `HERMES_HOME` into `backups/` and can add minutes on large homes; `off` disables both. Legacy booleans are honored (`true` → `full`, `false` → `off`).
 

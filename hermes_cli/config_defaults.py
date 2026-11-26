@@ -2303,6 +2303,7 @@ DEFAULT_CONFIG = {
         # bloated state.db) are skipped with a warning so the snapshot stays fast. This is the #48200
         # (wrong-path wipe) safety net.
         "pre_update_backup": "quick",
+        "branch": "",  # Optional source branch; empty keeps the stock update target selection.
         # Full backup zips to retain (older pruned after each success; floored to 1 so the newest is
         # always kept). The quick snapshot always keeps exactly 1.
         "backup_keep": 5,
