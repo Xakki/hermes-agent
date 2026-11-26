@@ -3,6 +3,7 @@
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import time as _time
 
@@ -353,3 +354,30 @@ def _resolve_node_runtime_npm() -> str | None:
 def _resolve_update_branch(args) -> str:
     """Normalize ``args.branch`` to a non-empty name (default ``main``; blank/whitespace = default)."""
     return (getattr(args, "branch", None) or "main").strip() or "main"
+
+
+def _configured_source_update_branch() -> str | None:
+    """Read the active profile's optional literal source branch, not its release channel."""
+    from hermes_cli.config import load_config_readonly
+
+    updates = load_config_readonly().get("updates")
+    value = updates.get("branch") if isinstance(updates, dict) else None
+    if value is None:
+        return None
+    invalid = "updates.branch must be a valid Git branch name or empty."
+    if not isinstance(value, str):
+        raise ValueError(invalid)
+    branch = value.strip()
+    if not branch or branch == "main":
+        return branch or None
+    if branch.startswith("-") or branch == "HEAD" or "\0" in branch:
+        raise ValueError(invalid)
+    try:
+        # A full ref checks the literal name without interpreting Git's @{-1} shorthand.
+        result = subprocess.run(["git", "check-ref-format", f"refs/heads/{branch}"],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError("Could not validate updates.branch with Git.") from exc
+    if result.returncode:
+        raise ValueError(invalid)
+    return branch

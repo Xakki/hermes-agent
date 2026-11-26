@@ -2135,8 +2135,19 @@ def _update_preflight_handled(args) -> bool:
         record_refusal_receipt(refusal)
         sys.exit(2)
 
+    if getattr(args, "branch", None) is None and getattr(args, "channel", None) is None:
+        from hermes_cli.main_install_repair import _configured_source_update_branch
+
+        try:
+            # Route profile branches through the same source path as --branch without
+            # writing the install's channel record or changing checkout/restart policy.
+            args.branch = _configured_source_update_branch()
+        except ValueError as exc:
+            print(f"✗ {exc} No update was applied.")
+            sys.exit(2)
+
     if getattr(args, "check", False):
-        # --check honors --branch so its answer matches what update would pull.
+        # Check the same CLI or profile branch that an update would pull.
         branch = _resolve_update_branch(args)
         from hermes_cli.update_cmd import _cmd_update_check
 
